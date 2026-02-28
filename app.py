@@ -1,12 +1,3 @@
-import os
-from pathlib import Path
-import sys
-
-# 基础配置
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DASHSCOPE_API_KEY
-os.environ["DASHSCOPE_API_KEY"] = DASHSCOPE_API_KEY
-
 import streamlit as st
 from agent.react_agent import ReactAgent
 

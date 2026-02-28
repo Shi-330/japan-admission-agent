@@ -1,11 +1,3 @@
-import os
-from pathlib import Path
-import sys
-# 动态添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DASHSCOPE_API_KEY
-os.environ["DASHSCOPE_API_KEY"] = DASHSCOPE_API_KEY
-#
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
@@ -31,7 +23,7 @@ class ReactAgent:
             ]
         }
 
-        # 第三个参数就是做提示词切换的标记，如果为True，则进行提示词切换
+        # 第三个参数就是做提示词切换的标记，如果为 True，则进行提示词切换
         for chunk in self.agent.stream(input_dict, stream_mode="values", context={"report":False}):
             latest_message = chunk["messages"][-1]
             if latest_message.content:
