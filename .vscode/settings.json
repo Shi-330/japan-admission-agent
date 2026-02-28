@@ -1,0 +1,12 @@
+{
+  "python.analysis.exclude": [
+    "**/site-packages",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "venv"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none"
+  }
+}
