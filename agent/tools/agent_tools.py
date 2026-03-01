@@ -6,32 +6,44 @@ from utils.config_handler import agent_conf
 from utils.path_tool import get_abs_path
 from utils.logger_handler import logger
 import os
+from langgraph.prebuilt import InjectedState # 导入注入状态的工具
+from rag.rag_service import RagSummarizeService # 确保导入了你的服务类
+from typing import Annotated
 
 _external_data = {}          # 缓存数据
 _data_loaded = False         # 标记是否已加载数据
 
 arg = RagSummarizeService()
-user_ids = ["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
+user_ids = "00000000-0000-0000-0000-000000000001" #更换为默认的这个uuid["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
 month_arr = ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06","2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"]
 external_data = {}
 
-@tool(description="从向量存储中检索参考资料")
-def rag_summarize(query:str) -> str:
-    return arg.rag_summarize(query)
+@tool(description="从向量存储中检索参考资料，并结合用户画像给出个性化建议")
+def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
+    # 这里的 "user_profile" 对应上面 input_dict 里的 key
+    user_profile_str = state.get("user_profile", "暂无学生背景信息")
+    
+    # 打印一下，方便你在终端调试看有没有拿到画像
+    print(f"DEBUG: Tool 接收到的画像为: {user_profile_str[:50]}...") 
+    
+    return arg.rag_summarize(query, user_profile_str)
 
 @tool(description="获取指定城市的天气，以消息字符串的形式返回")
-def get_weather(city: str) -> str:
-    return f"{city}的天气是晴天，气温20度，空气湿度50%，南风1级，AQI21，最近6小时降雨概率极低"
+# def get_weather(city: str) -> str:
+#     return f"{city}的天气是晴天，气温20度，空气湿度50%，南风1级，AQI21，最近6小时降雨概率极低"
 
 
 @tool(description="获取用户所在城市的名称，以纯字符串形式返回")
-def get_user_location() -> str:
-    return random.choice(["北京", "上海", "广州", "深圳", "杭州"])
+# def get_user_location() -> str:
+#     return random.choice(["北京", "上海", "广州", "深圳", "杭州"])
 
 
 @tool(description="获取用户的ID，以纯字符串形式返回")
 def get_user_id() -> str:
-    return random.choice(user_ids)
+    """获取当前登录用户的唯一标识符 (UUID)"""
+    # 暂时返回固定测试 ID，方便开发调试
+    # TODO: 后续接入真实登录系统后，从 session 或上下文获取
+    return "00000000-0000-0000-0000-000000000001"
 
 @tool(description="获取当前月份，以纯字符串形式返回")
 def get_current_month() -> str:
