@@ -8,6 +8,7 @@ from rag.vector_store import VectorStoreService
 from utils.prompt_loader import load_rag_prompts
 from langchain_core.prompts import PromptTemplate
 from model.factory import chat_model
+# from  import profile
 
 
 class RagSummarizeService(object):
@@ -26,7 +27,7 @@ class RagSummarizeService(object):
     def retriever_docs(self, query: str) -> list[Document]:
         return self.retriever.invoke(query)
 
-    def rag_summarize(self, query: str) -> str:
+    def rag_summarize(self, query: str, profile: str) -> str:
         context_docs = self.retriever_docs(query)
 
         context = ""
@@ -39,6 +40,7 @@ class RagSummarizeService(object):
             {
                 "input": query, 
                 "context": context,
+                "profile": profile # 用户信息
             }
         )
     

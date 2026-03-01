@@ -34,21 +34,24 @@ class ReactAgent:
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
 
-    def execute_stream(self, query: str, user_profile: dict = None):
-        # 如果 user_profile 在这里也需要传递给某些 Tool，可以放入 context
+    def execute_stream(self, query: str, user_profile_str: str = None):
+        # 【关键改动】：将 user_profile 放在 input_dict 的根部
+        # 这样 Tool 里的 state.get("user_profile") 才能抓到它
         input_dict = {
-            "messages":[
-                {"role": "user", "content": query},
-            ]
+            "messages": [("user", query)], 
+            "user_profile": user_profile_str  # 👈 核心：这里的 key 必须叫 user_profile
         }
         
-        # 将 profile 放入 context 供 middleware 或某些 tool 使用
-        agent_context = {"report": False, "user_profile": user_profile}
+        # 将 profile 放入 context 供中间件使用（保持你原有的逻辑）
+        agent_context = {"report": False, "user_profile": user_profile_str}
 
+        # 执行流
         for chunk in self.agent.stream(input_dict, stream_mode="values", context=agent_context):
-            latest_message = chunk["messages"][-1]
-            if latest_message.content:
-                yield latest_message.content.strip() + "\n"
+            if "messages" in chunk and chunk["messages"]:
+                latest_message = chunk["messages"][-1]
+                # 注意：LangGraph 返回的可能是 BaseMessage 对象，使用 .content 获取内容
+                if hasattr(latest_message, "content") and latest_message.content:
+                    yield latest_message.content.strip() + "\n"
 
 if __name__ == "__main__":
     agent = ReactAgent()
