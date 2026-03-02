@@ -1,14 +1,42 @@
 import json
-from langchain_core.tools import tool
-from rag.rag_service import RagSummarizeService
+import os
 import random
+from typing import Annotated
+from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
+from supabase import create_client, Client
+
+from rag.rag_service import RagSummarizeService
 from utils.config_handler import agent_conf
 from utils.path_tool import get_abs_path
 from utils.logger_handler import logger
-import os
-from langgraph.prebuilt import InjectedState # 导入注入状态的工具
-from rag.rag_service import RagSummarizeService # 确保导入了你的服务类
-from typing import Annotated
+import dotenv
+
+# --- 1. 延迟初始化单例模式 ---
+_supabase_client = None
+# --- 1. 延迟初始化单例模式 ---
+_supabase_client = None
+
+def get_supabase() -> Client:
+    """确保在工具被调用时才初始化 Supabase，并确保环境变量已加载"""
+    global _supabase_client
+    if _supabase_client is None:
+        # 手动确保加载 .env（使用你的 path_tool）
+        env_path = get_abs_path(".env")
+        dotenv.load_dotenv(env_path)
+        
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_ANON_KEY")
+        
+        if not url or not key:
+            # 这里的报错会更清晰
+            raise ValueError(f"Supabase 配置缺失! URL: {url}, Key: {'已找到' if key else '缺失'}")
+        
+        _supabase_client = create_client(url, key)
+    return _supabase_client
+
+# --- 2. 业务服务初始化 ---
+# 建议也放进函数或延迟初始化，防止 RagSummarizeService 内部也依赖环境
 
 _external_data = {}          # 缓存数据
 _data_loaded = False         # 标记是否已加载数据
@@ -17,6 +45,18 @@ arg = RagSummarizeService()
 user_ids = "00000000-0000-0000-0000-000000000001" #更换为默认的这个uuid["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
 month_arr = ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06","2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"]
 external_data = {}
+
+@tool(description="从外部系统中获取用户画像，以纯字符串形式返回，如果未检索到，返回空字符串")
+def fetch_user_profile_from_db(user_id: str):
+    """从 Supabase 获取真实的留学背景画像"""
+    # 调用封装好的单例获取 client
+    client = get_supabase() 
+    try:
+        response = client.table("user_profiles").select("*").eq("id", user_id).single().execute()
+        return response.data  
+    except Exception as e:
+        logger.error(f"从数据库获取画像失败: {e}")
+        return ""
 
 @tool(description="从向量存储中检索参考资料，并结合用户画像给出个性化建议")
 def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
@@ -43,8 +83,8 @@ def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
         if "【当前咨询者背景画像】" in content:
             extracted_profile = content
             
-    print(f"\n[DEBUG 3 - Tool] 当前 State 中的所有键: {list(state.keys())}")
-    print(f"DEBUG: Tool 最终拿到的画像: {extracted_profile[:50]}...") 
+    # print(f"\n[DEBUG 3 - Tool] 当前 State 中的所有键: {list(state.keys())}")
+    # print(f"DEBUG: Tool 最终拿到的画像: {extracted_profile[:50]}...") 
     
     # 3. 将提取到的画像传入真正的 RAG 服务
     return arg.rag_summarize(query, extracted_profile)
@@ -170,4 +210,8 @@ def fetch_external_data(user_id: str, month: str) -> str:
 
 @tool(description="无入参，无返回值，调用后触发中间件自动为报告生成的场景动态注入上下文信息，为提示词切换提供上下文信息")
 def fill_context_for_report():
-    return "fill_context_for_report已调用"
+    """
+    此工具主要作为一个 'Signal' (信号)。
+    Agent 调用它意味着它现在想要进入 '报告生成模式'。
+    """
+    return "fill_context_for_report已调用，中间件已感知并切换提示词逻辑"

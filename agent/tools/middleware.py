@@ -23,7 +23,10 @@ def monitor_tool(
 
             
         if request.tool_call["name"] == "fill_context_for_report":
+            if not hasattr(request.runtime, "context") or request.runtime.context is None:
+                request.runtime.context = {}  # 初始化为一个空字典
             request.runtime.context["report"] = True
+            logger.info("[Middleware] 已成功开启报告生成模式上下文")
 
         return result
     except Exception as e:
