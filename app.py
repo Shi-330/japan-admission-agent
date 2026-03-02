@@ -1,7 +1,7 @@
 import streamlit as st
-from agent.react_agent import ReactAgent
 import dotenv
 dotenv.load_dotenv()
+from agent.react_agent import ReactAgent
 from user.profile_manager import ProfileManager, UserProfile
 
 st.title("日本留学智能客服")
@@ -9,7 +9,46 @@ st.divider()
 
 
 profile_mgr = ProfileManager()
-current_user_id = "00000000-0000-0000-0000-000000000001"
+# current_user_id = "00000000-0000-0000-0000-000000000001"
+# 登录逻辑
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+def login_form():
+    st.subheader("欢迎回来")
+    tab1, tab2 = st.tabs(["登录", "注册"])
+
+    with tab1:
+        email = st.text_input("邮箱", key="login_email")
+        password = st.text_input("密码", type="password", key="login_password")
+        if st.button("进入系统"):
+            try:
+                res = profile_mgr.supabase.auth.sign_in_with_password({"email": email, "password": password})
+                st.session_state.auth_user = res.user
+                st.success("登录成功！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"登录失败: {e}")
+
+    with tab2:
+            new_email = st.text_input("邮箱", key="reg_email")
+            new_password = st.text_input("密码", type="password", key="reg_password")
+            if st.button("提交注册"):
+                try:
+                    profile_mgr.supabase.auth.sign_up({"email": new_email, "password": new_password})
+                    st.info("注册成功，请查收邮件确认后登录。")
+                except Exception as e:
+                    st.error(f"注册失败: {e}")
+
+# --- 2. 主逻辑判定 ---
+if st.session_state.auth_user is None:
+    login_form()
+    st.stop()  # 没登录就此打住，不运行后面的逻辑
+
+# --- 3. 登录后的真实 ID 替换 ---
+current_user_id = st.session_state.auth_user.id # 自动获取 Supabase 的 UUID                    
+
+
 
 # --- 1. 用户画像初始化与同步 ---
 # 使用 session_state 确保只在首次加载或用户手动更新时才处理数据

@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 import uuid
+from utils.path_tool import get_abs_path
 
 # 1. 定义用户画像的数据结构 (一定要保留，它是 Agent 的灵魂)
 class UserProfile(BaseModel):
@@ -23,11 +24,21 @@ class UserProfile(BaseModel):
 # 2. 线上版管理器 (Supabase)
 class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无缝切换
     def __init__(self):
+        # 1. 使用你现有的 path_tool 定位到根目录的 .env
+        env_path = get_abs_path(".env")
+        
+        # 2. 显式加载该路径下的环境变量
+        if os.path.exists(env_path):
+            dotenv.load_dotenv(dotenv_path=env_path)
+        else:
+            # 这是一个友好的防御性编程：如果文件丢了，在日志里报出来
+            print(f"警告: 未在路径 {env_path} 找到 .env 文件")
+
         self.url = os.getenv("SUPABASE_URL")
         self.key = os.getenv("SUPABASE_KEY")
         
         if not self.url or not self.key:
-            print("⚠️ 警告: 未检测到 SUPABASE_URL 或 SUPABASE_KEY，将无法使用数据库功能")
+            print("警告: 未检测到 SUPABASE_URL 或 SUPABASE_KEY，将无法使用数据库功能")
             self.supabase = None
         else:
             self.supabase: Client = create_client(self.url, self.key)
@@ -43,14 +54,14 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
                 # 将数据库字典转回 Pydantic 模型
                 return UserProfile(**response.data[0])
         except Exception as e:
-            print(f"❌ 读取数据库失败: {e}")
+            print(f"读取数据库失败: {e}")
             
         return UserProfile()
 
     def save_profile(self, user_id: str, profile: UserProfile):
         """保存 UserProfile 对象到数据库"""
         if not self.supabase:
-            print("❌ 无法保存：数据库未连接")
+            print("无法保存：数据库未连接")
             return
             
         data = profile.to_dict()
@@ -58,9 +69,9 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
         
         try:
             self.supabase.table("user_profiles").upsert(data).execute()
-            print(f"✅ 用户 {user_id} 画像已同步至数据库")
+            print(f"用户 {user_id} 画像已同步至数据库")
         except Exception as e:
-            print(f"❌ 保存数据库失败: {e}")
+            print(f"保存数据库失败: {e}")
 
     def format_for_prompt(self, profile: UserProfile) -> str:
         """将画像格式化为 Agent 容易理解的字符串"""
@@ -80,7 +91,8 @@ if __name__ == "__main__":
     manager = ProfileManager()
     test_id = "00000000-0000-0000-0000-000000000001" #str(uuid.uuid4()) # 注意：如果数据库 id 是 UUID 类型，这里需换成有效的 UUID 字符串
     print(f"--- 正在使用合法 UUID 测试: {test_id} ---")
-    print("--- 正在测试 Supabase 保存 ---")
+    # print("--- 正在测试 Supabase 保存 ---")
+    print(os.environ)
     # new_student = UserProfile(
     #     jlpt_level="N1",
     #     eju_score=710,
