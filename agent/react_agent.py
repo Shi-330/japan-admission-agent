@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
-from agent.tools.agent_tools import (rag_summarize, get_current_month, 
+from agent.tools.agent_tools import (rag_summarize, get_current_month, get_user_id,
                                      generate_external_data, fetch_external_data, fill_context_for_report)
 from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
 
@@ -29,32 +29,59 @@ class ReactAgent:
             model=chat_model,
             system_prompt=system_prompt, # 使用增强后的 Prompt
             tools=[rag_summarize, # get_user_id 这个之后再弄。 
-                   get_current_month, generate_external_data, fetch_external_data, 
+                   get_current_month, generate_external_data, fetch_external_data, get_user_id,
                    fill_context_for_report],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
 
     def execute_stream(self, query: str, user_profile_str: str = None):
-        # 【关键改动】：将 user_profile 放在 input_dict 的根部
-        # 这样 Tool 里的 state.get("user_profile") 才能抓到它
-        input_dict = {
-            "messages": [("user", query)], 
-            "user_profile": user_profile_str  # 👈 核心：这里的 key 必须叫 user_profile
-        }
+        # 构造消息序列
+        messages = []
         
-        # 将 profile 放入 context 供中间件使用（保持你原有的逻辑）
-        agent_context = {"report": False, "user_profile": user_profile_str}
+        # 1. 把画像作为第一条系统消息强行插入，这样它就永远在 messages 状态里了
+        if user_profile_str:
+            profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景进行回答和调用工具。"
+            messages.append({"role": "system", "content": profile_instruction})
+        
+        messages.append({"role": "user", "content": query})
 
+        input_dict = {
+            "messages": messages  # 现在我们只传 messages，因为保安只认它
+        }
+        # 【调试点 2】确认 input_dict 的结构
+        print(f"\n[DEBUG 2 - Agent] 构建的 input_dict 键值: {list(input_dict.keys())}")
+        print(f"[DEBUG 2 - Agent] 构建的 input_dict 内容: {input_dict}")
         # 执行流
-        for chunk in self.agent.stream(input_dict, stream_mode="values", context=agent_context):
-            if "messages" in chunk and chunk["messages"]:
-                latest_message = chunk["messages"][-1]
-                # 注意：LangGraph 返回的可能是 BaseMessage 对象，使用 .content 获取内容
-                if hasattr(latest_message, "content") and latest_message.content:
-                    yield latest_message.content.strip() + "\n"
+        # for chunk in self.agent.stream(input_dict, stream_mode="values"):
+        #     if "messages" in chunk and chunk["messages"]:
+        #         latest_message = chunk["messages"][-1]
+        #         # 注意：LangGraph 返回的可能是 BaseMessage 对象，使用 .content 获取内容
+        #         if hasattr(latest_message, "content") and latest_message.content:
+        #             yield latest_message.content.strip() + "\n"
+        # 执行流
+        last_seen_len = 0
+        for chunk in self.agent.stream(input_dict, stream_mode="values"):
+            if "messages" in chunk:
+                all_messages = chunk["messages"]
+                # 只取新产生的消息
+                if len(all_messages) > last_seen_len:
+                    new_messages = all_messages[last_seen_len:]
+                    for msg in new_messages:
+                        # 过滤掉空的或者 AI 正在思考的消息，只返回文本内容
+                        content = getattr(msg, "content", str(msg))
+                        if content:
+                            yield content.strip() + "\n"
+                    last_seen_len = len(all_messages)        
 
 if __name__ == "__main__":
-    agent = ReactAgent()
+    from user.profile_manager import ProfileManager, UserProfile
 
-    for chunk in agent.execute_stream("给我生成我的使用报告"):
+    agent = ReactAgent()
+    prompt = "给我生成我的使用报告"
+    
+    current_user_id = "00000000-0000-0000-0000-000000000001"
+    profile_mgr = ProfileManager()
+    profile = profile_mgr.get_profile(current_user_id)
+
+    for chunk in agent.execute_stream(prompt, profile):
         print(chunk, end="",flush=True)

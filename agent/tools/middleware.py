@@ -43,10 +43,16 @@ def log_before_model(
     return None
 
 
-@dynamic_prompt                 # 每一次在生成提示词之前，调用此函数
-def report_prompt_switch(request: ModelRequest):     # 动态切换提示词
-    is_report = request.runtime.context.get("report", False)
-    if is_report:               # 如果是生成报告场景
+@dynamic_prompt
+def report_prompt_switch(request: ModelRequest):
+    # 逐级安全获取：request -> runtime -> context
+    runtime = getattr(request, "runtime", None)
+    context = getattr(runtime, "context", None) if runtime else None
+    
+    # 如果 context 存在则尝试 get "report"，否则默认为 False
+    is_report = context.get("report", False) if context is not None else False
+    
+    if is_report:
         return load_report_prompts()
     
     return load_system_prompts()

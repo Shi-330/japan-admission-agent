@@ -20,13 +20,34 @@ external_data = {}
 
 @tool(description="从向量存储中检索参考资料，并结合用户画像给出个性化建议")
 def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
-    # 这里的 "user_profile" 对应上面 input_dict 里的 key
-    user_profile_str = state.get("user_profile", "暂无学生背景信息")
+# 1. 从 state 中获取所有消息
+    messages = state.get("messages", [])
     
-    # 打印一下，方便你在终端调试看有没有拿到画像
-    print(f"DEBUG: Tool 接收到的画像为: {user_profile_str[:50]}...") 
+    # 2. 尝试从第一条系统消息中提取画像信息
+    # 逻辑：我们在 execute_stream 里把画像放在了第一条 system message
+    extracted_profile = "暂无学生背景信息"
     
-    return arg.rag_summarize(query, user_profile_str)
+    if messages:
+        # 兼容 LangChain 的 Message 对象格式
+        first_msg = messages[0]
+        # 有时 messages 是字典对象，有时是 BaseMessage 对象
+        content = ""
+        if isinstance(first_msg, dict):
+            if first_msg.get("role") == "system":
+                content = first_msg.get("content", "")
+        else:
+            # 这里的 getattr 是为了处理 LangGraph 传入的可能是 SystemMessage 对象
+            if getattr(first_msg, "type", "") == "system" or hasattr(first_msg, "content"):
+                content = getattr(first_msg, "content", "")
+
+        if "【当前咨询者背景画像】" in content:
+            extracted_profile = content
+            
+    print(f"\n[DEBUG 3 - Tool] 当前 State 中的所有键: {list(state.keys())}")
+    print(f"DEBUG: Tool 最终拿到的画像: {extracted_profile[:50]}...") 
+    
+    # 3. 将提取到的画像传入真正的 RAG 服务
+    return arg.rag_summarize(query, extracted_profile)
 
 @tool(description="获取指定城市的天气，以消息字符串的形式返回")
 # def get_weather(city: str) -> str:
