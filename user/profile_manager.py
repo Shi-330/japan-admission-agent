@@ -76,25 +76,20 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
 
 # 3. 测试逻辑
 if __name__ == "__main__":
-    # 测试前请确保环境变量已设置：
-    # export SUPABASE_URL='...' 
-    # export SUPABASE_KEY='...'
-    # print(os.getenv("SUPABASE_URL"))
-    # print(os.getenv("SUPABASE_KEY"))
 
     manager = ProfileManager()
-    test_id = str(uuid.uuid4()) # 注意：如果数据库 id 是 UUID 类型，这里需换成有效的 UUID 字符串
+    test_id = "00000000-0000-0000-0000-000000000001" #str(uuid.uuid4()) # 注意：如果数据库 id 是 UUID 类型，这里需换成有效的 UUID 字符串
     print(f"--- 正在使用合法 UUID 测试: {test_id} ---")
     print("--- 正在测试 Supabase 保存 ---")
-    new_student = UserProfile(
-        jlpt_level="N1",
-        eju_score=710,
-        gpa=3.8,
-        target_major="计算机科学",
-        undergraduate_school="某名牌大学"
-    )
+    # new_student = UserProfile(
+    #     jlpt_level="N1",
+    #     eju_score=710,
+    #     gpa=3.8,
+    #     target_major="计算机科学",
+    #     undergraduate_school="某名牌大学"
+    # )
     
-    manager.save_profile(test_id, new_student)
+    # manager.save_profile(test_id, new_student)
     
     print("\n--- 正在测试 Supabase 读取 ---")
     loaded = manager.get_profile(test_id)
