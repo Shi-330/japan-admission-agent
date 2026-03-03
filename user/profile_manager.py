@@ -101,7 +101,7 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
             return self.supabase.auth.reset_password_for_email(
                 email, 
                 options={
-                    "redirect_to": "http://localhost:8501/" 
+                    "redirect_to": "https://japan-admission-agent.streamlit.app" 
                     # 注意：如果你的 Supabase 配置了重置密码的回调页面，请将此修改为正确的 URL
                 }
             )
