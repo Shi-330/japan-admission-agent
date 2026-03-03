@@ -5,7 +5,7 @@ dotenv.load_dotenv()
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
-import uuid
+# import uuid
 from utils.path_tool import get_abs_path
 
 # 1. 定义用户画像的数据结构 (一定要保留，它是 Agent 的灵魂)
@@ -85,6 +85,37 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
             f"- 英语成绩: {profile.english_score}"
         )
 
+    def send_reset_password_email(self, email: str):
+        """发送重置密码邮件"""
+        import os
+        if not self.supabase: 
+            return
+        
+        # 如果是开发环境，可以选择跳过实际发送邮件
+        if os.getenv("ENVIRONMENT") == "development":
+            print(f"[开发模式] 应该向 {email} 发送密码重置邮件，但为了测试跳过了")
+            return {"status": "success", "message": f"Reset email would be sent to {email}"}
+        
+        # 生产环境中正常发送邮件
+        try:
+            return self.supabase.auth.reset_password_for_email(
+                email, 
+                options={
+                    "redirect_to": "http://localhost:8501/" 
+                    # 注意：如果你的 Supabase 配置了重置密码的回调页面，请将此修改为正确的 URL
+                }
+            )
+        except Exception as e:
+            print(f"发送重置邮件失败: {e}")
+            raise e
+
+    def update_password(self, new_password: str):
+        """更新当前登录用户的密码"""
+        if not self.supabase: return
+        return self.supabase.auth.update_user({"password": new_password})
+
+
+profile_mgr = ProfileManager() # 创建全局唯一的实例
 # 3. 测试逻辑
 if __name__ == "__main__":
 

@@ -76,8 +76,8 @@ class ReactAgent:
             "messages": messages  # 现在我们只传 messages，因为保安只认它
         }
         # 【调试点 2】确认 input_dict 的结构
-        print(f"\n[DEBUG 2 - Agent] 构建的 input_dict 键值: {list(input_dict.keys())}")
-        print(f"[DEBUG 2 - Agent] 构建的 input_dict 内容: {input_dict}")
+        # print(f"\n[DEBUG 2 - Agent] 构建的 input_dict 键值: {list(input_dict.keys())}")
+        # print(f"[DEBUG 2 - Agent] 构建的 input_dict 内容: {input_dict}")
         # 执行流
         # for chunk in self.agent.stream(input_dict, stream_mode="values"):
         #     if "messages" in chunk and chunk["messages"]:
