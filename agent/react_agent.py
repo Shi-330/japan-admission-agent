@@ -1,3 +1,5 @@
+import hashlib
+from typing import Dict, Any, Optional
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
@@ -36,11 +38,35 @@ class ReactAgent:
                    fill_context_for_report],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
-    def make_decision(self, planner_prompt_template: str = None, profile_string: str = None, user_input: str = None) -> str:
+    def _get_cache_key(self, profile_str: str, user_input: str) -> str:
+        """
+        [解耦逻辑] 生成唯一的指纹。
+        即使输入不完全结构化，通过 strip 和 lower 也能提高命中率。
+        """
+        # 简单的归一化处理
+        normalized_input = str(user_input).strip().lower()
+        combined_text = f"{profile_str}_{normalized_input}"
+        return hashlib.md5(combined_text.encode()).hexdigest()
+    
+    def make_decision(self, 
+                      planner_prompt_template: str = None, 
+                      profile_string: str = None, 
+                      user_input: str = None,
+                      external_cache: Optional[Dict[str,str]] = None) -> str:
         """
         让LLM在不启动工具流的情况下，先做一个快速的意图判断
+        新增external_cache，带缓存的带缓存的快速意图判断。 external_cache: 外部传入的缓存字典（例如 Streamlit 的 session_state）
         """
-        # 填充模板
+        # 1. 如果提供了外部缓存，先尝试读取
+        cache_key = None
+        if external_cache is not None:
+            cache_key = self._get_cache_key(profile_string, user_input)
+            if cache_key in external_cache:
+                print(f"[Cache Hit] 命中决策缓存: {cache_key}") # 先打印调试(原来这个叫埋点调试)
+                return external_cache[cache_key] # 命中缓存，直接返回
+                    
+        # 2. 缓存未命中，执行原始逻辑
+        print(f"☁️ [LLM CALL] 正在请求大模型进行决策...") # 临时打印，用于调试
         full_prompt = planner_prompt_template.format(
             profile_string=profile_string, 
             user_input=user_input
@@ -51,10 +77,12 @@ class ReactAgent:
         # 通常调用 invoke 或 predict。对于最新的 LangChain，建议用 invoke。
         try:
             response = self.model.invoke(full_prompt)
-            # 提取文本内容
-            if hasattr(response, "content"):
-                return response.content
-            return str(response)
+            result = response.content if hasattr(response, "content") else str(response) # 兼容 LangGraph
+            # 3. 写入缓存
+            if external_cache is not None and cache_key: # 缓存命中，写入缓存
+                external_cache[cache_key] = result
+
+            return result
         
         except Exception as e:
             print(f"[Decision Error] 决策引擎故障: {e}")

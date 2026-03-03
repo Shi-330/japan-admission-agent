@@ -85,6 +85,8 @@ def render_main_app():
                 # 更新 Session 状态，确保 Agent 调用时拿到的是最新的
                 st.session_state.user_profile = updated_profile
                 
+                # 当画像更新时，旧的决策缓存已经没有参考价值了，直接重置
+                st.session_state.decision_cache = {}
                 st.success("✅ 画像已同步至云端！")
                 st.rerun() # 立即触发重绘，让 Agent 逻辑感知到新画像
         # ... 放入你之前的 st.sidebar 表单代码 ...
@@ -130,12 +132,17 @@ def render_main_app():
         
         response_messages = []
 
+        # 初始化缓存容器
+        if "decision_cache" not in st.session_state: 
+            st.session_state.decision_cache = {}
+
         with st.status("💡 正在规划最佳路径...", expanded=False) as status:
             # 调用一个简单的 chat 接口做决策
             decision = st.session_state["agent"].make_decision(
                 PLANNER_PROMPT,
                 profile_string,
-                prompt
+                prompt,
+                external_cache=st.session_state.decision_cache
             )
             st.write(f"决策引擎输出: {decision}")
 
