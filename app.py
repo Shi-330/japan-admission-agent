@@ -5,9 +5,6 @@ from agent.react_agent import ReactAgent
 from user.profile_manager import ProfileManager, UserProfile
 from agent.prompts import PLANNER_PROMPT #不确定是不是这么写的
 
-st.title("日本留学智能客服")
-st.divider()
-
 
 profile_mgr = ProfileManager()
 # current_user_id = "00000000-0000-0000-0000-000000000001"
@@ -41,6 +38,35 @@ def login_form():
                 except Exception as e:
                     st.error(f"注册失败: {e}")
 
+# --- 2. 【核心修复】先判断登录 ---
+if st.session_state.auth_user is None:
+    st.title("日本留学智能客服") # 登录界面也显示个标题比较好看
+    login_form()
+    st.stop()  # 没登录就此打住，下面的代码（包括读取 email）都不会执行
+                    
+st.title("日本留学智能客服")
+# 登录等
+col1, col2 = st.columns([4, 1]) # 比例可以根据需要调整
+
+with col1:
+    st.caption(f"当前登录：{st.session_state.auth_user.email}")
+
+with col2:
+    if st.button("退出登录", key="logout_btn", type="secondary", use_container_width=True):
+        # 1. 服务端登出
+        try:
+            profile_mgr.supabase.auth.sign_out()
+        except:
+            pass
+        
+        # 2. 彻底清理本地缓存
+        st.session_state.clear()
+        
+        # 3. 强制重定向回登录页
+        st.rerun()
+
+# 这样 divider 就会出现在状态栏下面，视觉上非常规整
+st.divider()
 # --- 2. 主逻辑判定 ---
 if st.session_state.auth_user is None:
     login_form()
