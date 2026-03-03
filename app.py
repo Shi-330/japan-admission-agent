@@ -3,6 +3,7 @@ import dotenv
 dotenv.load_dotenv()
 from agent.react_agent import ReactAgent
 from user.profile_manager import ProfileManager, UserProfile
+from agent.prompts import PLANNER_PROMPT #不确定是不是这么写的
 
 st.title("日本留学智能客服")
 st.divider()
@@ -46,8 +47,7 @@ if st.session_state.auth_user is None:
     st.stop()  # 没登录就此打住，不运行后面的逻辑
 
 # --- 3. 登录后的真实 ID 替换 ---
-current_user_id = st.session_state.auth_user.id # 自动获取 Supabase 的 UUID                    
-
+current_user_id = st.session_state.auth_user.id # 自动获取 Supabase 的 UUID    
 
 
 # --- 1. 用户画像初始化与同步 ---
@@ -59,6 +59,22 @@ if "user_profile" not in st.session_state:
         # 尝试从数据库获取，如果返回 None，则直接初始化一个默认对象
         db_profile = profile_mgr.get_profile(current_user_id)
         st.session_state.user_profile = db_profile or UserProfile()
+
+# --- 登录后的欢迎逻辑 ---
+if "first_run" not in st.session_state:
+    with st.chat_message("assistant"):
+        st.markdown(f"""
+        ### 🌸 欢迎回来，{st.session_state.auth_user.email}！
+        我是你的 **留日智能规划专家**。我已经同步了你的云端画像。
+        
+        **目前我可以为你做：**
+        1. **时间线规划**：根据你的 JLPT 进度倒推考学节点。
+        2. **名校匹配**：基于 {st.session_state.user_profile.target_major} 数据库匹配教授（2024-2025最新数据）。
+        3. **背景诊断**：点击侧边栏更新你的 GPA，我会立刻重新评估你的胜率。
+        
+        你想从哪个部分开始？
+        """)
+    st.session_state.first_run = True
 
 # --- 2. 侧边栏：留学生背景评估表单 ---
 with st.sidebar:
@@ -135,9 +151,26 @@ if prompt:
 
     # 1. 把 Pydantic 对象转成 Agent 易读的字符串
     profile_string = profile_mgr.format_for_prompt(st.session_state.user_profile)
-    print(f"\n[DEBUG 1 - App] 即将发送的画像内容:\n{profile_string[:100]}...")
+    # print(f"\n[DEBUG 1 - App] 即将发送的画像内容:\n{profile_string[:100]}...") # 临时打印，用于调试
     
     response_messages = []
+
+    with st.status("💡 正在规划最佳路径...", expanded=False) as status:
+        # 调用一个简单的 chat 接口做决策
+        decision = st.session_state["agent"].make_decision(
+            PLANNER_PROMPT,
+            profile_string,
+            prompt
+        )
+        st.write(f"决策引擎输出: {decision}")
+
+        # 根据决策动态调整状态
+        if "[MISSING_INFO]" in decision:
+            st.warning("检测到关键背景缺失，建议完善侧边栏信息以获得更精准的建议。")
+        elif "[MISSING_INFO]" in decision:
+            st.toast("提示：完善侧边栏背景可以让建议更准哦！")
+
+        status.update(label="规划完成", state="complete")
 
     try:
         with st.spinner("日本留学智能助手思考中..."): 

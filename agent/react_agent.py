@@ -25,15 +25,42 @@ class ReactAgent:
         else:
             system_prompt = base_prompt
 
+        self.model = chat_model # 将模型实例挂载到 self 上，方便外部或内部调用
+
+
         self.agent = create_agent(
-            model=chat_model,
+            model=self.model, #  chat_model -> 这里也改用 self.model
             system_prompt=system_prompt, # 使用增强后的 Prompt
             tools=[rag_summarize, # get_user_id 这个之后再弄。 
                    get_current_month, generate_external_data, fetch_external_data, get_user_id,
                    fill_context_for_report],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
+    def make_decision(self, planner_prompt_template: str = None, profile_string: str = None, user_input: str = None) -> str:
+        """
+        让LLM在不启动工具流的情况下，先做一个快速的意图判断
+        """
+        # 填充模板
+        full_prompt = planner_prompt_template.format(
+            profile_string=profile_string, 
+            user_input=user_input
+            )
+        
+        # 直接调用底层的LLM(chat_model)
+        # 注意：取决于你的 chat_model 是 LangChain 的什么对象，
+        # 通常调用 invoke 或 predict。对于最新的 LangChain，建议用 invoke。
+        try:
+            response = self.model.invoke(full_prompt)
+            # 提取文本内容
+            if hasattr(response, "content"):
+                return response.content
+            return str(response)
+        
+        except Exception as e:
+            print(f"[Decision Error] 决策引擎故障: {e}")
+            return "[ANSWER]" # 发生错误时默认走常规回答路径
 
+     
     def execute_stream(self, query: str, user_profile_str: str = None):
         # 构造消息序列
         messages = []
