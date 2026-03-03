@@ -4,7 +4,7 @@ import dotenv
 dotenv.load_dotenv()
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
-from supabase import create_client, Client
+from supabase import create_client, Client, AuthApiError
 # import uuid
 from utils.path_tool import get_abs_path
 
@@ -86,57 +86,47 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
         )
 
     def send_reset_password_email(self, email: str):
-        """发送重置密码邮件"""
-        import os
-        if not self.supabase: 
-            return
-        
-        # 如果是开发环境，可以选择跳过实际发送邮件
-        if os.getenv("ENVIRONMENT") == "development":
-            print(f"[开发模式] 应该向 {email} 发送密码重置邮件，但为了测试跳过了")
-            return {"status": "success", "message": f"Reset email would be sent to {email}"}
-        
-        # 生产环境中正常发送邮件
+        """发送重置密码验证码 (OTP)"""
+        if not self.supabase: return
         try:
-            return self.supabase.auth.reset_password_for_email(
-                email, 
-                options={
-                    "redirect_to": "https://japan-admission-agent.streamlit.app" 
-                    # 注意：如果你的 Supabase 配置了重置密码的回调页面，请将此修改为正确的 URL
-                }
-            )
+            # 只要模板里有 {{ .Token }}，Supabase 就会发送 6 位验证码
+            return self.supabase.auth.reset_password_for_email(email)
+        except AuthApiError as e:
+            if "rate limit" in str(e).lower():
+                print(f"邮件发送频率超限: {e}")
+                raise Exception("邮件发送过于频繁，请稍后再试")
+            else:
+                print(f"发送验证码失败: {e}")
+                raise e
+
+    def verify_reset_otp(self, email: str, token: str):
+        """验证 6 位验证码"""
+        if not self.supabase: return None
+        try:
+            # 类型必须为 recovery 才能进行后续的 update_user
+            res = self.supabase.auth.verify_otp({
+                "email": email,
+                "token": token,
+                "type": "recovery"
+            })
+            return res
         except Exception as e:
-            print(f"发送重置邮件失败: {e}")
+            print(f"验证码校验失败: {e}")
             raise e
 
     def update_password(self, new_password: str):
-        """更新当前登录用户的密码"""
+        """更新密码 (需在 verify_reset_otp 成功后的会话中调用)"""
         if not self.supabase: return
-        return self.supabase.auth.update_user({"password": new_password})
-
+        try:
+            return self.supabase.auth.update_user({"password": new_password})
+        except Exception as e:
+            print(f"更新密码失败: {e}")
+            raise e
 
 profile_mgr = ProfileManager() # 创建全局唯一的实例
 # 3. 测试逻辑
 if __name__ == "__main__":
-
-    manager = ProfileManager()
-    test_id = "00000000-0000-0000-0000-000000000001" #str(uuid.uuid4()) # 注意：如果数据库 id 是 UUID 类型，这里需换成有效的 UUID 字符串
-    print(f"--- 正在使用合法 UUID 测试: {test_id} ---")
-    # print("--- 正在测试 Supabase 保存 ---")
-    print(os.environ)
-    # new_student = UserProfile(
-    #     jlpt_level="N1",
-    #     eju_score=710,
-    #     gpa=3.8,
-    #     target_major="计算机科学",
-    #     undergraduate_school="某名牌大学"
-    # )
-    
-    # manager.save_profile(test_id, new_student)
-    
-    print("\n--- 正在测试 Supabase 读取 ---")
-    loaded = manager.get_profile(test_id)
-    print(f"读取到的目标专业: {loaded.target_major}")
-    
-    print("\n--- 提示词格式化预览 ---")
-    print(manager.format_for_prompt(loaded))
+    test_id = "00000000-0000-0000-0000-000000000001"
+    print(f"--- 运行测试: {test_id} ---")
+    loaded = profile_mgr.get_profile(test_id)
+    print(profile_mgr.format_for_prompt(loaded))
