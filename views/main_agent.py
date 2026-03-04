@@ -70,27 +70,21 @@ def render_main_app():
             
             if submitted:
                 # 构造新的 Profile 对象
-                updated_profile = UserProfile(
-                    jlpt_level=jlpt,
-                    eju_score=eju,
-                    gpa=gpa,
-                    target_major=major,
-                    undergraduate_school=school,
-                    english_score=eng_score
-                )
-                
-                # 同步到数据库
                 profile_mgr.save_profile(current_user_id, updated_profile)
-                
-                # 更新 Session 状态，确保 Agent 调用时拿到的是最新的
                 st.session_state.user_profile = updated_profile
                 
-                # 当画像更新时，旧的决策缓存已经没有参考价值了，直接重置
-                st.session_state.decision_cache = {}
+                if "agent" in st.session_state:
+                    del st.session_state["agent"]
                 st.success("✅ 画像已同步至云端！")
-                st.rerun() # 立即触发重绘，让 Agent 逻辑感知到新画像
-        # ... 放入你之前的 st.sidebar 表单代码 ...
-        # ... 包括 submitted 后的 profile_mgr.save_profile 逻辑 ...
+                st.rerun()
+            with st.status("💡 正在规划最佳路径...") as status:
+                decision = st.session_state["agent"].make_decision(
+                    PLANNER_PROMPT,
+                    profile_string,
+                    prompt,
+                )
+                st.write(f"决策引擎输出: {decision}")
+
 
     # --- 3. Agent 对话逻辑 ---
     # ... 放入你之前的 Agent 调用、Decision 判定、Execute Stream 代码 ...

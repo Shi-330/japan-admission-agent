@@ -6,13 +6,14 @@ from utils.prompt_loader import load_system_prompts
 from agent.tools.agent_tools import (rag_summarize, get_current_month, get_user_id,
                                      generate_external_data, fetch_external_data, fill_context_for_report)
 from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
+from .memory import DecisionCache
 
 class ReactAgent:
-    def __init__(self, user_profile: dict = None):
+    def __init__(self, user_profile: dict = None, cache_size: int = 100):
         # 1. 加载原始系统提示词
         base_prompt = load_system_prompts()
         
-        # 2. 如果传入了画像，构造增强提示词
+        # 2. 如果传入了画像，构造增强提示词 
         if user_profile:
             profile_context = f"""
             # 咨询者当前背景（请以此为准进行评估）：
@@ -38,50 +39,38 @@ class ReactAgent:
                    fill_context_for_report],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
-    def _get_cache_key(self, profile_str: str, user_input: str) -> str:
-        """
-        [解耦逻辑] 生成唯一的指纹。
-        即使输入不完全结构化，通过 strip 和 lower 也能提高命中率。
-        """
-        # 简单的归一化处理
-        normalized_input = str(user_input).strip().lower()
-        combined_text = f"{profile_str}_{normalized_input}"
-        return hashlib.md5(combined_text.encode()).hexdigest()
-    
+
+        self.memory = DecisionCache(max_size=cache_size) # 缓存
+
     def make_decision(self, 
                       planner_prompt_template: str = None, 
                       profile_string: str = None, 
-                      user_input: str = None,
-                      external_cache: Optional[Dict[str,str]] = None) -> str:
+                      user_input: str = None,) -> str:
         """
         让LLM在不启动工具流的情况下，先做一个快速的意图判断
         新增external_cache，带缓存的带缓存的快速意图判断。 external_cache: 外部传入的缓存字典（例如 Streamlit 的 session_state）
         """
-        # 1. 如果提供了外部缓存，先尝试读取
-        cache_key = None
-        if external_cache is not None:
-            cache_key = self._get_cache_key(profile_string, user_input)
-            if cache_key in external_cache:
-                print(f"[Cache Hit] 命中决策缓存: {cache_key}") # 先打印调试(原来这个叫埋点调试)
-                return external_cache[cache_key] # 命中缓存，直接返回
-                    
-        # 2. 缓存未命中，执行原始逻辑
-        print(f"☁️ [LLM CALL] 正在请求大模型进行决策...") # 临时打印，用于调试
-        full_prompt = planner_prompt_template.format(
-            profile_string=profile_string, 
-            user_input=user_input
-            )
-        
-        # 直接调用底层的LLM(chat_model)
-        # 注意：取决于你的 chat_model 是 LangChain 的什么对象，
-        # 通常调用 invoke 或 predict。对于最新的 LangChain，建议用 invoke。
-        try:
-            response = self.model.invoke(full_prompt)
-            result = response.content if hasattr(response, "content") else str(response) # 兼容 LangGraph
-            # 3. 写入缓存
-            if external_cache is not None and cache_key: # 缓存命中，写入缓存
-                external_cache[cache_key] = result
+        # 1. 内部处理缓存键生成
+        cache_key = self.memory.generate_key(profile_string, user_input)
 
+        # 2. 内部查询缓存，不再向外面（Streamlit）要数据
+        cached_res = self.memory.get(cache_key)
+        if cached_res:
+            print(f"[Internal Cache Hit] {cache_key}")
+            return cached_res
+
+        full_prompt = planner_prompt_template.format(
+            profile_string=profile_string,
+            user_input=user_input,
+        )
+        
+
+        try:
+            print(f"☁️ [LLM CALL] 正在进行决策... {cache_key}")
+            response = self.model.invoke(full_prompt)
+            result = response.content if hasattr(response, "content") else str(response)
+
+            self.memory.set(cache_key, result)
             return result
         
         except Exception as e:
@@ -103,17 +92,7 @@ class ReactAgent:
         input_dict = {
             "messages": messages  # 现在我们只传 messages，因为保安只认它
         }
-        # 【调试点 2】确认 input_dict 的结构
-        # print(f"\n[DEBUG 2 - Agent] 构建的 input_dict 键值: {list(input_dict.keys())}")
-        # print(f"[DEBUG 2 - Agent] 构建的 input_dict 内容: {input_dict}")
-        # 执行流
-        # for chunk in self.agent.stream(input_dict, stream_mode="values"):
-        #     if "messages" in chunk and chunk["messages"]:
-        #         latest_message = chunk["messages"][-1]
-        #         # 注意：LangGraph 返回的可能是 BaseMessage 对象，使用 .content 获取内容
-        #         if hasattr(latest_message, "content") and latest_message.content:
-        #             yield latest_message.content.strip() + "\n"
-        # 执行流
+
         last_seen_len = 0
         for chunk in self.agent.stream(input_dict, stream_mode="values"):
             if "messages" in chunk:
