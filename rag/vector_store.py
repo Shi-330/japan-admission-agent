@@ -1,7 +1,4 @@
-# from dotenv import load_dotenv
-# load_dotenv()
-
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_core.documents import Document
 
 from utils.config_handler import chroma_conf
@@ -12,14 +9,16 @@ from utils.file_handler import pdf_loader, txt_loader, listdir_with_allowed_type
 from utils.logger_handler import logger
 import os
 
+from utils.supabase_client import supabase
 
 
 class VectorStoreService:
     def __init__(self):
-        self.vector_store = Chroma(
-            collection_name=chroma_conf["collection_name"],
-            embedding_function=embed_model,
-            persist_directory=chroma_conf["persist_directory"],
+        self.vector_store = SupabaseVectorStore(
+            embedding=embed_model,
+            client=supabase,
+            table_name="documents",
+            query_name="match_documents"
         )
 
         self.spliter = RecursiveCharacterTextSplitter(
@@ -29,8 +28,15 @@ class VectorStoreService:
             length_function=len,
         )
 
-    def get_retriever(self):
-        return self.vector_store.as_retriever(search_kwargs={"k": chroma_conf["k"]})
+    def get_retriever(self, k: int = None, filter_kwargs: dict = None):
+        if k is None:
+            # Fallback to config if none provided
+            k = chroma_conf.get("k", 5)
+        search_kwargs = {"k": k}
+        if filter_kwargs:
+            search_kwargs["filter"] = filter_kwargs
+            
+        return self.vector_store.as_retriever(search_kwargs=search_kwargs)
     
     def load_documents(self):
         """
@@ -55,8 +61,6 @@ class VectorStoreService:
         def save_md5_hex(md5_for_check: str):
             with open(get_abs_path(chroma_conf["md5_hex_store"]), "a", encoding="utf-8") as f:
                 f.write(md5_for_check + "\n")
-
-                # 这一块如果数据量太大需要数据校验，用文件效率比较低
 
         def get_file_documents(read_path: str):
             if read_path.endswith("txt"):
@@ -93,6 +97,12 @@ class VectorStoreService:
                     logger.warning(f"[加载知识库]{path}分片后没有有效的文本内容，跳过")
                     continue
                 
+                # Update metadata with md5 hex to avoid duplication logically if needed in future
+                for doc in split_document:
+                    if not doc.metadata:
+                        doc.metadata = {}
+                    doc.metadata["md5_hex"] = md5_hex
+
                 # 将内容存入向量库
                 self.vector_store.add_documents(split_document)
 
@@ -109,7 +119,6 @@ class VectorStoreService:
 
 if __name__ == "__main__":
     # === 1. 先测试 embedding 模型 ===
-    # print("开始测试 embedding 模型...")
     test_query = "联系教授"
     try:
         # 直接调用 embed_query 测试
@@ -120,11 +129,9 @@ if __name__ == "__main__":
         print("embedding 模型测试失败:", e)
         import traceback
         traceback.print_exc()
-        # 如果 embedding 失败，后续检索必然失败，可以选择退出
         exit(1)
 
     # === 2. 继续原有的加载和检索 ===
-    vs = VectorStoreService()
     vs = VectorStoreService()
     
     # --- 强力调试开始 ---
@@ -139,7 +146,7 @@ if __name__ == "__main__":
     
     # 显式调用加载
     vs.load_documents()
-    retriever = vs.get_retriever()
+    retriever = vs.get_retriever(k=2)
     res = retriever.invoke(test_query)
     
     if not res:
