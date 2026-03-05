@@ -3,44 +3,52 @@ from typing import Dict, Any, Optional
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
-from agent.tools.agent_tools import (rag_summarize, get_current_month, get_user_id,
+from agent.tools.agent_tools import (get_current_month,rag_fetch_context,
                                      generate_external_data, fetch_external_data, fill_context_for_report)
 from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
 from .memory import DecisionCache
 
 class ReactAgent:
     def __init__(self, user_profile: dict = None, cache_size: int = 100):
-        # 1. 加载原始系统提示词
+        # 1. 确保工具被正确导入 (注意：这里要包含我们刚写的 rag_fetch_context)
+        from agent.tools.agent_tools import (
+            rag_fetch_context, # 换成瘦身后的工具
+            get_current_month, 
+            generate_external_data, 
+            fetch_external_data, 
+            fill_context_for_report
+        )
+        
         base_prompt = load_system_prompts()
         
-        # 2. 如果传入了画像，构造增强提示词 
         if user_profile:
             profile_context = f"""
-            # 咨询者当前背景（请以此为准进行评估）：
-            - 日语等级：{user_profile.get('jlpt', '未知')}
-            - EJU分数：{user_profile.get('eju', '未知')}
-            - 本科GPA：{user_profile.get('gpa', '未知')}
-            - 目标专业：{user_profile.get('major', '未知')}
+            # 咨询者当前背景：
+            - 日语：{user_profile.get('jlpt', '未知')} | EJU：{user_profile.get('eju', '未知')}
+            - GPA：{user_profile.get('gpa', '未知')} | 目标：{user_profile.get('major', '未知')}
             ---
             """
-            # 将画像拼接到 Prompt 头部，确保 Agent 第一时间看到
             system_prompt = profile_context + "\n" + base_prompt
         else:
             system_prompt = base_prompt
 
-        self.model = chat_model # 将模型实例挂载到 self 上，方便外部或内部调用
+        self.model = chat_model 
 
-
+        # 3. 初始化 Agent
         self.agent = create_agent(
-            model=self.model, #  chat_model -> 这里也改用 self.model
-            system_prompt=system_prompt, # 使用增强后的 Prompt
-            tools=[rag_summarize, # get_user_id 这个之后再弄。 
-                   get_current_month, generate_external_data, fetch_external_data, get_user_id,
-                   fill_context_for_report],
+            model=self.model,
+            system_prompt=system_prompt,
+            tools=[
+                rag_fetch_context, # 核心瘦身工具
+                get_current_month, 
+                generate_external_data, 
+                fetch_external_data,
+                fill_context_for_report
+            ],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )
 
-        self.memory = DecisionCache(max_size=cache_size) # 缓存
+        self.memory = DecisionCache(max_size=cache_size)
 
     def make_decision(self, 
                       planner_prompt_template: str = None, 
@@ -79,34 +87,28 @@ class ReactAgent:
 
      
     def execute_stream(self, query: str, user_profile_str: str = None):
-        # 构造消息序列
-        messages = []
-        
-        # 1. 把画像作为第一条系统消息强行插入，这样它就永远在 messages 状态里了
-        if user_profile_str:
-            profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景进行回答和调用工具。"
-            messages.append({"role": "system", "content": profile_instruction})
-        
-        messages.append({"role": "user", "content": query})
+            messages = []
+            if user_profile_str:
+                profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
+                messages.append({"role": "system", "content": profile_instruction})
+            
+            messages.append({"role": "user", "content": query})
 
-        input_dict = {
-            "messages": messages  # 现在我们只传 messages，因为保安只认它
-        }
-
-        last_seen_len = 0
-        for chunk in self.agent.stream(input_dict, stream_mode="values"):
-            if "messages" in chunk:
-                all_messages = chunk["messages"]
-                # 只取新产生的消息
-                if len(all_messages) > last_seen_len:
-                    new_messages = all_messages[last_seen_len:]
-                    for msg in new_messages:
-                        # 过滤掉空的或者 AI 正在思考的消息，只返回文本内容
-                        content = getattr(msg, "content", str(msg))
-                        if content:
-                            yield content.strip() + "\n"
-                    last_seen_len = len(all_messages)        
-
+            # 为了真正的流式，我们使用 stream 并在 chunk 中寻找 content
+            # 注意：LangGraph 的 stream 比较特殊，这里沿用你的逻辑但增加安全性
+            last_len = 0
+            for chunk in self.agent.stream({"messages": messages}, stream_mode="values"):
+                if "messages" in chunk:
+                    new_msgs = chunk["messages"]
+                    if len(new_msgs) > last_len:
+                        # 只处理最后一条消息的更新
+                        latest_msg = new_msgs[-1]
+                        # 如果是 AI 发出的内容，且是文本
+                        if hasattr(latest_msg, "content") and latest_msg.type == "ai":
+                            content = latest_msg.content
+                            if content:
+                                yield content # 返回完整内容，Streamlit 端的写流器会自动处理差异
+                        last_len = len(new_msgs)
 if __name__ == "__main__":
     from user.profile_manager import ProfileManager, UserProfile
 

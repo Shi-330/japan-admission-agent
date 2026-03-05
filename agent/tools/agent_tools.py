@@ -11,11 +11,13 @@ from utils.config_handler import agent_conf
 from utils.path_tool import get_abs_path
 from utils.logger_handler import logger
 import dotenv
+import hashlib
 
-# --- 1. 延迟初始化单例模式 ---
-_supabase_client = None
-# --- 1. 延迟初始化单例模式 ---
-_supabase_client = None
+_supabase_client = None     # 延迟初始化单例模式
+
+# 定义一个简单的内存缓存（如果 query 没变，直接秒回）
+# 对于 SaaS，之后可以把这部分换成 Redis
+RAW_CONTEXT_CACHE = {}
 
 def get_supabase() -> Client:
     """确保在工具被调用时才初始化 Supabase，并确保环境变量已加载"""
@@ -42,7 +44,7 @@ _external_data = {}          # 缓存数据
 _data_loaded = False         # 标记是否已加载数据
 
 arg = RagSummarizeService()
-user_ids = "00000000-0000-0000-0000-000000000001" #更换为默认的这个uuid["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
+#user_ids = "00000000-0000-0000-0000-000000000001" #更换为默认的这个uuid["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
 month_arr = ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06","2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"]
 external_data = {}
 
@@ -58,53 +60,78 @@ def fetch_user_profile_from_db(user_id: str):
         logger.error(f"从数据库获取画像失败: {e}")
         return ""
 
-@tool(description="从向量存储中检索参考资料，并结合用户画像给出个性化建议")
-def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
-# 1. 从 state 中获取所有消息
-    messages = state.get("messages", [])
+# @tool(description="从向量存储中检索参考资料，并结合用户画像给出个性化建议")
+# def rag_summarize(query: str, state: Annotated[dict, InjectedState]) -> str:
+# # 1. 从 state 中获取所有消息
+#     messages = state.get("messages", [])
     
-    # 2. 尝试从第一条系统消息中提取画像信息
-    # 逻辑：我们在 execute_stream 里把画像放在了第一条 system message
-    extracted_profile = "暂无学生背景信息"
+#     # 2. 尝试从第一条系统消息中提取画像信息
+#     # 逻辑：我们在 execute_stream 里把画像放在了第一条 system message
+#     extracted_profile = "暂无学生背景信息"
     
-    if messages:
-        # 兼容 LangChain 的 Message 对象格式
-        first_msg = messages[0]
-        # 有时 messages 是字典对象，有时是 BaseMessage 对象
-        content = ""
-        if isinstance(first_msg, dict):
-            if first_msg.get("role") == "system":
-                content = first_msg.get("content", "")
-        else:
-            # 这里的 getattr 是为了处理 LangGraph 传入的可能是 SystemMessage 对象
-            if getattr(first_msg, "type", "") == "system" or hasattr(first_msg, "content"):
-                content = getattr(first_msg, "content", "")
+#     if messages:
+#         # 兼容 LangChain 的 Message 对象格式
+#         first_msg = messages[0]
+#         # 有时 messages 是字典对象，有时是 BaseMessage 对象
+#         content = ""
+#         if isinstance(first_msg, dict):
+#             if first_msg.get("role") == "system":
+#                 content = first_msg.get("content", "")
+#         else:
+#             # 这里的 getattr 是为了处理 LangGraph 传入的可能是 SystemMessage 对象
+#             if getattr(first_msg, "type", "") == "system" or hasattr(first_msg, "content"):
+#                 content = getattr(first_msg, "content", "")
 
+#         if "【当前咨询者背景画像】" in content:
+#             extracted_profile = content
+            
+#     # print(f"\n[DEBUG 3 - Tool] 当前 State 中的所有键: {list(state.keys())}")
+#     # print(f"DEBUG: Tool 最终拿到的画像: {extracted_profile[:50]}...") 
+    
+#     # 3. 将提取到的画像传入真正的 RAG 服务
+#     return arg.rag_summarize(query, extracted_profile)
+
+@tool(description="检索日本留学相关的院校、专业及政策原始资料")
+def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
+    # 1. 提取画像信息 (逻辑保持不变)
+    messages = state.get("messages", [])
+    extracted_profile = "暂无学生背景信息"
+    if messages:
+        first_msg = messages[0]
+        content = getattr(first_msg, "content", "") if hasattr(first_msg, "content") else str(first_msg)
         if "【当前咨询者背景画像】" in content:
             extracted_profile = content
-            
-    # print(f"\n[DEBUG 3 - Tool] 当前 State 中的所有键: {list(state.keys())}")
-    # print(f"DEBUG: Tool 最终拿到的画像: {extracted_profile[:50]}...") 
+
+    # 2. 【关键减负】构建缓存 Key (Query + Profile)
+    cache_key = hashlib.md5(f"{query}_{extracted_profile}".encode()).hexdigest()
     
-    # 3. 将提取到的画像传入真正的 RAG 服务
-    return arg.rag_summarize(query, extracted_profile)
+    # 如果命中缓存，直接秒回素材
+    if cache_key in RAW_CONTEXT_CACHE:
+        print(f"⚡ [Cache Hit] 命中素材缓存: {query}")
+        return f"参考资料(来自缓存)如下：\n{RAW_CONTEXT_CACHE[cache_key]}"
 
-@tool(description="获取指定城市的天气，以消息字符串的形式返回")
-# def get_weather(city: str) -> str:
-#     return f"{city}的天气是晴天，气温20度，空气湿度50%，南风1级，AQI21，最近6小时降雨概率极低"
+    # 3. 执行真正的“轻量化”检索
+    try: 
+        print(f"🔍 [Fetching Context] 正在检索原始素材: {query}")
+        # 注意：这里调用的是纯检索函数，不再是耗时 100s 的 summarize
+        raw_context = arg.get_raw_vector_context(query) 
+        
+        # 存入缓存
+        RAW_CONTEXT_CACHE[cache_key] = raw_context
+        
+        print(f"⚡ [Context Fetched] 已获取素材，准备交给 Agent 实时流式总结")
+        return f"参考资料如下：\n{raw_context}"
+        
+    except Exception as e:
+        # 如果底层没有 get_raw_vector_context，这里会报错，提醒你去底层服务里拆分函数
+        return f"检索失败，请检查底层 arg 服务是否支持纯检索: {e}"
 
-
-@tool(description="获取用户所在城市的名称，以纯字符串形式返回")
-# def get_user_location() -> str:
-#     return random.choice(["北京", "上海", "广州", "深圳", "杭州"])
-
-
-@tool(description="获取用户的ID，以纯字符串形式返回")
-def get_user_id() -> str:
-    """获取当前登录用户的唯一标识符 (UUID)"""
-    # 暂时返回固定测试 ID，方便开发调试
-    # TODO: 后续接入真实登录系统后，从 session 或上下文获取
-    return "00000000-0000-0000-0000-000000000001"
+# @tool(description="获取用户的ID，以纯字符串形式返回")
+# def get_user_id() -> str:
+#     """获取当前登录用户的唯一标识符 (UUID)"""
+#     # 暂时返回固定测试 ID，方便开发调试
+#     # TODO: 后续接入真实登录系统后，从 session 或上下文获取
+#     return "00000000-0000-0000-0000-000000000001"
 
 @tool(description="获取当前月份，以纯字符串形式返回")
 def get_current_month() -> str:
