@@ -4,7 +4,8 @@ from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
 from agent.tools.agent_tools import (get_current_month,rag_fetch_context,
-                                     generate_external_data, fetch_external_data, fill_context_for_report)
+                                     generate_external_data, fetch_external_data, fill_context_for_report,
+                                     update_report_suggestions, web_search_tool)
 from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
 from .memory import DecisionCache
 
@@ -16,7 +17,9 @@ class ReactAgent:
             get_current_month, 
             generate_external_data, 
             fetch_external_data, 
-            fill_context_for_report
+            fill_context_for_report,
+            update_report_suggestions,
+            web_search_tool
         )
         
         base_prompt = load_system_prompts()
@@ -40,10 +43,12 @@ class ReactAgent:
             system_prompt=system_prompt,
             tools=[
                 rag_fetch_context, # 核心瘦身工具
+                web_search_tool,   # 新增的泛搜工具
                 get_current_month, 
                 generate_external_data, 
                 fetch_external_data,
-                fill_context_for_report
+                fill_context_for_report,
+                update_report_suggestions
             ],
             middleware=[monitor_tool, log_before_model, report_prompt_switch],
         )

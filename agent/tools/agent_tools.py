@@ -80,8 +80,9 @@ def fetch_user_profile_from_db(user_id: str) -> str:
 @tool("rag_fetch_context", args_schema=RagFetchContextInput)
 def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
     """
-    检索日本留学相关的院校、专业及政策原始资料时调用（如：东大笔试范围、早大报名时间）。
-    注意：如果连续找不到信息（返回了空或失败），请不要继续用相同的 query 盲目重试，尝试换个更精准的关键词，或者直接放弃并如实告知用户。
+    【核心知识专用】当且仅当检索日本留学相关的硬核院校规章、专业录取政策、往年录取分数线、内部私域资料时调用此工具（如：东大笔试范围、早大出愿时间）。
+    严重警告：绝不可以使用此工具搜寻广义的新闻、某教授的最新动态、或者互联网杂谈！
+    如果连续找不到信息（返回了空或失败），请放弃并如实告知用户，严禁随意重试或自己编造。
     """
     messages = state.get("messages", [])
     extracted_profile = "暂无学生背景信息"
@@ -98,16 +99,51 @@ def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
         return f"参考资料(来自缓存)如下：\n{RAW_CONTEXT_CACHE[cache_key]}"
 
     try: 
-        print(f"🔍 [Fetching Context] 正在检索原始素材: {query}")
+        print(f"🔍 [Private RAG Fetching] 正在检索私有原始素材: {query}")
         raw_context = arg.get_raw_vector_context(query) 
         
         RAW_CONTEXT_CACHE[cache_key] = raw_context
-        print(f"⚡ [Context Fetched] 已获取素材，准备交给 Agent 实时流式总结")
-        return f"参考资料如下：\n{raw_context}"
+        print(f"⚡ [Context Fetched] 已获取私有素材，准备交给 Agent")
+        return f"私域系统参考资料如下：\n{raw_context}"
         
     except Exception as e:
         logger.error(f"检索失败: {e}")
-        return f"检索工具失败！错误详情：{str(e)}。请检查你的参数 query，或者放弃使用该工具，直接回复用户。"
+        return f"私域检索工具失败！详情：{str(e)}。请检查问题是否适合在私域找，如果是泛搜，请改用 web_search_tool。"
+
+WEB_SEARCH_CACHE = {}
+
+class WebSearchInput(BaseModel):
+    query: str = Field(description="需要在互联网上检索的具体问题，如'东京大学 某某教授 2024最新论文' 或 '日本学生签证最新政策'")
+
+@tool("web_search_tool", args_schema=WebSearchInput)
+def web_search_tool(query: str) -> str:
+    """
+    【全网泛搜专用】当你需要获取某个具体教授的最新动态、最近的新闻政策、或者任何不在硬核手册里的话题时，请调用此工具。
+    比如写套磁信前，你可以用此工具去网上爬取目标教授的研究方向和最新动态。
+    """
+    cache_key = hashlib.md5(query.encode()).hexdigest()
+    if cache_key in WEB_SEARCH_CACHE:
+        print(f"⚡ [Cache Hit] 命中外网检索缓存: {query}")
+        return f"互联网检索结果(来自缓存)如下：\n{WEB_SEARCH_CACHE[cache_key]}"
+        
+    try:
+        from langchain_community.tools import DuckDuckGoSearchResults
+        from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+        print(f"🌐 [Web Search] 正在联网检索外网: {query}")
+        
+        # 使用 DDGS 获取带片段的结果
+        wrapper = DuckDuckGoSearchAPIWrapper(region="jp-jp", time="y", max_results=4)
+        search_tool = DuckDuckGoSearchResults(api_wrapper=wrapper)
+        
+        results = search_tool.invoke(query)
+        if not results:
+            return "互联网搜索未找到相关结果，请尝试更换关键词。"
+            
+        WEB_SEARCH_CACHE[cache_key] = results
+        return f"互联网检索结果如下：\n{results}"
+    except Exception as e:
+        logger.error(f"外网检索失败: {e}")
+        return f"外网检索失败: {str(e)}。无法连接外网，请告知用户我们目前只能依靠私有知识库。"
 
 @tool("get_current_month")
 def get_current_month() -> str:
@@ -150,6 +186,28 @@ def generate_external_data() -> str:
     """无入参。获取当前系统中记录的所有用户的全家桶使用行为数据（返回 JSON 格式的字符串）。"""
     _load_external_data()
     return json.dumps(_external_data, ensure_ascii=False)
+
+class UpdateReportSuggestionsInput(BaseModel):
+    user_id: str = Field(description="用户的唯一标识符 UUID")
+    new_suggestions: str = Field(description="更新后的核心建议内容。注意：这会覆盖原有的建议内容，请传入完整的一套建议。")
+
+@tool("update_report_suggestions", args_schema=UpdateReportSuggestionsInput)
+def update_report_suggestions(user_id: str, new_suggestions: str) -> str:
+    """
+    当用户对已有的升学规划建议提出修改意见，或你觉得有必要调整原有的规划建议时调用此工具。
+    这将直接修改用户仪表盘上展现的规划建议。
+    """
+    client = get_supabase()
+    try:
+        # Pydantic 工具调用保护
+        response = client.table("user_profiles").update({
+            "suggestions": new_suggestions,
+            "report_status": "REFINED" # 标记为已被精调
+        }).eq("id", user_id).execute()
+        return "报告建议库已成功更新。你可以回复用户，告诉他们看板上的建议已经刷新。"
+    except Exception as e:
+        logger.error(f"更新报告建议失败: {e}")
+        return f"工具调用失败，无法更新建议: {str(e)}。请告知用户数据库发生异常。"
 
 @tool("fetch_external_data", args_schema=FetchExternalDataInput)
 def fetch_external_data(user_id: str, month: str) -> str:

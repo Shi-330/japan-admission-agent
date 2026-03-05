@@ -22,29 +22,21 @@ def get_active_prompt(prompt_name: str) -> str:
         logger.error(f"拉取云端 Prompt 失败: {str(e)}")
         return None
 
-def _load_local_prompt(config_key: str):
-    try:
-        prompt_path = get_abs_path(prompts_conf[config_key])
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        logger.error(f"加载本地提示词 ({config_key}) 出错: {str(e)}")
-        raise e
-
 def load_system_prompts():
     prompt = get_active_prompt("system_prompt")
     if prompt: return prompt
-    return _load_local_prompt("main_prompt_path")
+    logger.error("重大错误：云端 System Prompt 加载失败且无本地备份！使用紧急兜底提示词。")
+    return "你是一个专业的日本留学助手。目前云端指令加载异常，请在回答中提醒用户联系管理员。"
 
 def load_rag_prompts():
     prompt = get_active_prompt("rag_prompt")
     if prompt: return prompt
-    return _load_local_prompt("rag_summarize_prompt_path")
+    return "请根据以下资料回答用户的问题。如果资料中未提及，请如实告知。"
 
 def load_report_prompts():
     prompt = get_active_prompt("report_prompt")
     if prompt: return prompt
-    return _load_local_prompt("report_prompt_path")
+    return "你现在的任务是为学生生成一份升学规划建议看板。"
 
 if __name__ == "__main__":
     print(load_system_prompts())
