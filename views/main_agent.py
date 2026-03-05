@@ -31,6 +31,13 @@ def render_main_app():
         st.caption(f"当前登录：{st.session_state.auth_user.email}")
     with col2:
         if st.button("退出登录", key="logout"):
+            try:
+                import extra_streamlit_components as stx
+                cookie_manager = stx.CookieManager()
+                cookie_manager.delete("sb_access_token")
+                cookie_manager.delete("sb_refresh_token")
+            except Exception:
+                pass
             profile_mgr.supabase.auth.sign_out()
             st.session_state.clear()
             st.rerun()

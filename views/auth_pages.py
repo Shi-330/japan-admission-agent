@@ -15,6 +15,16 @@ def render_auth_page():
             try:
                 res = profile_mgr.supabase.auth.sign_in_with_password({"email": email, "password": password})
                 st.session_state.auth_user = res.user
+                
+                # 写入 Cookie 以防刷新掉登录态
+                try:
+                    import extra_streamlit_components as stx
+                    cookie_manager = stx.CookieManager()
+                    cookie_manager.set("sb_access_token", res.session.access_token)
+                    cookie_manager.set("sb_refresh_token", res.session.refresh_token)
+                except Exception:
+                    pass
+                    
                 st.success("登录成功！")
                 st.rerun()
             except AuthApiError as e:

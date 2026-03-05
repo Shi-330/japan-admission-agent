@@ -56,7 +56,7 @@ class FetchUserProfileInput(BaseModel):
     user_id: str = Field(description="用户的唯一标识符 UUID (例如 '00000000-0000-0000-0000-000000000001')")
 
 class RagFetchContextInput(BaseModel):
-    query: str = Field(description="必须是具体的术语或搜索词，例如：'出愿资格'、'TOEFL要求'、'研究计划书字数'。不能是一整句话。")
+    query: str = Field(description="具体的术语或搜索词，例如：'出愿资格'、'TOEFL要求'。如果搜寻某位教授（例如青木副教授），请务必只搜名字和核心研究（例如'青木 地震'），【绝对不要】加上'教授'、'副教授'等职称，否则无法命中。")
 
 class FetchExternalDataInput(BaseModel):
     user_id: str = Field(description="用户的唯一标识符 UUID")
@@ -113,7 +113,7 @@ def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
 WEB_SEARCH_CACHE = {}
 
 class WebSearchInput(BaseModel):
-    query: str = Field(description="需要在互联网上检索的具体问题，如'东京大学 某某教授 2024最新论文' 或 '日本学生签证最新政策'")
+    query: str = Field(description="互联网检索词。必须精简！如搜人请用'东京大学 青木 地震研究'，【绝对不要】带'教授'、'副教授'等头衔干扰搜索。")
 
 @tool("web_search_tool", args_schema=WebSearchInput)
 def web_search_tool(query: str) -> str:
@@ -194,8 +194,8 @@ class UpdateReportSuggestionsInput(BaseModel):
 @tool("update_report_suggestions", args_schema=UpdateReportSuggestionsInput)
 def update_report_suggestions(user_id: str, new_suggestions: str) -> str:
     """
-    当用户对已有的升学规划建议提出修改意见，或你觉得有必要调整原有的规划建议时调用此工具。
-    这将直接修改用户仪表盘上展现的规划建议。
+    【强制要求】报告规划生成完毕后，或者你认为需要调整用户的升学规划时，必须【立刻且必然】调用此工具。
+    这将把你的核心建议保存到云端数据库中，非常重要！否则用户的看板将永远为空。
     """
     client = get_supabase()
     try:
@@ -232,5 +232,6 @@ def fill_context_for_report():
     """
     此工具主要作为一个 'Signal' (信号)。
     Agent 调用它意味着它现在想要进入 '报告生成模式'。
+    【重要提醒】：生成完报告后，请记得一定要调用 `update_report_suggestions` 来把建议提炼并固化到数据库！
     """
     return "fill_context_for_report已调用，中间件已感知并切换提示词逻辑"

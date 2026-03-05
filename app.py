@@ -10,6 +10,26 @@ if "auth_user" not in st.session_state:
 if "is_resetting" not in st.session_state:
     st.session_state.is_resetting = False
 
+# 尝试从 Cookie 恢复会话 (解决刷新掉登录的问题)
+try:
+    import extra_streamlit_components as stx
+    cookie_manager = stx.CookieManager()
+    
+    # extra_streamlit_components 的 get 需要在 render 后才能获取到，
+    # 所以通常我们会依赖它在页面顶部调用来初始化
+    access_token = cookie_manager.get(cookie="sb_access_token")
+    refresh_token = cookie_manager.get(cookie="sb_refresh_token")
+    
+    if not st.session_state.auth_user and access_token and refresh_token:
+        try:
+            res = profile_mgr.supabase.auth.set_session(access_token, refresh_token)
+            st.session_state.auth_user = res.user
+        except Exception:
+            # Token 可能过期
+            pass
+except ImportError:
+    pass
+
 # --- 2. 路由分流 (现在逻辑非常纯粹) ---
 
 if st.session_state.is_resetting:
