@@ -105,33 +105,39 @@ class VectorStoreService:
                 logger.error(f"[加载知识库]文件{path}加载失败:{str(e)}", exc_info=True)
                 continue
 
-# if __name__ == "__main__":
-#     vs = VectorStoreService()
-#     vs.load_documents()
-#     retriever = vs.get_retriever()
-#     res = retriever.invoke("研究计划书")
-#     for r in res:
-#         print(r.page_content)
-#         print("-"*20)
+
 
 if __name__ == "__main__":
     # === 1. 先测试 embedding 模型 ===
     # print("开始测试 embedding 模型...")
-    test_query = "研究计划书"
-    # try:
-    #     # 直接调用 embed_query 测试
-    #     embedding = embed_model.embed_query(test_query)
-    #     print(f"embed_query 成功！向量维度: {len(embedding)}")
-    #     print(f"前5个值: {embedding[:5]}")
-    # except Exception as e:
-    #     print("embedding 模型测试失败:", e)
-    #     import traceback
-    #     traceback.print_exc()
-    #     # 如果 embedding 失败，后续检索必然失败，可以选择退出
-    #     exit(1)
+    test_query = "联系教授"
+    try:
+        # 直接调用 embed_query 测试
+        embedding = embed_model.embed_query(test_query)
+        print(f"embed_query 成功！向量维度: {len(embedding)}")
+        print(f"前5个值: {embedding[:5]}")
+    except Exception as e:
+        print("embedding 模型测试失败:", e)
+        import traceback
+        traceback.print_exc()
+        # 如果 embedding 失败，后续检索必然失败，可以选择退出
+        exit(1)
 
     # === 2. 继续原有的加载和检索 ===
     vs = VectorStoreService()
+    vs = VectorStoreService()
+    
+    # --- 强力调试开始 ---
+    abs_data_path = get_abs_path(chroma_conf["data_path"])
+    print(f"🔍 正在检查数据目录: {abs_data_path}")
+    
+    if not os.path.exists(abs_data_path):
+        print("❌ 错误：数据目录不存在！")
+    else:
+        files = os.listdir(abs_data_path)
+        print(f"📁 目录下所有文件: {files}")
+    
+    # 显式调用加载
     vs.load_documents()
     retriever = vs.get_retriever()
     res = retriever.invoke(test_query)
