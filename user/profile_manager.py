@@ -16,22 +16,23 @@ class UserProfile(BaseModel):
     gpa: float = Field(default=0.0, ge=0.0, le=4.0, description="平均绩点")
     target_major: str = Field(default="未设定", description="目标专业")
     undergraduate_school: str = Field(default="未设定", description="本科院校背景")
-    english_score: str = Field(default="未参加", description="托福/托业成绩") # 刚才规划书里提到的
+    english_score: str = Field(default="未参加", description="托福/托业成绩")
+    # --- 新增：报告持久化字段 ---
+    report_status: Optional[str] = Field(default="NONE", description="报告状态 (NONE, DRAFT, REFINED)")
+    suggestions: Optional[str] = Field(default=None, description="报告的核心建议")
+    report_content: Dict[str, Any] = Field(default_factory=dict, description="报告完整结构化内容")
+    report_last_updated: Optional[str] = Field(default=None, description="报告更新时间")
 
     def to_dict(self):
-        return self.model_dump() # Pydantic v2 使用 model_dump
+        return self.model_dump()
 
 # 2. 线上版管理器 (Supabase)
 class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无缝切换
     def __init__(self):
-        # 1. 使用你现有的 path_tool 定位到根目录的 .env
         env_path = get_abs_path(".env")
-        
-        # 2. 显式加载该路径下的环境变量
         if os.path.exists(env_path):
             dotenv.load_dotenv(dotenv_path=env_path)
         else:
-            # 这是一个友好的防御性编程：如果文件丢了，在日志里报出来
             print(f"警告: 未在路径 {env_path} 找到 .env 文件")
 
         self.url = os.getenv("SUPABASE_URL")
@@ -51,8 +52,10 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
         try:
             response = self.supabase.table("user_profiles").select("*").eq("id", user_id).execute()
             if response.data and len(response.data) > 0:
-                # 将数据库字典转回 Pydantic 模型
-                return UserProfile(**response.data[0])
+                data = response.data[0]
+                # Filter out raw report content logic for memory efficiency, only parse known fields
+                filtered_data = {k: v for k, v in data.items() if k in UserProfile.model_fields}
+                return UserProfile(**filtered_data)
         except Exception as e:
             print(f"读取数据库失败: {e}")
             
@@ -65,7 +68,7 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
             return
             
         data = profile.to_dict()
-        data["id"] = user_id # 确保 ID 字段正确
+        data["id"] = user_id 
         
         try:
             self.supabase.table("user_profiles").upsert(data).execute()
@@ -75,15 +78,24 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
 
     def format_for_prompt(self, profile: UserProfile) -> str:
         """将画像格式化为 Agent 容易理解的字符串"""
-        return (
+        prompt_str = (
             f"【学生背景画像】\n"
             f"- 日语能力: {profile.jlpt_level}\n"
             f"- EJU预估分: {profile.eju_score}\n"
             f"- 本科GPA: {profile.gpa}\n"
             f"- 目标专业: {profile.target_major}\n"
             f"- 院校背景: {profile.undergraduate_school}\n"
-            f"- 英语成绩: {profile.english_score}"
+            f"- 英语成绩: {profile.english_score}\n"
         )
+        if profile.report_status != "NONE" and profile.suggestions:
+            prompt_str += (
+                f"\n【重要提醒：该用户已有专属升学规划报告】\n"
+                f"报告状态: {profile.report_status}\n"
+                f"已有核心建议如下:\n{profile.suggestions}\n"
+                f"注意：在本次对话中，你的身份是‘基于此报告跟进进度的伴随式导师’，请直接围绕上述建议展开交互，"
+                f"无需再次生成全篇报告。如果用户要求调整建议，请予以指导。"
+            )
+        return prompt_str
 
     def send_reset_password_email(self, email: str):
         """发送重置密码验证码 (OTP)"""

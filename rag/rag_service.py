@@ -27,22 +27,25 @@ class RagSummarizeService(object):
     def retriever_docs(self, query: str) -> list[Document]:
         return self.retriever.invoke(query)
 
-    def rag_summarize(self, query: str, profile: str) -> str:
+    def get_raw_vector_context(self, query: str) -> str:
+        """【新增】快通道：只获取格式化后的原始素材，不调用 LLM"""
         context_docs = self.retriever_docs(query)
-
+        
         context = ""
-        counter = 0
-        for doc in context_docs:
-            counter += 1
-            context += f"【参考资料{counter}】：参考资料:{doc.page_content} | 参考源:{doc.metadata}\n"
-
-        return self.chain.invoke(
-            {
-                "input": query, 
-                "context": context,
-                "profile": profile # 用户信息
-            }
-        )
+        for i, doc in enumerate(context_docs, 1):
+            # 格式化素材，保留来源，方便 Agent 引用
+            context += f"【参考资料{i}】：{doc.page_content} | 来源:{doc.metadata.get('source', '未知')}\n"
+        
+        return context if context else "未找到相关参考资料。"
+    
+    def rag_summarize(self, query: str, profile: str) -> str:
+        # 直接复用逻辑，减少重复代码
+        context = self.get_raw_vector_context(query)
+        return self.chain.invoke({
+            "input": query, 
+            "context": context,
+            "profile": profile 
+        })
     
 if __name__ == "__main__":
     rag_service = RagSummarizeService()

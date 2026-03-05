@@ -1,47 +1,42 @@
+from cachetools import func
+from utils.supabase_client import supabase
+from utils.logger_handler import logger
 from utils.config_handler import prompts_conf
 from utils.path_tool import get_abs_path
-from utils.logger_handler import logger
+
+@func.ttl_cache(maxsize=128, ttl=3600)
+def get_active_prompt(prompt_name: str) -> str:
+    """从 Supabase 云端拉取当前激活的 Prompt"""
+    try:
+        response = supabase.table("prompts") \
+                           .select("template_text") \
+                           .eq("name", prompt_name) \
+                           .eq("is_active", True) \
+                           .execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]["template_text"]
+        else:
+            logger.warning(f"未在云端找到启用的 {prompt_name} 模板！尝试本地 fallback。")
+            return None
+    except Exception as e:
+        logger.error(f"拉取云端 Prompt 失败: {str(e)}")
+        return None
 
 def load_system_prompts():
-    try:
-        system_prompt_path = get_abs_path(prompts_conf["main_prompt_path"])
-    except KeyError as e:
-        logger.error(f"[load_system_prompts]在yaml配置项中没有main_prompt_path配置项")
-        raise e
-
-    try:
-        return open(system_prompt_path, "r", encoding="utf-8").read()
-    except Exception as e:
-        logger.error(f"[load_system_prompts]解析系统提示词出错:{str(e)}")
-        raise e
-    
+    prompt = get_active_prompt("system_prompt")
+    if prompt: return prompt
+    logger.error("重大错误：云端 System Prompt 加载失败且无本地备份！使用紧急兜底提示词。")
+    return "你是一个专业的日本留学助手。目前云端指令加载异常，请在回答中提醒用户联系管理员。"
 
 def load_rag_prompts():
-    try:
-        rag_prompt_path = get_abs_path(prompts_conf["rag_summarize_prompt_path"])
-    except KeyError as e:
-        logger.error(f"[load_rag_prompts]在yaml配置项中没有rag_summarize_prompt_path配置项")
-        raise e
-
-    try:
-        return open(rag_prompt_path, "r", encoding="utf-8").read()
-    except Exception as e:
-        logger.error(f"[load_rag_prompts]解析RAG提示词出错:{str(e)}")
-        raise e
-    
+    prompt = get_active_prompt("rag_prompt")
+    if prompt: return prompt
+    return "请根据以下资料回答用户的问题。如果资料中未提及，请如实告知。"
 
 def load_report_prompts():
-    try:
-        report_prompt_path = get_abs_path(prompts_conf["report_prompt_path"])
-    except KeyError as e:
-        logger.error(f"[load_report_prompts]在yaml配置项中没有report_prompt_path配置项")
-        raise e
+    prompt = get_active_prompt("report_prompt")
+    if prompt: return prompt
+    return "你现在的任务是为学生生成一份升学规划建议看板。"
 
-    try:
-        return open(report_prompt_path, "r", encoding="utf-8").read()
-    except Exception as e:
-        logger.error(f"[report_prompt_path]解析报告生成提示词出错:{str(e)}")
-        raise e
-    
 if __name__ == "__main__":
     print(load_system_prompts())
