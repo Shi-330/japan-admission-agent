@@ -92,28 +92,42 @@ class ReactAgent:
 
      
     def execute_stream(self, query: str, user_profile_str: str = None):
-            messages = []
-            if user_profile_str:
-                profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
-                messages.append({"role": "system", "content": profile_instruction})
-            
-            messages.append({"role": "user", "content": query})
+        messages = []
+        if user_profile_str:
+            profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
+            messages.append({"role": "system", "content": profile_instruction})
+        
+        messages.append({"role": "user", "content": query})
 
-            # 为了真正的流式，我们使用 stream 并在 chunk 中寻找 content
-            # 注意：LangGraph 的 stream 比较特殊，这里沿用你的逻辑但增加安全性
-            last_len = 0
-            for chunk in self.agent.stream({"messages": messages}, stream_mode="values"):
-                if "messages" in chunk:
-                    new_msgs = chunk["messages"]
-                    if len(new_msgs) > last_len:
-                        # 只处理最后一条消息的更新
-                        latest_msg = new_msgs[-1]
-                        # 如果是 AI 发出的内容，且是文本
-                        if hasattr(latest_msg, "content") and latest_msg.type == "ai":
-                            content = latest_msg.content
-                            if content:
-                                yield content # 返回完整内容，Streamlit 端的写流器会自动处理差异
-                        last_len = len(new_msgs)
+        yield "[STATUS:UNDERSTANDING]"
+        
+        # 使用 stream_mode="updates" 以捕捉工具调用和中间状态
+        # 这种模式下 chunk 是一个 dict，例如 {"agent": {"messages": [...]}} 或 {"tools": {"messages": [...]}}
+        try:
+            for chunk in self.agent.stream({"messages": messages}, stream_mode="updates"):
+                # A. 检查工具调用 (Retrieving)
+                if "tools" in chunk:
+                    yield "[STATUS:RETRIEVING]"
+                    # 如果工具执行中发生错误，可以在这里扩展捕获，但通常工具内部已有 try-except
+                
+                # B. 检查 Agent 决策 (Thinking)
+                if "agent" in chunk:
+                    # 如果即将产生 AI 消息
+                    latest_msg = chunk["agent"]["messages"][-1]
+                    if hasattr(latest_msg, "tool_calls") and latest_msg.tool_calls:
+                        # 正在决定使用工具
+                        yield "[STATUS:THINKING]"
+                    elif hasattr(latest_msg, "content") and latest_msg.type == "ai":
+                        # 开始生成最终回复
+                        yield "[STATUS:GENERATING]"
+                        if latest_msg.content:
+                            yield latest_msg.content
+
+        except Exception as e:
+            # Error Handling: 拦截工具调用错误，转化为用户友好的提示
+            friendly_err = f"\n⚠️ [系统提示]：由于网络或知识库连接波动，我暂时无法获取最新院校数据（错误详情：{str(e)}）。请直接告诉我你的成绩和意向，我将基于已有知识为你分析。"
+            yield friendly_err
+            print(f"[Stream Error] {e}")
 if __name__ == "__main__":
     from user.profile_manager import ProfileManager, UserProfile
 

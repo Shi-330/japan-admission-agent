@@ -1,0 +1,53 @@
+# 🚀 部署指南 (Architecture Refactoring)
+
+根据我们的“解耦大手术”蓝图，我们将采用前后端分离的部署策略，以确保极速启动和高可用性。
+
+## 1. 后端部署 (树莓派 或 本地笔记本)
+
+你可以选择将后端部署在树莓派上，或者暂时运行在本地笔记本上。
+
+### 选项 A：在本地笔记本运行 (开发/调试)
+1. **启动 API**:
+   ```powershell
+   .\venv\Scripts\python -m uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
+   ```
+2. **内网穿透 (可选)**: 如果你想让 Vercel 上的前端直接访问你笔记本上的后端，可以使用 `ngrok` 或 `localtunnel`:
+   ```bash
+   npx localtunnel --port 8000
+   ```
+   记录下生成的 `https` 链接，作为前端的 `VITE_API_URL`。
+
+### 选项 B：在树莓派部署 (长期运行)
+1. **安装 Docker**: 推荐使用 Docker Compose 以实现一键部署。
+2. **获取 Cloudflare Tunnel**: 在 Cloudflare 控制面板创建一个 Tunnel，拿到 `TUNNEL_TOKEN`。
+3. **运行**: `docker-compose up -d`
+
+## 2. 前端部署 (Vercel)
+
+前端 React 应用将部署在 Vercel，利用其全球 CDN 实现 0ms 冷启动。
+
+### 部署步骤
+1. **关联 GitHub**: 将项目代码推送至 GitHub。
+2. **在 Vercel 中导入**: 
+   - 选择 `frontend/` 作为根目录。
+   - 框架选择 `Vite`。
+3. **配置环境变量**:
+   - `VITE_API_URL`: 设置为你的 Cloudflare Tunnel 域名（例如 `https://api.yourdomain.com`）。
+4. **点击 Deploy**: Vercel 会自动完成构建和部署。
+
+## 3. 环境变量管理 (关键 🔑)
+
+请确保以下变量在各端配置正确：
+
+| 变量名 | 位置 | 说明 |
+| :--- | :--- | :--- |
+| `OPENAI_API_KEY` | 后端 (.env) | 你的 OpenAI 密钥 |
+| `SUPABASE_URL` | 后端 & 前端 | Supabase 项目地址 |
+| `SUPABASE_ANON_KEY` | 后端 & 前端 | Supabase 匿名密钥 |
+| `CLOUDFLARE_TOKEN` | 后端 (Docker) | 用于穿透内网的 Token |
+| `VITE_API_URL` | 前端 (Vercel) | 后端 API 的公网访问地址 |
+
+## 4. 验证流程
+1. 访问你的 Vercel 域名，确保能加载 UI。
+2. 进行一次对话，检查前端是否能成功调用树莓派上的 API。
+3. 观察树莓派容器日志：`docker logs -f japan-admission-agent-api-1`。
