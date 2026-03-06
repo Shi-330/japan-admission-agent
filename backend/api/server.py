@@ -10,10 +10,19 @@ from user.profile_manager import UserProfile
 
 app = FastAPI(title="Japan Admission Agent API")
 
+# Configure allowed origins for CORS
+allowed_origins = [
+    "http://localhost:5173",  # Local Vite frontend
+    "http://localhost:8000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8000",
+    "https://japan-admission-agent.vercel.app"  # Production Vercel frontend
+]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For local development, allow all. Change this for production.
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
