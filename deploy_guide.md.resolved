@@ -51,3 +51,21 @@
 1. 访问你的 Vercel 域名，确保能加载 UI。
 2. 进行一次对话，检查前端是否能成功调用树莓派上的 API。
 3. 观察树莓派容器日志：`docker logs -f japan-admission-agent-api-1`。
+
+架构重构已完成！🚀
+我已经成功将“日本留学智能助手”从单体 Streamlit 应用重构为现代化的 FastAPI + React 前后端分离架构。
+
+📄 完成的工作：
+后端解耦：创建了独立的 HeadlessAgent 和 FastAPI 服务，支持流式状态反馈（如：正在检索、正在思考）。
+前端重构：初始化了基于 Vite + React + Tailwind CSS 的全新前端，并实现了具备“高级感”的聊天界面。
+核心改进：
+实时反馈：前端现在可以显示 Agent 的每一步动作（理解中 -> 检索中 -> 思考中 -> 生成中）。
+性能提升：前后端分离极大优化了冷启动问题。
+详细指南：我为你准备了完整的 
+部署指南
+ 和 
+重构说明
+。
+🛠️ 如何启动：
+启动后端（在项目根目录）： .\venv\Scripts\python -m uvicorn backend.api.server:app --reload
+启动前端（在 frontend/ 目录）： npm run dev

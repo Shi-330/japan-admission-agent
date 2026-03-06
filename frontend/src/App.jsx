@@ -56,23 +56,28 @@ function App() {
         const chunk = decoder.decode(value, { stream: true });
 
         // 捕捉状态标记
-        if (chunk.includes('[STATUS:')) {
-          const statusMatch = chunk.match(/\[STATUS:(.*?)\]/);
-          if (statusMatch) {
-            setStatus(statusMatch[1]);
-            continue;
-          }
+        // 捕捉状态标记并过滤掉它们
+        const statusMatches = chunk.match(/\[STATUS:(.*?)\]/g);
+        if (statusMatches) {
+          statusMatches.forEach(match => {
+            const s = match.match(/\[STATUS:(.*?)\]/)[1];
+            setStatus(s);
+          });
         }
 
-        assistantContent += chunk;
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg.role === 'assistant') {
-            return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
-          } else {
-            return [...prev, { role: 'assistant', content: assistantContent }];
-          }
-        });
+        // 移除状态标记后的纯内容
+        const cleanChunk = chunk.replace(/\[STATUS:.*?\]/g, '');
+        if (cleanChunk) {
+          assistantContent += cleanChunk;
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg.role === 'assistant') {
+              return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
+            } else {
+              return [...prev, { role: 'assistant', content: assistantContent }];
+            }
+          });
+        }
       }
     } catch (error) {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ 抱歉，连接服务器失败。请检查后端是否正常启动。' }]);

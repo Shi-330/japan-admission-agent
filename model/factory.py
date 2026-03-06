@@ -22,7 +22,9 @@ class ChatModelFactory(BaseModelFactory):
         return ChatOpenAI( # 从ChaTongyi -> ChatOpenAI为了适配coding plan
             model=rag_conf["chat_model_name"],
             api_key=os.getenv("OPENAI_API_KEY"),  # 建议从环境变量读取
-            base_url="https://coding.dashscope.aliyuncs.com/v1"  # 关键修改
+            base_url="https://coding.dashscope.aliyuncs.com/v1",  # 关键修改
+            streaming=True,
+            request_timeout=60
         )
     
 
