@@ -6,9 +6,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function App() {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: '🌸 欢迎回来！我已经准备好为你进行留学规划了。请补充你的背景信息以便我给出更精准的建议。' }
-  ]);
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('japan_admission_chat_history');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse chat history");
+      }
+    }
+    return [
+      { role: 'assistant', content: '🌸 欢迎回来！我已经准备好为你进行留学规划了。请直接输入你想了解的大学或专业信息。' }
+    ];
+  });
   const [input, setInput] = useState('');
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -18,6 +28,7 @@ function App() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+    localStorage.setItem('japan_admission_chat_history', JSON.stringify(messages));
   }, [messages, status]);
 
   const sendMessage = async () => {
@@ -54,33 +65,65 @@ function App() {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
+        // The backend sends Server-Sent Events: "data: <content>\n\n"
+        const lines = chunk.split('\n');
 
-        // 捕捉状态标记
-        // 捕捉状态标记并过滤掉它们
-        const statusMatches = chunk.match(/\[STATUS:(.*?)\]/g);
-        if (statusMatches) {
-          statusMatches.forEach(match => {
-            const s = match.match(/\[STATUS:(.*?)\]/)[1];
-            setStatus(s);
-          });
-        }
-
-        // 移除状态标记后的纯内容
-        const cleanChunk = chunk.replace(/\[STATUS:.*?\]/g, '');
-        if (cleanChunk) {
-          assistantContent += cleanChunk;
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1];
-            if (lastMsg.role === 'assistant') {
-              return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
-            } else {
-              return [...prev, { role: 'assistant', content: assistantContent }];
+        let streamFinished = false;
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            let data = line.slice(6);
+            if (data === '[DONE]') {
+              streamFinished = true;
+              break; // Break from the for loop
             }
-          });
+
+            try {
+              const parsed = JSON.parse(data);
+
+              if (parsed.done) {
+                streamFinished = true;
+                break; // Break from the for loop
+              } else if (parsed.is_status) {
+                // 提取具体的 STATUS 名
+                const statusMatch = parsed.content.match(/\[STATUS:(.*?)\]/);
+                if (statusMatch) {
+                  setStatus(statusMatch[1]);
+                }
+              } else {
+                // 正式渲染的大模型回复内容
+                let appendedContent = parsed.content;
+                // If content is somehow an object (like {"content": "..."}), extract it
+                if (typeof appendedContent === 'object' && appendedContent !== null && 'content' in appendedContent) {
+                  appendedContent = appendedContent.content;
+                }
+
+                // If it is STILL an object, stringify it safely to avoid [object Object]
+                if (typeof appendedContent === 'object') {
+                  appendedContent = JSON.stringify(appendedContent);
+                }
+                assistantContent += (appendedContent || '');
+                setMessages(prev => {
+                  const lastMsg = prev[prev.length - 1];
+                  if (lastMsg.role === 'assistant') {
+                    return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
+                  } else {
+                    return [...prev, { role: 'assistant', content: assistantContent }];
+                  }
+                });
+              }
+            } catch (e) {
+              console.error("解析流式 JSON 失败:", e, "Raw data:", data);
+            }
+          }
+        }
+        if (streamFinished) {
+          await reader.cancel();
+          break; // Break from the while loop
         }
       }
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ 抱歉，连接服务器失败。请检查后端是否正常启动。' }]);
+      console.error("Stream error:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ 抱歉，连接服务器失败或请求超时。可能是上下文过长导致AI处理卡住，你可以尝试点击左侧【清空当前对话】重试。' }]);
     } finally {
       setLoading(false);
       setStatus(null);
@@ -120,6 +163,18 @@ function App() {
           </button>
           <button className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/50 transition-all text-gray-700">
             <Database size={20} /> 院校数据库
+          </button>
+
+          <button
+            onClick={() => {
+              if (window.confirm('确定要清空目前的聊天记录吗？')) {
+                setMessages([{ role: 'assistant', content: '🌸 欢迎回来！我已经准备好为你进行留学规划了。请直接输入你想了解的大学或专业信息。' }]);
+                localStorage.removeItem('japan_admission_chat_history');
+              }
+            }}
+            className="flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 transition-all text-red-500 mt-4 border border-red-100 bg-white"
+          >
+            <ClipboardCheck size={20} /> 清空当前对话
           </button>
         </nav>
       </aside>

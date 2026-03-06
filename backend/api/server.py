@@ -33,13 +33,26 @@ async def chat_endpoint(request: ChatRequest):
     try:
         agent = HeadlessAgent(request.user_profile)
         
-        def event_generator():
-            # Synchronous generator running in a thread-safe way
-            for chunk in agent.chat_stream(request.query):
-                yield chunk
+        async def event_generator():
+            import json
+            async for chunk in agent.chat_stream(request.query):
+                print(f"DEBUG[API]: 即将派发 -> {repr(chunk)}")
+                if not chunk:
+                    continue
+                    
+                # 统一封装
+                is_status_flag = isinstance(chunk, str) and chunk.startswith("[STATUS:")
+                payload = {
+                    "content": chunk,
+                    "is_status": is_status_flag, # 标记是否为状态信息
+                    "done": False
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                
+            # 结束信号也用 JSON
+            yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
-        from fastapi.concurrency import iterate_in_threadpool
-        return StreamingResponse(iterate_in_threadpool(event_generator()), media_type="text/plain")
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

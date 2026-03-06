@@ -15,9 +15,9 @@ class HeadlessAgent:
         # Initialize the underlying ReactAgent with the profile dictionary
         self.agent_core = ReactAgent(user_profile=user_profile.model_dump())
 
-    def chat_stream(self, query: str) -> Generator[str, None, None]:
+    async def chat_stream(self, query: str):
         """
-        Executes a chat session and yields response chunks.
+        Executes a chat session and yields response chunks asynchronously.
         Args:
             query (str): The user's input/question.
         Yields:
@@ -28,7 +28,7 @@ class HeadlessAgent:
         # We can also call make_decision here if we want to add intelligence 
         # to the routing before starting the full tool-calling loop.
         
-        for chunk in self.agent_core.execute_stream(query, profile_str):
+        async for chunk in self.agent_core.execute_stream(query, profile_str):
             yield chunk
 
     def _format_profile_for_agent(self) -> str:

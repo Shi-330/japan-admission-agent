@@ -1,5 +1,6 @@
 import hashlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncGenerator
+from langchain_core.messages import HumanMessage
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
@@ -91,52 +92,73 @@ class ReactAgent:
             return "[ANSWER]" # 发生错误时默认走常规回答路径
 
      
-    def execute_stream(self, query: str, user_profile_str: str = None):
+    async def execute_stream(self, query: str, user_profile_str: str = None) -> AsyncGenerator[str, None]:
+        if not self.agent:
+            yield {"content": "Agent initialization failed", "is_status": False, "done": True}
+            return
+
         messages = []
         if user_profile_str:
             profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
-            messages.append({"role": "system", "content": profile_instruction})
-        
-        messages.append({"role": "user", "content": query})
+            messages.append(HumanMessage(content=profile_instruction)) # Treat as human message to not confuse system prompt
+        messages.append(HumanMessage(content=query))
 
-        yield "[STATUS:UNDERSTANDING]"
+        state = {
+            "messages": messages,
+            "chat_history": []
+        }
         
-        # 使用 stream_mode="updates" 以捕捉工具调用和中间状态
-        # 这种模式下 chunk 是一个 dict，例如 {"agent": {"messages": [...]}} 或 {"tools": {"messages": [...]}}
         try:
-            for chunk in self.agent.stream({"messages": messages}, stream_mode="updates"):
-                # A. 检查工具调用 (Retrieving)
-                if "tools" in chunk:
-                    yield "[STATUS:RETRIEVING]"
-                    # 如果工具执行中发生错误，可以在这里扩展捕获，但通常工具内部已有 try-except
+            # We must use astream_events with version="v2" to get token-by-token streaming
+            # The 'model' node must not be stripped of the `RunnableConfig` by LangChain's create_agent bug.
+            async for event in self.agent.astream_events(state, config={"callbacks": []}, version="v2"):
+                kind = event["event"]
+                # Map LangGraph events to our simplified status markers or content
                 
-                # B. 检查 Agent 决策 (Thinking)
-                if "agent" in chunk:
-                    # 如果即将产生 AI 消息
-                    latest_msg = chunk["agent"]["messages"][-1]
-                    if hasattr(latest_msg, "tool_calls") and latest_msg.tool_calls:
-                        # 正在决定使用工具
-                        yield "[STATUS:THINKING]"
-                    elif hasattr(latest_msg, "content") and latest_msg.type == "ai":
-                        # 开始生成最终回复
-                        yield "[STATUS:GENERATING]"
-                        if latest_msg.content:
-                            yield latest_msg.content
-
+                # Model started generating
+                if kind == "on_chat_model_start":
+                    yield {"content": "[STATUS:THINKING]", "is_status": True, "done": False}
+                    
+                # Model streaming tokens
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "content") and chunk.content:
+                        content_str = str(chunk.content)
+                        if content_str.strip():
+                            yield {"content": content_str, "is_status": False, "done": False}
+                            
+                # Tool execution started
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    if tool_name == "rag_fetch_context":
+                        yield {"content": "[STATUS:RETRIEVING]", "is_status": True, "done": False}
+                    else:
+                        yield {"content": f"[STATUS:TOOL_{tool_name.upper()}]", "is_status": True, "done": False}
+                        
+                # Tool execution ended
+                elif kind == "on_tool_end":
+                    tool_name = event["name"]
+                    if tool_name == "rag_fetch_context":
+                        yield {"content": "[STATUS:RETRIEVING_DONE]", "is_status": True, "done": False}
+                        
         except Exception as e:
-            # Error Handling: 拦截工具调用错误，转化为用户友好的提示
-            friendly_err = f"\n⚠️ [系统提示]：由于网络或知识库连接波动，我暂时无法获取最新院校数据（错误详情：{str(e)}）。请直接告诉我你的成绩和意向，我将基于已有知识为你分析。"
-            yield friendly_err
-            print(f"[Stream Error] {e}")
+            error_msg = str(e)
+            yield {"content": f"\n⚠️ [系统提示]：生成过程中发生错误（{error_msg}）。", "is_status": False, "done": False}
+        finally:
+            yield {"content": "", "is_status": False, "done": True}
 if __name__ == "__main__":
     from user.profile_manager import ProfileManager, UserProfile
+    import asyncio
 
-    agent = ReactAgent()
-    prompt = "给我生成我的使用报告"
-    
-    current_user_id = "00000000-0000-0000-0000-000000000001"
-    profile_mgr = ProfileManager()
-    profile = profile_mgr.get_profile(current_user_id)
+    async def test_agent():
+        agent = ReactAgent()
+        prompt = "给我生成我的使用报告"
+        
+        current_user_id = "00000000-0000-0000-0000-000000000001"
+        profile_mgr = ProfileManager()
+        profile = profile_mgr.get_profile(current_user_id)
 
-    for chunk in agent.execute_stream(prompt, profile):
-        print(chunk, end="",flush=True)
+        async for chunk in agent.execute_stream(prompt, profile):
+            print(chunk, end="",flush=True)
+
+    asyncio.run(test_agent())
