@@ -111,7 +111,7 @@ class ReactAgent:
         try:
             # We must use astream_events with version="v2" to get token-by-token streaming
             # The 'model' node must not be stripped of the `RunnableConfig` by LangChain's create_agent bug.
-            async for event in self.agent.astream_events(state, config={"callbacks": []}, version="v2"):
+            async for event in self.agent.astream_events(state, config={"callbacks": [], "recursion_limit": 100}, version="v2"):
                 kind = event["event"]
                 # Map LangGraph events to our simplified status markers or content
                 

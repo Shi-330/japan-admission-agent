@@ -24,7 +24,8 @@ class ChatModelFactory(BaseModelFactory):
             api_key=os.getenv("OPENAI_API_KEY"),  # 建议从环境变量读取
             base_url="https://coding.dashscope.aliyuncs.com/v1",  # 关键修改
             streaming=True,
-            request_timeout=60
+            request_timeout=30, # 缩短为30秒
+            max_retries=1 # 失败快速退出，不无限重试
         )
     
 

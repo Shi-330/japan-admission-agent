@@ -61,7 +61,15 @@ async def chat_endpoint(request: ChatRequest):
             # 结束信号也用 JSON
             yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(), 
+            media_type="text/event-stream",
+            headers={
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
+            )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
