@@ -103,7 +103,7 @@ def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
         raw_context = arg.get_raw_vector_context(query) 
         
         RAW_CONTEXT_CACHE[cache_key] = raw_context
-        print(f"⚡ [Context Fetched] 已获取私有素材，准备交给 Agent")
+        print(f"⚡ [Context Fetched] 已获取私有素材 (长度: {len(raw_context)})，准备交给 Agent")
         return f"私域系统参考资料如下：\n{raw_context}"
         
     except Exception as e:

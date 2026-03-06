@@ -28,9 +28,40 @@ class VectorStoreService:
             length_function=len,
         )
 
+    def similarity_search(self, query: str, k: int = 5) -> list[Document]:
+        """
+        直接通过 Supabase RPC 调用 match_documents，绕过某些导致 'params' 错误的 LangChain 内部逻辑
+        """
+        try:
+            # 1. 生成查询向量
+            query_embedding = embed_model.embed_query(query)
+            
+            # 2. 调用 RPC
+            res = supabase.rpc(
+                self.vector_store.query_name,
+                {
+                    "query_embedding": query_embedding,
+                    "match_threshold": 0.5, # 默认阈值
+                    "match_count": k,
+                }
+            ).execute()
+            
+            # 3. 转换为 Document 对象
+            documents = []
+            for item in res.data:
+                documents.append(Document(
+                    page_content=item.get("content", ""),
+                    metadata=item.get("metadata", {})
+                ))
+            return documents
+        except Exception as e:
+            logger.error(f"VectorStore RPC search failed: {e}")
+            return []
+
     def get_retriever(self, k: int = None, filter_kwargs: dict = None):
+        # 注意：这里的 retriever 可能仍然在某些环境下报错
+        # 建议在业务代码中直接使用 similarity_search
         if k is None:
-            # Fallback to config if none provided
             k = chroma_conf.get("k", 5)
         search_kwargs = {"k": k}
         if filter_kwargs:

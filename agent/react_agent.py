@@ -1,5 +1,6 @@
 import hashlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncGenerator
+from langchain_core.messages import HumanMessage
 from langchain.agents import create_agent
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts
@@ -91,38 +92,73 @@ class ReactAgent:
             return "[ANSWER]" # 发生错误时默认走常规回答路径
 
      
-    def execute_stream(self, query: str, user_profile_str: str = None):
-            messages = []
-            if user_profile_str:
-                profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
-                messages.append({"role": "system", "content": profile_instruction})
-            
-            messages.append({"role": "user", "content": query})
+    async def execute_stream(self, query: str, user_profile_str: str = None) -> AsyncGenerator[str, None]:
+        if not self.agent:
+            yield {"content": "Agent initialization failed", "is_status": False, "done": True}
+            return
 
-            # 为了真正的流式，我们使用 stream 并在 chunk 中寻找 content
-            # 注意：LangGraph 的 stream 比较特殊，这里沿用你的逻辑但增加安全性
-            last_len = 0
-            for chunk in self.agent.stream({"messages": messages}, stream_mode="values"):
-                if "messages" in chunk:
-                    new_msgs = chunk["messages"]
-                    if len(new_msgs) > last_len:
-                        # 只处理最后一条消息的更新
-                        latest_msg = new_msgs[-1]
-                        # 如果是 AI 发出的内容，且是文本
-                        if hasattr(latest_msg, "content") and latest_msg.type == "ai":
-                            content = latest_msg.content
-                            if content:
-                                yield content # 返回完整内容，Streamlit 端的写流器会自动处理差异
-                        last_len = len(new_msgs)
+        messages = []
+        if user_profile_str:
+            profile_instruction = f"【当前咨询者背景画像】\n{user_profile_str}\n请务必参考此背景。"
+            messages.append(HumanMessage(content=profile_instruction)) # Treat as human message to not confuse system prompt
+        messages.append(HumanMessage(content=query))
+
+        state = {
+            "messages": messages,
+            "chat_history": []
+        }
+        
+        try:
+            # We must use astream_events with version="v2" to get token-by-token streaming
+            # The 'model' node must not be stripped of the `RunnableConfig` by LangChain's create_agent bug.
+            async for event in self.agent.astream_events(state, config={"callbacks": []}, version="v2"):
+                kind = event["event"]
+                # Map LangGraph events to our simplified status markers or content
+                
+                # Model started generating
+                if kind == "on_chat_model_start":
+                    yield {"content": "[STATUS:THINKING]", "is_status": True, "done": False}
+                    
+                # Model streaming tokens
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "content") and chunk.content:
+                        content_str = str(chunk.content)
+                        if content_str.strip():
+                            yield {"content": content_str, "is_status": False, "done": False}
+                            
+                # Tool execution started
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    if tool_name == "rag_fetch_context":
+                        yield {"content": "[STATUS:RETRIEVING]", "is_status": True, "done": False}
+                    else:
+                        yield {"content": f"[STATUS:TOOL_{tool_name.upper()}]", "is_status": True, "done": False}
+                        
+                # Tool execution ended
+                elif kind == "on_tool_end":
+                    tool_name = event["name"]
+                    if tool_name == "rag_fetch_context":
+                        yield {"content": "[STATUS:RETRIEVING_DONE]", "is_status": True, "done": False}
+                        
+        except Exception as e:
+            error_msg = str(e)
+            yield {"content": f"\n⚠️ [系统提示]：生成过程中发生错误（{error_msg}）。", "is_status": False, "done": False}
+        finally:
+            yield {"content": "", "is_status": False, "done": True}
 if __name__ == "__main__":
     from user.profile_manager import ProfileManager, UserProfile
+    import asyncio
 
-    agent = ReactAgent()
-    prompt = "给我生成我的使用报告"
-    
-    current_user_id = "00000000-0000-0000-0000-000000000001"
-    profile_mgr = ProfileManager()
-    profile = profile_mgr.get_profile(current_user_id)
+    async def test_agent():
+        agent = ReactAgent()
+        prompt = "给我生成我的使用报告"
+        
+        current_user_id = "00000000-0000-0000-0000-000000000001"
+        profile_mgr = ProfileManager()
+        profile = profile_mgr.get_profile(current_user_id)
 
-    for chunk in agent.execute_stream(prompt, profile):
-        print(chunk, end="",flush=True)
+        async for chunk in agent.execute_stream(prompt, profile):
+            print(chunk, end="",flush=True)
+
+    asyncio.run(test_agent())
