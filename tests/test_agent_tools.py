@@ -1,12 +1,16 @@
 import pytest
 from pydantic import ValidationError
-from agent.tools.agent_tools import (
+from agent.tools.rag_tools import (
     rag_fetch_context,
     RagFetchContextInput,
+)
+from agent.tools.web_tools import (
     web_search_tool,
     WebSearchInput,
+)
+from agent.tools.profile_tools import (
     update_report_suggestions,
-    UpdateReportSuggestionsInput
+    UpdateReportSuggestionsInput,
 )
 
 # 1. 测试基于 Pydantic 的 Schema 验证 (这非常关键，它是防止大模型幻觉掉进核心业务的第一道防线)

@@ -8,7 +8,7 @@ if root not in sys.path:
 
 # 2. 现在可以顺畅地导入了
 import time
-from agent.tools.agent_tools import rag_fetch_context
+from agent.tools.rag_tools import rag_fetch_context
 
 # 模拟 LangGraph 传入的 state
 mock_state = {
