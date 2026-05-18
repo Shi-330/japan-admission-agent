@@ -40,3 +40,5 @@ def load_report_prompts():
 
 if __name__ == "__main__":
     print(load_system_prompts())
+    test_res = supabase.table("prompts").select("*").execute()
+    print("数据库连接测试:", test_res.data)

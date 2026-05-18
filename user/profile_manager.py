@@ -1,12 +1,10 @@
 import json
 import os
-import dotenv
-dotenv.load_dotenv()
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
-from supabase import create_client, Client, AuthApiError
-# import uuid
-from utils.path_tool import get_abs_path
+from supabase import AuthApiError
+from utils.supabase_client import supabase as _shared_supabase
+from utils.logger_handler import logger
 
 # 1. 定义用户画像的数据结构 (一定要保留，它是 Agent 的灵魂)
 class UserProfile(BaseModel):
@@ -27,22 +25,9 @@ class UserProfile(BaseModel):
         return self.model_dump()
 
 # 2. 线上版管理器 (Supabase)
-class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无缝切换
+class ProfileManager:
     def __init__(self):
-        env_path = get_abs_path(".env")
-        if os.path.exists(env_path):
-            dotenv.load_dotenv(dotenv_path=env_path)
-        else:
-            print(f"警告: 未在路径 {env_path} 找到 .env 文件")
-
-        self.url = os.getenv("SUPABASE_URL")
-        self.key = os.getenv("SUPABASE_KEY")
-        
-        if not self.url or not self.key:
-            print("警告: 未检测到 SUPABASE_URL 或 SUPABASE_KEY，将无法使用数据库功能")
-            self.supabase = None
-        else:
-            self.supabase: Client = create_client(self.url, self.key)
+        self.supabase = _shared_supabase
 
     def get_profile(self, user_id: str) -> UserProfile:
         """从 Supabase 获取画像，若无则返回默认对象"""
@@ -57,24 +42,24 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
                 filtered_data = {k: v for k, v in data.items() if k in UserProfile.model_fields}
                 return UserProfile(**filtered_data)
         except Exception as e:
-            print(f"读取数据库失败: {e}")
-            
+            logger.error(f"读取数据库失败: {e}")
+
         return UserProfile()
 
     def save_profile(self, user_id: str, profile: UserProfile):
         """保存 UserProfile 对象到数据库"""
         if not self.supabase:
-            print("无法保存：数据库未连接")
+            logger.warning("无法保存：数据库未连接")
             return
-            
+
         data = profile.to_dict()
-        data["id"] = user_id 
-        
+        data["id"] = user_id
+
         try:
             self.supabase.table("user_profiles").upsert(data).execute()
-            print(f"用户 {user_id} 画像已同步至数据库")
+            logger.info(f"用户 {user_id} 画像已同步至数据库")
         except Exception as e:
-            print(f"保存数据库失败: {e}")
+            logger.error(f"保存数据库失败: {e}")
 
     def format_for_prompt(self, profile: UserProfile) -> str:
         """将画像格式化为 Agent 容易理解的字符串"""
@@ -101,21 +86,18 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
         """发送重置密码验证码 (OTP)"""
         if not self.supabase: return
         try:
-            # 只要模板里有 {{ .Token }}，Supabase 就会发送 6 位验证码
             return self.supabase.auth.reset_password_for_email(email)
         except AuthApiError as e:
+            logger.warning(f"邮件发送失败: {e}")
             if "rate limit" in str(e).lower():
-                print(f"邮件发送频率超限: {e}")
                 raise Exception("邮件发送过于频繁，请稍后再试")
             else:
-                print(f"发送验证码失败: {e}")
                 raise e
 
     def verify_reset_otp(self, email: str, token: str):
         """验证 6 位验证码"""
         if not self.supabase: return None
         try:
-            # 类型必须为 recovery 才能进行后续的 update_user
             res = self.supabase.auth.verify_otp({
                 "email": email,
                 "token": token,
@@ -123,7 +105,7 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
             })
             return res
         except Exception as e:
-            print(f"验证码校验失败: {e}")
+            logger.error(f"验证码校验失败: {e}")
             raise e
 
     def update_password(self, new_password: str):
@@ -132,7 +114,7 @@ class ProfileManager: # 建议直接改名为 ProfileManager，方便 app.py 无
         try:
             return self.supabase.auth.update_user({"password": new_password})
         except Exception as e:
-            print(f"更新密码失败: {e}")
+            logger.error(f"更新密码失败: {e}")
             raise e
 
 profile_mgr = ProfileManager() # 创建全局唯一的实例

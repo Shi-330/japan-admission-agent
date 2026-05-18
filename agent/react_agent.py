@@ -9,6 +9,7 @@ from agent.tools.agent_tools import (get_current_month,rag_fetch_context,
                                      update_report_suggestions, web_search_tool)
 from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
 from .memory import DecisionCache
+from utils.logger_handler import logger
 
 class ReactAgent:
     def __init__(self, user_profile: dict = None, cache_size: int = 100):
@@ -28,8 +29,9 @@ class ReactAgent:
         if user_profile:
             profile_context = f"""
             # 咨询者当前背景：
-            - 日语：{user_profile.get('jlpt', '未知')} | EJU：{user_profile.get('eju', '未知')}
-            - GPA：{user_profile.get('gpa', '未知')} | 目标：{user_profile.get('major', '未知')}
+            - 日语：{user_profile.get('jlpt_level', '未知')} | EJU：{user_profile.get('eju_score', '未知')}
+            - GPA：{user_profile.get('gpa', '未知')} | 目标：{user_profile.get('target_major', '未知')}
+            - 院校：{user_profile.get('undergraduate_school', '未知')} | 英语：{user_profile.get('english_score', '未知')}
             ---
             """
             system_prompt = profile_context + "\n" + base_prompt
@@ -70,7 +72,7 @@ class ReactAgent:
         # 2. 内部查询缓存，不再向外面（Streamlit）要数据
         cached_res = self.memory.get(cache_key)
         if cached_res:
-            print(f"[Internal Cache Hit] {cache_key}")
+            logger.info(f"决策缓存命中: {cache_key}")
             return cached_res
 
         full_prompt = planner_prompt_template.format(
@@ -80,15 +82,15 @@ class ReactAgent:
         
 
         try:
-            print(f"☁️ [LLM CALL] 正在进行决策... {cache_key}")
+            logger.info(f"执行决策LLM调用: {cache_key}")
             response = self.model.invoke(full_prompt)
             result = response.content if hasattr(response, "content") else str(response)
 
             self.memory.set(cache_key, result)
             return result
-        
+
         except Exception as e:
-            print(f"[Decision Error] 决策引擎故障: {e}")
+            logger.error(f"决策引擎故障: {e}")
             return "[ANSWER]" # 发生错误时默认走常规回答路径
 
      

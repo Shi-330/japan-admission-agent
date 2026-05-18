@@ -7,6 +7,7 @@ import json
 
 from backend.core.agent import HeadlessAgent
 from user.profile_manager import UserProfile
+from utils.logger_handler import logger
 
 app = FastAPI(title="Japan Admission Agent API")
 
@@ -43,9 +44,7 @@ async def chat_endpoint(request: ChatRequest):
         agent = HeadlessAgent(request.user_profile)
         
         async def event_generator():
-            import json
             async for chunk in agent.chat_stream(request.query):
-                print(f"DEBUG[API]: 即将派发 -> {repr(chunk)}")
                 if not chunk:
                     continue
                     
@@ -72,7 +71,8 @@ async def chat_endpoint(request: ChatRequest):
             )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Chat endpoint error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/health")
 async def health_check():

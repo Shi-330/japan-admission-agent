@@ -83,7 +83,7 @@ def render_auth_page():
 
 def render_password_reset_page():
     st.title("🔒 重置密码")
-    st.info("请检查您的邮箱获取 8 位验证码")
+    st.info("请检查您的邮箱获取 6 位验证码")
 
     # 这里的 email 可以从 session_state 拿，或者让用户再输一遍
     # 建议在跳转到这个页面前，把用户输入的 email 存下来
@@ -91,7 +91,7 @@ def render_password_reset_page():
     
     with st.form("otp_reset_form"):
         target_email = st.text_input("确认邮箱", value=email)
-        otp_code = st.text_input("6 位验证码", max_chars=8)
+        otp_code = st.text_input("6 位验证码", max_chars=6)
         new_password = st.text_input("设置新密码", type="password", help="至少 6 位")
         confirm_password = st.text_input("确认新密码", type="password")
         

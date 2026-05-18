@@ -13,15 +13,7 @@ def render_main_app():
     # 定义 Agent 初始化辅助函数 (用于解耦和复用)
     def get_agent_instance():
         current_p = st.session_state.user_profile
-        profile_dict = {
-            "jlpt": current_p.jlpt_level,
-            "eju": current_p.eju_score,
-            "gpa": current_p.gpa,
-            "major": current_p.target_major,
-            "undergraduate_school": current_p.undergraduate_school,
-            "english_score": current_p.english_score
-        }
-        return ReactAgent(user_profile=profile_dict)
+        return ReactAgent(user_profile=current_p.to_dict())
 
     st.title("🌸 日本留学智能客服")
     
@@ -182,7 +174,14 @@ def render_main_app():
             # C. 执行流式对话
             try:
                 with st.chat_message("assistant"):
-                    res_stream = st.session_state["agent"].execute_stream(prompt, profile_string)
+                    raw_stream = st.session_state["agent"].execute_stream(prompt, profile_string)
+                    def extract_content():
+                        for chunk in raw_stream:
+                            if isinstance(chunk, dict):
+                                yield chunk.get("content", "")
+                            else:
+                                yield str(chunk)
+                    res_stream = extract_content()
                     full_response = st.write_stream(res_stream)
                     
                     if full_response:

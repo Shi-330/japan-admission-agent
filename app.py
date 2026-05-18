@@ -1,4 +1,10 @@
 # --- app.py ---
+import os
+# Kill broken system proxy before any module does HTTP
+for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+    os.environ.pop(_v, None)
+os.environ["NO_PROXY"] = "*"
+
 import streamlit as st
 from user.profile_manager import profile_mgr
 from views.auth_pages import render_auth_page, render_password_reset_page 
@@ -24,9 +30,10 @@ try:
         try:
             res = profile_mgr.supabase.auth.set_session(access_token, refresh_token)
             st.session_state.auth_user = res.user
-        except Exception:
-            # Token 可能过期
-            pass
+        except Exception as e:
+            # Token 可能过期或网络问题，静默回退到登录页
+            from utils.logger_handler import logger
+            logger.warning(f"Cookie 会话恢复失败: {e}")
 except ImportError:
     pass
 

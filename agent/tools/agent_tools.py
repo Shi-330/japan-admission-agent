@@ -1,41 +1,16 @@
 import json
-import os
-import random
 from typing import Annotated
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
-from supabase import create_client, Client
 
 from rag.rag_service import RagSummarizeService
 from utils.config_handler import agent_conf
 from utils.path_tool import get_abs_path
 from utils.logger_handler import logger
-import dotenv
+from utils.supabase_client import supabase
 import hashlib
 
-_supabase_client = None     # 延迟初始化单例模式
-
-# 定义一个简单的内存缓存（如果 query 没变，直接秒回）
-# 对于 SaaS，之后可以把这部分换成 Redis
 RAW_CONTEXT_CACHE = {}
-
-def get_supabase() -> Client:
-    """确保在工具被调用时才初始化 Supabase，并确保环境变量已加载"""
-    global _supabase_client
-    if _supabase_client is None:
-        # 手动确保加载 .env（使用你的 path_tool）
-        env_path = get_abs_path(".env")
-        dotenv.load_dotenv(env_path)
-        
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_ANON_KEY")
-        
-        if not url or not key:
-            # 这里的报错会更清晰
-            raise ValueError(f"Supabase 配置缺失! URL: {url}, Key: {'已找到' if key else '缺失'}")
-        
-        _supabase_client = create_client(url, key)
-    return _supabase_client
 
 # --- 2. 业务服务初始化 ---
 # 建议也放进函数或延迟初始化，防止 RagSummarizeService 内部也依赖环境
@@ -45,7 +20,6 @@ _data_loaded = False         # 标记是否已加载数据
 
 arg = RagSummarizeService()
 #user_ids = "00000000-0000-0000-0000-000000000001" #更换为默认的这个uuid["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
-month_arr = ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06","2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"]
 external_data = {}
 
 from pydantic import BaseModel, Field
@@ -69,9 +43,8 @@ def fetch_user_profile_from_db(user_id: str) -> str:
     当需要了解当前咨询者的真实背景（例如日语成绩、GPA、出身校等）时调用此工具。
     如果不提供 user_id，默认尝试不调用或使用占位符。
     """
-    client = get_supabase() 
     try:
-        response = client.table("user_profiles").select("*").eq("id", user_id).single().execute()
+        response = supabase.table("user_profiles").select("*").eq("id", user_id).single().execute()
         return str(response.data) if response.data else "未查找到该用户的背景画像。请提示用户补充资料。"
     except Exception as e:
         logger.error(f"从数据库获取画像失败: {e}")
@@ -95,15 +68,15 @@ def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
     cache_key = hashlib.md5(f"{query}_{extracted_profile}".encode()).hexdigest()
     
     if cache_key in RAW_CONTEXT_CACHE:
-        print(f"⚡ [Cache Hit] 命中素材缓存: {query}")
+        logger.info(f"命中素材缓存: {query}")
         return f"参考资料(来自缓存)如下：\n{RAW_CONTEXT_CACHE[cache_key]}"
 
-    try: 
-        print(f"🔍 [Private RAG Fetching] 正在检索私有原始素材: {query}")
-        raw_context = arg.get_raw_vector_context(query) 
-        
+    try:
+        logger.info(f"正在检索私有原始素材: {query}")
+        raw_context = arg.get_raw_vector_context(query)
+
         RAW_CONTEXT_CACHE[cache_key] = raw_context
-        print(f"⚡ [Context Fetched] 已获取私有素材 (长度: {len(raw_context)})，准备交给 Agent")
+        logger.info(f"已获取私有素材 (长度: {len(raw_context)})，准备交给 Agent")
         return f"私域系统参考资料如下：\n{raw_context}"
         
     except Exception as e:
@@ -123,13 +96,13 @@ def web_search_tool(query: str) -> str:
     """
     cache_key = hashlib.md5(query.encode()).hexdigest()
     if cache_key in WEB_SEARCH_CACHE:
-        print(f"⚡ [Cache Hit] 命中外网检索缓存: {query}")
+        logger.info(f"命中外网检索缓存: {query}")
         return f"互联网检索结果(来自缓存)如下：\n{WEB_SEARCH_CACHE[cache_key]}"
-        
+
     try:
         from langchain_community.tools import DuckDuckGoSearchResults
         from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
-        print(f"🌐 [Web Search] 正在联网检索外网: {query}")
+        logger.info(f"正在联网检索外网: {query}")
         
         # 使用 DDGS 获取带片段的结果
         wrapper = DuckDuckGoSearchAPIWrapper(region="jp-jp", time="y", max_results=4)
@@ -148,7 +121,8 @@ def web_search_tool(query: str) -> str:
 @tool("get_current_month")
 def get_current_month() -> str:
     """无入参。获取当前的月份（如 '2025-03'）。当你需要计算距离某个考试还有几个月时，可以调用。"""
-    return random.choice(month_arr)
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m")
 
 def _load_external_data():
     """内部函数：加载外部数据到 _external_data 字典"""
@@ -197,10 +171,8 @@ def update_report_suggestions(user_id: str, new_suggestions: str) -> str:
     【强制要求】报告规划生成完毕后，或者你认为需要调整用户的升学规划时，必须【立刻且必然】调用此工具。
     这将把你的核心建议保存到云端数据库中，非常重要！否则用户的看板将永远为空。
     """
-    client = get_supabase()
     try:
-        # Pydantic 工具调用保护
-        response = client.table("user_profiles").update({
+        response = supabase.table("user_profiles").update({
             "suggestions": new_suggestions,
             "report_status": "REFINED" # 标记为已被精调
         }).eq("id", user_id).execute()
