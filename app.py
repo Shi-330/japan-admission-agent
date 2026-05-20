@@ -11,6 +11,7 @@ from user.profile_manager import profile_mgr
 from views.auth_pages import render_auth_page, render_password_reset_page 
 from views.main_agent import render_main_app
 from views.simple_agent import render_simple_agent
+from views.data_editor import render_data_editor
 
 # 1. 初始化 Session State
 if "auth_user" not in st.session_state:
@@ -59,12 +60,14 @@ else:
         st.divider()
         st.session_state.agent_mode = st.radio(
             "Agent 模式",
-            ["simple", "react"],
-            format_func=lambda x: "简化版 (推荐)" if x == "simple" else "ReAct (旧版)",
-            index=0 if st.session_state.agent_mode == "simple" else 1,
+            ["simple", "react", "data"],
+            format_func=lambda x: {"simple": "简化版", "react": "ReAct (旧版)", "data": "数据管理"}[x],
+            index=["simple","react","data"].index(st.session_state.agent_mode) if st.session_state.agent_mode in ["simple","react","data"] else 0,
         )
 
     if st.session_state.agent_mode == "simple":
         render_simple_agent()
-    else:
+    elif st.session_state.agent_mode == "react":
         render_main_app()
+    else:
+        render_data_editor()

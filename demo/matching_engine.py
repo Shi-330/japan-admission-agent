@@ -67,10 +67,30 @@ def _english_met(required_note: str, actual: str) -> bool:
     return True  # 无法解析时不阻断
 
 
+def _schools_from_db() -> list[dict]:
+    """Try loading schools from Supabase, fall back to hardcoded."""
+    try:
+        from .school_database import get_all_schools, School
+        db_schools = get_all_schools()
+        if db_schools:
+            return [
+                {"name": s.name, "jlpt_min": s.jlpt_min, "eju_min": s.eju_min,
+                 "eju_subjects": s.eju_subjects.split(",") if s.eju_subjects else [],
+                 "gpa_min": s.gpa_min, "english_note": s.english_note,
+                 "deadlines": {"4月入学": s.deadline_april, "9月入学": s.deadline_september},
+                 "exam": s.exam, "capacity": s.capacity, "notes": s.notes}
+                for s in db_schools
+            ]
+    except Exception:
+        pass
+    return SCHOOLS  # fallback to hardcoded
+
+
 def match_schools(profile: StudentProfile) -> List[MatchResult]:
-    """对全部学校做匹配，返回排序后的结果（match > warning > reject）"""
+    """对全部学校做匹配，优先读 Supabase 数据库，fallback 到硬编码。"""
     results = []
-    for school in SCHOOLS:
+    schools = _schools_from_db()
+    for school in schools:
         if profile.target_major not in school["name"]:
             continue  # 专业不匹配，跳过
 

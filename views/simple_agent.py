@@ -36,7 +36,15 @@ def render_simple_agent():
         st.session_state.user_profile = UserProfile()
 
     with st.sidebar:
-        st.header("学生背景")
+        # --- Quick actions (always visible) ---
+        st.subheader("快捷操作")
+        btn_match = st.button("🔍 院校匹配", use_container_width=True)
+        btn_qa = st.button("📚 知识库问答", use_container_width=True)
+        btn_report = st.button("📋 生成规划", use_container_width=True)
+        st.divider()
+
+        # --- Profile form ---
+        st.subheader("学生背景")
         current_p = st.session_state.user_profile
         with st.form("profile_form"):
             jlpt = st.selectbox("JLPT", ["无","N5","N4","N3","N2","N1"],
@@ -53,28 +61,14 @@ def render_simple_agent():
                 )
                 st.success("已保存")
                 st.rerun()
-
-        # Quick profile summary
         st.caption(f"当前: {_profile_str()}")
 
-    # --- action bar ---
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        btn_match = st.button("🔍 院校匹配", use_container_width=True,
-                              help="根据你的背景，列出所有可报考的学校及差距分析")
-    with col2:
-        btn_qa = st.button("📚 知识库问答", use_container_width=True,
-                           help="查询私塾内部资料，了解具体申请细节")
-    with col3:
-        btn_report = st.button("📋 生成规划", use_container_width=True,
-                               help="生成完整升学方案，含时间线和建议")
-
-    # Profile status indicator
+    # --- main area ---
     p = st.session_state.user_profile
     if not p.target_major or p.target_major.strip() == "":
         st.warning("请先在侧边栏填写「目标专业」并点击保存")
     else:
-        st.info(f"当前背景：{_profile_str()}")
+        st.info(f"当前背景：{_profile_str()}，点击侧边栏按钮或直接输入问题")
 
     st.divider()
 
