@@ -62,10 +62,6 @@ def render_main_app():
         else:
             welcome_msg = "### 欢迎回来！我已经准备好为你进行留学规划了。请在左侧补充你的背景信息以便我给出更精准的建议。"
             
-        with st.chat_message("assistant"):
-            st.markdown(welcome_msg)
-            
-        # 将欢迎语隐式加入到 messages 历史中（可选，这样用户刷新不会丢，但这里按照原逻辑先不加入session history，只做首屏展示，或者加入）
         if "messages" not in st.session_state:
             st.session_state["messages"] = []
         st.session_state["messages"].append({"role": "assistant", "content": welcome_msg})
@@ -173,16 +169,43 @@ def render_main_app():
 
             # C. 执行流式对话
             try:
+                status_placeholder = st.empty()
                 with st.chat_message("assistant"):
-                    raw_stream = st.session_state["agent"].execute_stream(prompt, profile_string)
-                    def extract_content():
-                        for chunk in raw_stream:
+                    import asyncio, queue, threading
+
+                    async_gen = st.session_state["agent"].execute_stream(prompt, profile_string)
+                    q = queue.Queue()
+
+                    def _run_async():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        async def _consume():
+                            async for chunk in async_gen:
+                                q.put(chunk)
+                            q.put(None)
+                        loop.run_until_complete(_consume())
+                        loop.close()
+
+                    t = threading.Thread(target=_run_async, daemon=True)
+                    t.start()
+
+                    def bridge():
+                        while True:
+                            chunk = q.get()
+                            if chunk is None:
+                                break
                             if isinstance(chunk, dict):
+                                if chunk.get("is_status"):
+                                    status_placeholder.info(chunk.get("content", "").replace("[STATUS:", "").replace("]", ""))
+                                    continue
+                                if chunk.get("done"):
+                                    continue
+                                status_placeholder.empty()
                                 yield chunk.get("content", "")
                             else:
                                 yield str(chunk)
-                    res_stream = extract_content()
-                    full_response = st.write_stream(res_stream)
+
+                    full_response = st.write_stream(bridge())
                     
                     if full_response:
                         st.session_state["messages"].append({"role": "assistant", "content": full_response})

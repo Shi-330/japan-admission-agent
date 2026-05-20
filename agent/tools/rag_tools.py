@@ -42,7 +42,9 @@ def rag_fetch_context(query: str, state: Annotated[dict, InjectedState]) -> str:
         raw_context = arg.get_raw_vector_context(query)
         RAW_CONTEXT_CACHE[cache_key] = raw_context
         logger.info(f"已获取私有素材 (长度: {len(raw_context)})，准备交给 Agent")
+        if not raw_context or len(raw_context.strip()) < 20:
+            return "私域知识库中未找到相关内容。请直接告知用户当前知识库暂未收录此信息，并建议用户联系私塾老师更新资料库。不要重复调用此工具。"
         return f"私域系统参考资料如下：\n{raw_context}"
     except Exception as e:
         logger.error(f"检索失败: {e}")
-        return f"私域检索工具失败！详情：{str(e)}。请检查问题是否适合在私域找，如果是泛搜，请改用 web_search_tool。"
+        return "私域检索失败。请放弃重试，直接告知用户技术故障，并建议使用联网搜索或联系管理员。不要重复调用此工具。"

@@ -6,8 +6,36 @@ from utils.prompt_loader import load_system_prompts
 from agent.tools import (get_current_month, rag_fetch_context,
                           generate_external_data, fetch_external_data, fill_context_for_report,
                           update_report_suggestions, web_search_tool)
-from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch
+from agent.tools.middleware import monitor_tool, log_before_model, report_prompt_switch, reset_tool_count
 from .decision_engine import DecisionEngine
+from utils.logger_handler import logger
+
+
+def _extract_text(chunk) -> str:
+    """Extract text from any possible stream chunk shape."""
+    if isinstance(chunk, str):
+        return chunk.strip()
+    if isinstance(chunk, dict):
+        return str(chunk.get("content", chunk.get("text", ""))).strip()
+    if hasattr(chunk, "content"):
+        c = chunk.content
+        if isinstance(c, str):
+            return c.strip()
+        if isinstance(c, list):
+            parts = []
+            for sub in c:
+                if isinstance(sub, dict):
+                    parts.append(str(sub.get("text", sub.get("content", ""))))
+                elif hasattr(sub, "text"):
+                    parts.append(str(sub.text))
+                else:
+                    parts.append(str(sub))
+            return "".join(parts).strip()
+        return str(c).strip() if c else ""
+    if isinstance(chunk, (list, tuple)):
+        return "".join(_extract_text(item) for item in chunk)
+    return ""
+
 
 class ReactAgent:
     def __init__(self, user_profile: dict = None, cache_size: int = 100):
@@ -71,38 +99,37 @@ class ReactAgent:
             "chat_history": []
         }
         
+        reset_tool_count()
         try:
-            # We must use astream_events with version="v2" to get token-by-token streaming
-            # The 'model' node must not be stripped of the `RunnableConfig` by LangChain's create_agent bug.
-            async for event in self.agent.astream_events(state, config={"callbacks": [], "recursion_limit": 100}, version="v2"):
+            async for event in self.agent.astream_events(state, config={"callbacks": [], "recursion_limit": 15}, version="v2"):
                 kind = event["event"]
-                # Map LangGraph events to our simplified status markers or content
-                
-                # Model started generating
-                if kind == "on_chat_model_start":
+                name = event.get("name", "")
+
+                # --- Status events ---
+                if kind == "on_chat_model_start" or (kind == "on_chain_start" and name == "model"):
                     yield {"content": "[STATUS:THINKING]", "is_status": True, "done": False}
-                    
-                # Model streaming tokens
+
+                elif kind == "on_tool_start":
+                    yield {"content": f"[STATUS:{name.upper()}]", "is_status": True, "done": False}
+
+                elif kind == "on_tool_end":
+                    yield {"content": f"[STATUS:{name.upper()}_DONE]", "is_status": True, "done": False}
+
+                # --- Content: only from model stream ---
                 elif kind == "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
                     if hasattr(chunk, "content") and chunk.content:
-                        content_str = str(chunk.content)
-                        if content_str.strip():
-                            yield {"content": content_str, "is_status": False, "done": False}
-                            
-                # Tool execution started
-                elif kind == "on_tool_start":
-                    tool_name = event["name"]
-                    if tool_name == "rag_fetch_context":
-                        yield {"content": "[STATUS:RETRIEVING]", "is_status": True, "done": False}
-                    else:
-                        yield {"content": f"[STATUS:TOOL_{tool_name.upper()}]", "is_status": True, "done": False}
-                        
-                # Tool execution ended
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    if tool_name == "rag_fetch_context":
-                        yield {"content": "[STATUS:RETRIEVING_DONE]", "is_status": True, "done": False}
+                        c = str(chunk.content).strip()
+                        if c:
+                            yield {"content": c, "is_status": False, "done": False}
+
+                elif kind == "on_chain_stream" and name == "model":
+                    chunk = event.get("data", {}).get("chunk", event.get("data", {}))
+                    c = _extract_text(chunk)
+                    if c:
+                        yield {"content": c, "is_status": False, "done": False}
+
+                # Everything else (on_chain_end, on_chain_stream for non-model, etc.) → ignore
                         
         except Exception as e:
             error_msg = str(e)

@@ -4,17 +4,21 @@ import os
 for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
     os.environ.pop(_v, None)
 os.environ["NO_PROXY"] = "*"
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"  # BGE model download for China
 
 import streamlit as st
 from user.profile_manager import profile_mgr
 from views.auth_pages import render_auth_page, render_password_reset_page 
-from views.main_agent import render_main_app 
+from views.main_agent import render_main_app
+from views.simple_agent import render_simple_agent
 
 # 1. 初始化 Session State
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
 if "is_resetting" not in st.session_state:
     st.session_state.is_resetting = False
+if "agent_mode" not in st.session_state:
+    st.session_state.agent_mode = "simple"  # default to new version
 
 # 尝试从 Cookie 恢复会话 (解决刷新掉登录的问题)
 try:
@@ -50,5 +54,17 @@ elif st.session_state.auth_user is None:
     st.stop()
 
 else:
-    # 正常登录状态显示主应用
-    render_main_app()
+    # 模式切换
+    with st.sidebar:
+        st.divider()
+        st.session_state.agent_mode = st.radio(
+            "Agent 模式",
+            ["simple", "react"],
+            format_func=lambda x: "简化版 (推荐)" if x == "simple" else "ReAct (旧版)",
+            index=0 if st.session_state.agent_mode == "simple" else 1,
+        )
+
+    if st.session_state.agent_mode == "simple":
+        render_simple_agent()
+    else:
+        render_main_app()

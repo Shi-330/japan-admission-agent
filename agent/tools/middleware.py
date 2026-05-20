@@ -9,22 +9,36 @@ from langgraph.runtime import Runtime
 from utils.prompt_loader import load_system_prompts, load_report_prompts
 
 
+MAX_TOOL_CALLS = 3
+_tool_call_count = 0
+
+def reset_tool_count():
+    global _tool_call_count
+    _tool_call_count = 0
+
 @wrap_tool_call
 async def monitor_tool(
-    request: ToolCallRequest, # 请求的函数封装
-    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]], # 执行的函数本身
-) -> ToolMessage | Command: # 工具执行的监控
-    logger.info(f"[tool monitor]执行工具: {request.tool_call['name']}")    
-    logger.info(f"[tool monitor]传入参数: {request.tool_call['args']}")    
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+) -> ToolMessage | Command:
+    global _tool_call_count
+    _tool_call_count += 1
+    logger.info(f"[tool monitor]执行工具({_tool_call_count}/{MAX_TOOL_CALLS}): {request.tool_call['name']}")
+    logger.info(f"[tool monitor]传入参数: {request.tool_call['args']}")
+
+    if _tool_call_count > MAX_TOOL_CALLS:
+        logger.warning(f"[tool monitor]已达最大工具调用次数({MAX_TOOL_CALLS})，强制终止")
+        return ToolMessage(
+            content="已达到最大工具调用次数限制。请立即基于已有信息直接回答用户，不要再调用任何工具。",
+            tool_call_id=request.tool_call["id"],
+        )
+    # -------------------------------------------------------------
 
     try:
         result = await handler(request)
         logger.info(f"[tool monitor]工具{request.tool_call['name']}调用成功")
 
-            
         if request.tool_call["name"] == "fill_context_for_report":
-            if not hasattr(request.runtime, "context") or request.runtime.context is None:
-                request.runtime.context = {}  # 初始化为一个空字典
             request.runtime.context["report"] = True
             logger.info("[Middleware] 已成功开启报告生成模式上下文")
 
