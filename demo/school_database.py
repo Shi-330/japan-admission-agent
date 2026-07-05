@@ -33,34 +33,6 @@ def _row_to_school(row: dict) -> School:
     return School(**{k: v for k, v in row.items() if k in School.__dataclass_fields__})
 
 
-def init_schools_table():
-    """创建 schools 表（如果不存在）。需要手动在 Supabase SQL Editor 执行一次。"""
-    sql = """
-    CREATE TABLE IF NOT EXISTS schools (
-        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        name TEXT NOT NULL,
-        degree TEXT DEFAULT '修士',
-        jlpt_min TEXT DEFAULT 'N2',
-        eju_min INTEGER DEFAULT 0,
-        eju_subjects TEXT DEFAULT '',
-        gpa_min REAL DEFAULT 0.0,
-        english_note TEXT DEFAULT '',
-        deadline_april TEXT DEFAULT '',
-        deadline_september TEXT DEFAULT '',
-        exam TEXT DEFAULT '',
-        capacity TEXT DEFAULT '',
-        notes TEXT DEFAULT '',
-        source TEXT DEFAULT 'manual',
-        target_major TEXT DEFAULT '',
-        verified BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    """
-    print("请在 Supabase SQL Editor 中执行以下 SQL：")
-    print(sql)
-
-
 def get_all_schools() -> list[School]:
     try:
         res = supabase.table(TABLE).select("*").execute()

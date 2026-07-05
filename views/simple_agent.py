@@ -3,7 +3,7 @@ Simple 3-layer agent: action buttons → matching / RAG / chat → LLM synthesis
 No ReAct, no decision engine, no tool loops.
 """
 import streamlit as st
-from demo.matching_engine import StudentProfile, match_schools, generate_timeline
+from demo.matching_engine import StudentProfile, match_schools, generate_timeline, STATUS_LABELS
 from rag.rag_service import RagSummarizeService
 from model.factory import chat_model
 from user.profile_manager import ProfileManager, UserProfile
@@ -19,9 +19,18 @@ def _get_profile():
         undergraduate_school=p.undergraduate_school,
     )
 
-def _profile_str():
+def _profile_str(profile_mgr=None):
     p = st.session_state.user_profile
+    if profile_mgr:
+        return profile_mgr.format_for_prompt(p)
     return f"JLPT {p.jlpt_level}, EJU {p.eju_score}, GPA {p.gpa}, 目标 {p.target_major or '未设置'}, 英语 {p.english_score or '无'}"
+
+
+# ── lazy RAG singleton (created once per session, not per request) ──
+def _get_rag():
+    if "_rag_service" not in st.session_state:
+        st.session_state._rag_service = RagSummarizeService()
+    return st.session_state._rag_service
 
 
 # ── main ──
@@ -32,15 +41,19 @@ def render_simple_agent():
     # --- sidebar ---
     profile_mgr = st.session_state.get("profile_mgr") or ProfileManager()
     st.session_state["profile_mgr"] = profile_mgr
+    current_user_id = st.session_state.auth_user.id
+
     if "user_profile" not in st.session_state:
-        st.session_state.user_profile = UserProfile()
+        with st.spinner("正在同步云端画像..."):
+            db_profile = profile_mgr.get_profile(current_user_id)
+            st.session_state.user_profile = db_profile or UserProfile()
 
     with st.sidebar:
         # --- Quick actions (always visible) ---
         st.subheader("快捷操作")
-        btn_match = st.button("🔍 院校匹配", use_container_width=True)
-        btn_qa = st.button("📚 知识库问答", use_container_width=True)
-        btn_report = st.button("📋 生成规划", use_container_width=True)
+        btn_match = st.button("院校匹配", use_container_width=True)
+        btn_qa = st.button("知识库问答", use_container_width=True)
+        btn_report = st.button("生成规划", use_container_width=True)
         st.divider()
 
         # --- Profile form ---
@@ -54,21 +67,23 @@ def render_simple_agent():
             major = st.text_input("目标专业", current_p.target_major)
             eng = st.text_input("英语成绩 (如 TOEFL 80)", current_p.english_score)
             if st.form_submit_button("保存背景"):
-                st.session_state.user_profile = UserProfile(
+                updated = UserProfile(
                     jlpt_level=jlpt, eju_score=eju, gpa=gpa,
                     target_major=major, english_score=eng,
                     suggestions=current_p.suggestions, report_status=current_p.report_status,
                 )
+                st.session_state.user_profile = updated
+                profile_mgr.save_profile(current_user_id, updated)
                 st.success("已保存")
                 st.rerun()
-        st.caption(f"当前: {_profile_str()}")
+        st.caption(f"当前: {_profile_str(profile_mgr)}")
 
     # --- main area ---
     p = st.session_state.user_profile
     if not p.target_major or p.target_major.strip() == "":
         st.warning("请先在侧边栏填写「目标专业」并点击保存")
     else:
-        st.info(f"当前背景：{_profile_str()}，点击侧边栏按钮或直接输入问题")
+        st.info(f"当前背景：{_profile_str(profile_mgr)}，点击侧边栏按钮或直接输入问题")
 
     st.divider()
 
@@ -77,7 +92,7 @@ def render_simple_agent():
         st.session_state.messages_simple = []
         st.session_state.messages_simple.append({
             "role": "assistant",
-            "content": "👋 你好！你可以点击上方按钮，或直接在下方输入问题。"
+            "content": "你好！你可以点击上方按钮，或直接在下方输入问题。"
         })
 
     for msg in st.session_state.messages_simple:
@@ -109,7 +124,7 @@ def render_simple_agent():
             # Free text: quick LLM intent classification
             intent_prompt = f"""判断意图，只输出一个词：
 用户说："{prompt}"
-背景：{_profile_str()}
+背景：{_profile_str(profile_mgr)}
 输出: chat / match / report / qa"""
             try:
                 resp = chat_model.invoke(intent_prompt)
@@ -126,7 +141,7 @@ def render_simple_agent():
 
             if intent == "chat":
                 resp = chat_model.invoke(
-                    f"学生说：{user_text}。背景：{_profile_str()}。友好回复1-2句，引导使用上方按钮。")
+                    f"学生说：{user_text}。背景：{_profile_str(profile_mgr)}。友好回复1-2句，直接给出建议，不要指引用户去点击按钮。")
                 response = resp.content
 
             elif intent in ("match", "report"):
@@ -135,7 +150,7 @@ def render_simple_agent():
                 if not matches:
                     # Fallback: use LLM to recommend schools based on profile
                     with st.spinner("本地数据库未覆盖此专业，正在联网搜索..."):
-                        fallback_prompt = f"""学生背景：{_profile_str()}
+                        fallback_prompt = f"""学生背景：{_profile_str(profile_mgr)}
 请根据这个背景，推荐3-5所日本大学（修士/硕士课程），每所说明：
 - 学校和研究科名称
 - JLPT/EJU/英语大致要求
@@ -149,9 +164,9 @@ def render_simple_agent():
                 else:
                     lines = ["## 院校匹配结果\n"]
                     for m in matches:
-                        lines.append(f"{m.status_label} **{m.school_name}**")
+                        lines.append(f"{STATUS_LABELS[m.status]} **{m.school_name}**")
                         for g in m.gaps:
-                            lines.append(f"  {'✅' if g.met else '❌'} {g.field}: {g.required} → 你 {g.current}")
+                            lines.append(f"  {'[O]' if g.met else '[X]'} {g.field}: {g.required} -> 你 {g.current}")
                         lines.append(f"  考试: {m.exam_info}")
                         lines.append(f"  {m.notes}\n")
 
@@ -165,7 +180,7 @@ def render_simple_agent():
                     # RAG
                     rag_note = ""
                     try:
-                        rag = RagSummarizeService()
+                        rag = _get_rag()
                         top = matches[0].school_name if matches else ""
                         r = rag.get_raw_vector_context(f"{top} {profile.target_major} 考试 面试 经验")
                         if r and len(r.strip()) > 20:
@@ -191,7 +206,7 @@ def render_simple_agent():
                 with st.spinner("检索知识库..."):
                     rag_note = ""
                     try:
-                        rag = RagSummarizeService()
+                        rag = _get_rag()
                         rag_note = rag.get_raw_vector_context(user_text)
                     except Exception:
                         pass
@@ -200,7 +215,7 @@ def render_simple_agent():
                     llm_prompt = f"""你是日本升学顾问。
 
 【资料】{rag_note if rag_note and len(rag_note) > 20 else "无"}
-【学生】{_profile_str()}
+【学生】{_profile_str(profile_mgr)}
 【问题】{user_text}
 
 简洁中文回答。资料为空则说明「知识库暂无相关内容」，基于公开信息回答但要标明。"""

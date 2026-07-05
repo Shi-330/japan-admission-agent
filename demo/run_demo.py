@@ -17,7 +17,7 @@ for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"
 os.environ["NO_PROXY"] = "*"
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
-from demo.matching_engine import StudentProfile, match_schools, generate_timeline
+from demo.matching_engine import StudentProfile, match_schools, generate_timeline, STATUS_LABELS
 from rag.rag_service import RagSummarizeService
 from model.factory import chat_model
 
@@ -44,9 +44,9 @@ def run(profile: StudentProfile, rag_query: str = None):
         return
 
     for m in matches:
-        print(f"\n  {m.status_label}  {m.school_name}")
+        print(f"\n  {STATUS_LABELS[m.status]}  {m.school_name}")
         for g in m.gaps:
-            icon = "✅" if g.met else "❌"
+            icon = "[O]" if g.met else "[X]"
             print(f"     {icon} {g.field}: 要求 {g.required} → 你 {g.current}")
         print(f"     - 考试: {m.exam_info}")
         print(f"     [ 截止: {m.deadlines}")
@@ -86,7 +86,7 @@ JLPT {profile.jlpt_level}, EJU {profile.eju_score}, GPA {profile.gpa}
 英语：{profile.english_score or "无"}
 
 【匹配结果】
-{chr(10).join(f'{m.status_label} {m.school_name}' for m in matches)}
+{chr(10).join(f'{STATUS_LABELS[m.status]} {m.school_name}' for m in matches)}
 
 【内部资料】
 {ctx[:1000] if ctx else "(未检索)"}

@@ -39,12 +39,6 @@ def _extract_text(chunk) -> str:
 
 class ReactAgent:
     def __init__(self, user_profile: dict = None, cache_size: int = 100):
-        # 1. 确保工具被正确导入 (注意：这里要包含我们刚写的 rag_fetch_context)
-        from agent.tools import (rag_fetch_context, get_current_month,
-                                  generate_external_data, fetch_external_data,
-                                  fill_context_for_report, update_report_suggestions,
-                                  web_search_tool)
-        
         base_prompt = load_system_prompts()
         
         if user_profile:
@@ -133,7 +127,7 @@ class ReactAgent:
                         
         except Exception as e:
             error_msg = str(e)
-            yield {"content": f"\n⚠️ [系统提示]：生成过程中发生错误（{error_msg}）。", "is_status": False, "done": False}
+            yield {"content": f"\n[系统提示]：生成过程中发生错误（{error_msg}）。", "is_status": False, "done": False}
         finally:
             yield {"content": "", "is_status": False, "done": True}
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"
     os.environ.pop(_v, None)
 os.environ["NO_PROXY"] = "*"
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"  # Windows no symlink support
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -52,9 +53,20 @@ class ChatModelFactory(BaseModelFactory):
 class EmbeddingModelFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
         return HuggingFaceEmbeddings(
-            model_name="BAAI/bge-large-zh-v1.5",
+            model_name="BAAI/bge-small-zh-v1.5",  # 24 MB, fast local download
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
+            cache_folder=os.path.join(os.path.dirname(__file__), "..", ".hf_cache"),
+        )
+
+
+class RemoteEmbeddingFactory(BaseModelFactory):
+    """DashScope / OpenAI-compatible embedding API — zero local download."""
+    def generator(self) -> Optional[Embeddings | BaseChatModel]:
+        from langchain_community.embeddings import DashScopeEmbeddings
+        return DashScopeEmbeddings(
+            model="text-embedding-v4",
+            dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
         )
 
 
@@ -77,4 +89,10 @@ class _LazyEmbedding:
 
 
 chat_model = ChatModelFactory().generator()
-embed_model = _LazyEmbedding()
+
+# Embedding mode: "local" = BGE small (24 MB), "api" = DashScope (zero download)
+_embed_mode = os.getenv("EMBEDDING_MODE", "local")
+if _embed_mode == "api":
+    embed_model = RemoteEmbeddingFactory().generator()
+else:
+    embed_model = _LazyEmbedding()  # lazy-load BGE on first use

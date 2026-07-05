@@ -15,7 +15,7 @@ def render_main_app():
         current_p = st.session_state.user_profile
         return ReactAgent(user_profile=current_p.to_dict())
 
-    st.title("🌸 日本留学智能客服")
+    st.title("日本留学智能客服")
     
     # 顶部导航栏
     col1, col2 = st.columns([4, 1])
@@ -23,13 +23,8 @@ def render_main_app():
         st.caption(f"当前登录：{st.session_state.auth_user.email}")
     with col2:
         if st.button("退出登录", key="logout"):
-            try:
-                import extra_streamlit_components as stx
-                cookie_manager = stx.CookieManager()
-                cookie_manager.delete("sb_access_token")
-                cookie_manager.delete("sb_refresh_token")
-            except Exception:
-                pass
+            st.context.cookies["sb_access_token"] = ""
+            st.context.cookies["sb_refresh_token"] = ""
             profile_mgr.supabase.auth.sign_out()
             st.session_state.clear()
             st.rerun()
@@ -51,9 +46,9 @@ def render_main_app():
         current_p = st.session_state.user_profile
         if current_p.report_status != "NONE" and current_p.suggestions:
             welcome_msg = (
-                f"### 🌸 欢迎回来，{st.session_state.auth_user.email}！\n\n"
+                f"### 欢迎回来，{st.session_state.auth_user.email}！\n\n"
                 f"我查阅了你之前的专属升学报告，当前报告状态为：**{current_p.report_status}**。\n\n"
-                f"💡 **以下是为你定制的升学核心建议看板：**\n\n"
+                f"**以下是为你定制的升学核心建议看板：**\n\n"
                 f"{current_p.suggestions}\n\n"
                 f"---\n"
                 f"你可以直接针对上述某条建议提问（例如：'关于第一条建议，我该怎么做？'），"
@@ -68,7 +63,7 @@ def render_main_app():
 
     # --- 2. 侧边栏表单 (仅负责更新数据和销毁 Agent) ---
     with st.sidebar:
-        st.header("🎓 留学生背景评估")
+        st.header("留学生背景评估")
         current_p = st.session_state.user_profile
         
         with st.form("user_profile_form"):
@@ -96,7 +91,7 @@ def render_main_app():
                 # 关键：画像更新后销毁旧 Agent，下次对话会自动重建带新背景的 Agent
                 if "agent" in st.session_state:
                     del st.session_state["agent"]
-                st.success("✅ 背景已更新！")
+                st.success("背景已更新！")
                 st.rerun()
 
     # --- 3. 布局分配: 仪表盘 vs 对話框 ---
@@ -111,7 +106,7 @@ def render_main_app():
     # --- 3.1 左侧：仪表盘 (Dashboard) ---
     if col_dash:
         with col_dash:
-            st.subheader("📋 您的专属升学看板")
+            st.subheader("您的专属升学看板")
             st.info(f"当前进度状态：**{current_p.report_status}**")
             
             # 解析并渲染建议卡片 (假设建议是以分号或换行分隔的，这里做简单处理)
@@ -120,11 +115,11 @@ def render_main_app():
                 with st.container(border=True):
                     st.markdown(f"**建议 {i+1}**")
                     st.write(suggestion)
-                    if st.button(f"🔍 展开咨询", key=f"ask_{i}"):
+                    if st.button(f"展开咨询", key=f"ask_{i}"):
                         st.session_state.pending_prompt = f"针对我的第 {i+1} 条建议：'{suggestion}'，请给出更详细的执行步骤和注意事项。"
 
             st.divider()
-            st.caption("💡 提示：点击建议卡片下方的按钮，Agent 会立即为你深度解读该项任务。")
+            st.caption("提示：点击建议卡片下方的按钮，Agent 会立即为你深度解读该项任务。")
 
     # --- 3.2 右侧：对话展示与交互 ---
     with (col_chat if col_chat else st.container()):
@@ -155,7 +150,7 @@ def render_main_app():
             profile_string = profile_mgr.format_for_prompt(st.session_state.user_profile)
 
             # B. 决策引擎
-            with st.status("💡 正在规划最佳路径...", expanded=False) as status:
+            with st.status("正在规划最佳路径...", expanded=False) as status:
                 decision = st.session_state["agent"].make_decision(
                     PLANNER_PROMPT,
                     profile_string,

@@ -17,13 +17,8 @@ def render_auth_page():
                 st.session_state.auth_user = res.user
                 
                 # 写入 Cookie 以防刷新掉登录态
-                try:
-                    import extra_streamlit_components as stx
-                    cookie_manager = stx.CookieManager()
-                    cookie_manager.set("sb_access_token", res.session.access_token)
-                    cookie_manager.set("sb_refresh_token", res.session.refresh_token)
-                except Exception:
-                    pass
+                st.context.cookies["sb_access_token"] = res.session.access_token
+                st.context.cookies["sb_refresh_token"] = res.session.refresh_token
                     
                 st.success("登录成功！")
                 st.rerun()

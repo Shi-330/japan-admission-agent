@@ -1,11 +1,12 @@
 import hashlib
+import cachetools
 from datetime import datetime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from utils.logger_handler import logger
 
-WEB_SEARCH_CACHE = {}
+WEB_SEARCH_CACHE = cachetools.TTLCache(maxsize=200, ttl=1800)  # 200 entries, 30-min TTL
 
 
 class WebSearchInput(BaseModel):

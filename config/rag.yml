@@ -1,2 +1,7 @@
-chat_model_name: qwen3.5-plus
-embedding_model_name: text-embedding-v4
+# Model config — overridden by factory.py since DashScope → DeepSeek + BGE migration.
+# These values are NOT read at runtime; they document the current model stack.
+# Keep in sync with:
+#   model/factory.py:   deepseek-chat  |  BAAI/bge-large-zh-v1.5
+#   .env:               DEEPSEEK_API_KEY
+chat_model_name: deepseek-chat
+embedding_model_name: BAAI/bge-large-zh-v1.5

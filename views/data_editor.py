@@ -106,7 +106,7 @@ def render_data_editor():
         st.metric("总计", f"{len(schools)} 所学校")
 
         for s in schools:
-            with st.expander(f"{s.name}  {'✅' if s.verified else '⚠️未验证'} [{s.source}]"):
+            with st.expander(f"{s.name}  [已验证] [{s.source}]" if s.verified else f"{s.name}  [未验证] [{s.source}]"):
                 st.write(f"学位: {s.degree} | JLPT: {s.jlpt_min} | EJU: {s.eju_min} | GPA: {s.gpa_min}")
                 st.write(f"英语: {s.english_note}")
                 st.write(f"4月截止: {s.deadline_april} | 9月截止: {s.deadline_september}")

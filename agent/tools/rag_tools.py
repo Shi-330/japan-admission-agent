@@ -1,4 +1,5 @@
 import hashlib
+import cachetools
 from typing import Annotated
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field
 from rag.rag_service import RagSummarizeService
 from utils.logger_handler import logger
 
-RAW_CONTEXT_CACHE = {}
+RAW_CONTEXT_CACHE = cachetools.TTLCache(maxsize=200, ttl=1800)  # 200 entries, 30-min TTL
 
 arg = RagSummarizeService()
 

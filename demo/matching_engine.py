@@ -2,11 +2,12 @@
 确定性院校匹配引擎。
 
 输入：学生画像（JLPT、EJU、GPA、目标专业、英语成绩）
-输出：每所学校的三档分类（✅可报 / ⚠️条件不足 / ❌差距较大）+ 差距详情
+输出：每所学校的三档分类（可报考 / 条件不足 / 差距较大）+ 差距详情
 
 不使用 LLM。所有判断基于结构化规则。
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -31,11 +32,12 @@ class GapDetail:
     met: bool
 
 
+STATUS_LABELS = {"match": "[可报考]", "warning": "[条件不足]", "reject": "[差距较大]"}
+
 @dataclass
 class MatchResult:
     school_name: str
-    status: str           # "match" / "warning" / "reject"
-    status_label: str     # "✅ 可报考" / "⚠️ 条件不足" / "❌ 差距较大"
+    status: str           # "match" / "warning" / "reject" (label = STATUS_LABELS[status])
     gaps: List[GapDetail] = field(default_factory=list)
     deadlines: dict = field(default_factory=dict)
     exam_info: str = ""
@@ -59,7 +61,6 @@ def _english_met(required_note: str, actual: str) -> bool:
     if not actual or actual == "无":
         return False
     # 尝试提取分数做数值比较
-    import re
     req_match = re.search(r'(\d+)', required_note)
     act_match = re.search(r'(\d+)', actual)
     if req_match and act_match:
@@ -121,18 +122,14 @@ def match_schools(profile: StudentProfile) -> List[MatchResult]:
         hard_fails = [g for g in gaps if not g.met and g.field in ("JLPT", "EJU")]
         if all_ok:
             status = "match"
-            status_label = "✅ 可报考"
         elif len(hard_fails) >= 2 or abs(profile.eju_score - school["eju_min"]) > 60:
             status = "reject"
-            status_label = "❌ 差距较大"
         else:
             status = "warning"
-            status_label = "⚠️ 条件不足"
 
         results.append(MatchResult(
             school_name=school["name"],
             status=status,
-            status_label=status_label,
             gaps=gaps,
             deadlines=school.get("deadlines", {}),
             exam_info=school.get("exam", ""),

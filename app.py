@@ -22,25 +22,16 @@ if "agent_mode" not in st.session_state:
     st.session_state.agent_mode = "simple"  # default to new version
 
 # 尝试从 Cookie 恢复会话 (解决刷新掉登录的问题)
-try:
-    import extra_streamlit_components as stx
-    cookie_manager = stx.CookieManager()
-    
-    # extra_streamlit_components 的 get 需要在 render 后才能获取到，
-    # 所以通常我们会依赖它在页面顶部调用来初始化
-    access_token = cookie_manager.get(cookie="sb_access_token")
-    refresh_token = cookie_manager.get(cookie="sb_refresh_token")
-    
-    if not st.session_state.auth_user and access_token and refresh_token:
-        try:
+if not st.session_state.auth_user:
+    try:
+        cookies = st.context.cookies
+        access_token = cookies.get("sb_access_token")
+        refresh_token = cookies.get("sb_refresh_token")
+        if access_token and refresh_token:
             res = profile_mgr.supabase.auth.set_session(access_token, refresh_token)
             st.session_state.auth_user = res.user
-        except Exception as e:
-            # Token 可能过期或网络问题，静默回退到登录页
-            from utils.logger_handler import logger
-            logger.warning(f"Cookie 会话恢复失败: {e}")
-except ImportError:
-    pass
+    except Exception:
+        pass  # Token 过期或网络问题，静默回退到登录页
 
 # --- 2. 路由分流 (现在逻辑非常纯粹) ---
 

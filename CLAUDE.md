@@ -82,3 +82,50 @@ Pydantic `UserProfile` model stored in Supabase `user_profiles` table. Fields: `
 - `config/rag.yml` — model names and chunking parameters
 - `config/agent.yml` — external data paths
 - Model is `qwen3.5-plus` via DashScope coding plan; embeddings via `text-embedding-v4`
+
+## V2 方向（2026.07）
+
+V1 的核心问题是 **ReAct 不适合确定性业务流程**——日本升学咨询的步骤是已知的，不需要 Agent 在中间"思考"用什么 tool。V2 的核心转变：从匹配工具 → 项目管理系统。
+
+### 为什么需要专用 Agent（不是通用 Chat）
+
+1. **长期记忆**：记住学生的 JLPT 从 N2 考到 N1、三个月前套磁的教授回复了什么。
+2. **私有数据库**：学长真实案例，公开数据没有，通用 AI 拿不到。
+3. **当学生的手**：不只是告诉你怎么写，是帮你发出去、追踪回复、提醒下一步。
+
+### V2 Todo 依赖树
+
+```
+V2.1 ───────── 用户画像升级（对话中自然积累 + 显式更新优先）
+    │
+    ├──→ V2.5 ── 前端适配（看板式 UI：阶段进度 + 操作区 + 问答）
+    │
+V2.2 ───────── 状态机引擎（阶段锁定 + 倒计时 + 确定性流转）
+    │
+    ├──→ V2.5 ── 前端适配
+    ├──→ V2.6 ── 邮件自动化（OAuth + 草稿 + 确认 + 追踪）
+    │
+V2.3 ───────── 私有案例库（学长 Timeline + 教授信息 + 结果）
+    │
+    ├──→ V2.5 ── 前端适配
+    ├──→ V2.4 ── 混合检索（元数据 + 向量 + BM25）
+    └──→ V2.6 ── 邮件自动化
+
+并行：
+  #8  FastAPI 骨架（Supabase JWT 认证 + HeadlessAgent 重构）
+       ├── #9  端点 Profile CRUD
+       ├── #10 端点 院校匹配 + RAG
+       └── #11 端点 智能对话（意图分类 + SSE 流式）
+```
+
+### 前后端策略
+
+- **后端**：FastAPI，与 `agent/` `rag/` `user/` 共享模块（已解耦，零 Streamlit 依赖）
+- **前端**：Streamlit 跑通 V2 逻辑 → 状态机稳定后切 React
+- **Embedding**：开发 `EMBEDDING_MODE=local`（BGE-small 24MB），生产 `=api`（DashScope text-embedding-v4）
+
+### 关键原则
+
+- 先做匹配引擎（确定性逻辑），再考虑哪里需要 LLM
+- LLM 是润滑剂，不是引擎
+- 切到 React 的触发信号：需要拖拽发文件 / 第 3 个学生反馈体验烂 / 主动想学 React

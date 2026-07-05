@@ -1,8 +1,10 @@
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from utils.supabase_client import supabase
+from user.profile_manager import ProfileManager, UserProfile
 from utils.logger_handler import logger
+
+_profile_mgr = ProfileManager()  # shared instance, same pool as the rest of the app
 
 
 class FetchUserProfileInput(BaseModel):
@@ -21,8 +23,10 @@ def fetch_user_profile_from_db(user_id: str) -> str:
     如果不提供 user_id，默认尝试不调用或使用占位符。
     """
     try:
-        response = supabase.table("user_profiles").select("*").eq("id", user_id).single().execute()
-        return str(response.data) if response.data else "未查找到该用户的背景画像。请提示用户补充资料。"
+        profile = _profile_mgr.get_profile(user_id)
+        if profile.jlpt_level == "无" and profile.eju_score == 0 and profile.gpa == 0.0:
+            return "未查找到该用户的背景画像。请提示用户补充资料。"
+        return str(profile.to_dict())
     except Exception as e:
         logger.error(f"从数据库获取画像失败: {e}")
         return f"工具调用失败，无法获取背景信息: {str(e)}。请继续使用已有信息回答，不要重试。"
@@ -35,10 +39,10 @@ def update_report_suggestions(user_id: str, new_suggestions: str) -> str:
     这将把你的核心建议保存到云端数据库中，非常重要！否则用户的看板将永远为空。
     """
     try:
-        supabase.table("user_profiles").update({
-            "suggestions": new_suggestions,
-            "report_status": "REFINED"
-        }).eq("id", user_id).execute()
+        profile = _profile_mgr.get_profile(user_id)
+        profile.suggestions = new_suggestions
+        profile.report_status = "REFINED"
+        _profile_mgr.save_profile(user_id, profile)
         return "报告建议库已成功更新。你可以回复用户，告诉他们看板上的建议已经刷新。"
     except Exception as e:
         logger.error(f"更新报告建议失败: {e}")
