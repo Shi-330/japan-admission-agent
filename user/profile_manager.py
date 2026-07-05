@@ -29,10 +29,14 @@ class UserProfile(BaseModel):
     events: List[Dict[str, str]] = Field(default_factory=list,
         description="[{'date':'2026-07','event':'N1合格','source':'chat'}]")
 
-    # ── 申请追踪（V2.2 状态机接管）──
-    target_professors: List[str] = Field(default_factory=list,
-        description="目标教授列表: ['东大 田中', '早大 佐藤']")
-    application_stage: str = Field(default="", description="preparing/contacting/applying/waiting/done")
+    # ── 申请追踪（V2.2: 每校独立 track，每教授独立追踪）──
+    # applications: [{school, stage, needs_contact, contact_status, contact_date,
+    #   professors: [{name, status, date}], deadlines: {name: date}, notes}]
+    applications: List[Dict[str, Any]] = Field(default_factory=list,
+        description="每所志愿校独立追踪，professors 内每个教授有 status+date")
+    # backward compat
+    target_professors: List[str] = Field(default_factory=list)
+    application_stage: str = Field(default="")
 
     # ── 元数据：每条字段的来源和更新时间 ──
     field_sources: Dict[str, Dict[str, str]] = Field(default_factory=dict,
@@ -72,6 +76,30 @@ class UserProfile(BaseModel):
         if not any(e["event"] == event for e in self.events):
             self.events.append({"date": date, "event": event, "source": source})
             self.events.sort(key=lambda e: e["date"])
+
+    def upsert_application(self, school: str, **kwargs):
+        """添加或更新一所志愿校的追踪记录"""
+        for app in self.applications:
+            if app["school"] == school:
+                app.update(kwargs)
+                return app
+        app = {"school": school, "stage": "preparing", "needs_contact": False,
+               "professors": [], "deadlines": {}, "notes": ""}
+        app.update(kwargs)
+        self.applications.append(app)
+        return app
+
+    def add_professor_attempt(self, school: str, professor: str, status: str = "pending", date: str = ""):
+        """记录一位教授的套磁尝试。如已有则更新状态。"""
+        app = self.upsert_application(school, needs_contact=True, stage="contacting")
+        for p in app.setdefault("professors", []):
+            if p["name"] == professor:
+                p["status"] = status
+                if date:
+                    p["date"] = date
+                return app
+        app["professors"].append({"name": professor, "status": status, "date": date or datetime.now().strftime("%Y-%m-%d")})
+        return app
 
 # ── Profile extraction prompt（V2.1: 每轮对话后 LLM 扫描新增信息）──
 PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取学生的新信息，只输出变化的字段。
@@ -219,6 +247,24 @@ class ProfileManager:
         if profile.facts:
             facts_str = "\n".join(f"  - {k}: {v}" for k, v in profile.facts.items())
             parts.append(f"\n【经历与项目】\n{facts_str}")
+
+        if profile.applications:
+            app_lines = []
+            for app in profile.applications:
+                stage_label = {"preparing": "准备", "contacting": "套磁", "applying": "出愿",
+                    "exam": "考试", "waiting": "等结果", "decided": "确定"}.get(app.get("stage", ""), app.get("stage", ""))
+                line = f"  [{stage_label}] {app['school']}"
+                profs = app.get("professors", [])
+                if profs:
+                    prof_strs = [f"{p['name']}({p.get('status','?')})" for p in profs]
+                    line += f" | 教授: {', '.join(prof_strs)}"
+                deadlines = app.get("deadlines", {})
+                if deadlines:
+                    line += f" | 截止: {'; '.join(f'{k}:{v}' for k,v in deadlines.items())}"
+                if app.get("notes"):
+                    line += f" | {app['notes']}"
+                app_lines.append(line)
+            parts.append("\n【申请追踪】\n" + "\n".join(app_lines))
 
         if profile.target_professors:
             profs = ", ".join(profile.target_professors)

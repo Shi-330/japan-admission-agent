@@ -200,6 +200,38 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     )
 
 
+# ── Stage endpoints ──
+@app.get("/v1/stage")
+async def get_stage(user_id: str = Depends(get_user_id)):
+    from agent.state_machine import get_current_stage_info, generate_timeline, check_reminders
+    profile = profile_mgr.get_profile(user_id)
+    stage = profile.application_stage or "preparing"
+    info = get_current_stage_info(stage)
+    # Get stage_started_at from field_sources
+    started = profile.field_sources.get("application_stage", {}).get("at")
+    return {
+        **info,
+        "timeline": generate_timeline(stage, started),
+        "reminders": check_reminders(stage, started),
+    }
+
+
+class AdvanceRequest(BaseModel):
+    target_stage: str
+
+@app.post("/v1/stage/advance")
+async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(get_user_id)):
+    from agent.state_machine import advance_stage, STAGES
+    profile = profile_mgr.get_profile(user_id)
+    current = profile.application_stage or "preparing"
+    if not advance_stage(current, body.target_stage):
+        valid = STAGES.get(current, {}).get("next_stages", [])
+        raise HTTPException(400, f"Cannot advance from '{current}' to '{body.target_stage}'. Valid: {valid}")
+    profile.set_field("application_stage", body.target_stage, "form")
+    profile_mgr.save_profile(user_id, profile)
+    return {"stage": body.target_stage, "label": STAGES[body.target_stage]["label"]}
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

@@ -100,7 +100,24 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setToken(null); setUser(null); setProfile(null); setMessages([]);
+    setToken(null); setUser(null); setProfile(null); setStage(null); setMessages([]);
+  };
+
+  // ── Stage state ──
+  const [stage, setStage] = useState(null);
+  useEffect(() => {
+    if (token) {
+      apiCall('/v1/stage', token).then(setStage).catch(() => {});
+    }
+  }, [token, profile?.application_stage]);
+
+  const advanceStage = async (target) => {
+    try {
+      const r = await apiCall('/v1/stage/advance', token, { method: 'POST', body: { target_stage: target } });
+      setStage(prev => ({ ...prev, stage_id: r.stage, label: r.label }));
+    } catch (err) {
+      alert(`阶段切换失败: ${err.message}`);
+    }
   };
 
   // ── Chat ──
@@ -214,6 +231,47 @@ export default function App() {
           <h1 className="text-lg font-bold text-gray-800">升学顾问</h1>
           <p className="text-xs text-gray-400 mt-1">{user?.email}</p>
         </div>
+
+        {/* Stage progress */}
+        {stage && (
+          <div className="p-4 border-b">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 rounded-full transition-all"
+                  style={{ width: `${(stage.progress || 0) * 100}%` }}></div>
+              </div>
+              <span className="text-xs text-gray-400">{Math.round((stage.progress || 0) * 100)}%</span>
+            </div>
+            <p className="text-sm font-medium text-indigo-700">{stage.label}</p>
+            <p className="text-xs text-gray-500 mt-1">{stage.description}</p>
+            {stage.actions?.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs text-indigo-500 cursor-pointer">建议行动 ({stage.actions.length})</summary>
+                <ul className="mt-1 text-xs text-gray-500 space-y-0.5 ml-3">
+                  {stage.actions.map((a, i) => <li key={i} className="list-disc">{a}</li>)}
+                </ul>
+              </details>
+            )}
+            {stage.next_stages?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {stage.next_stages.map(s => (
+                  <button key={s} onClick={() => advanceStage(s)}
+                    className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition">
+                    进入「{s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s}」
+                  </button>
+                ))}
+              </div>
+            )}
+            {stage.reminders?.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {stage.reminders.map((r, i) => (
+                  <div key={i} className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded">{r}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="p-4 border-b">
           <button onClick={() => setShowProfile(!showProfile)}
