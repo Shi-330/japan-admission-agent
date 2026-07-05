@@ -1,240 +1,319 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { Send, User, Bot, Loader2, ClipboardCheck, LayoutDashboard, Database } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { Send, User, Bot, Loader2, LogOut, Settings } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
-function App() {
+// ── Auth helpers (Supabase REST API, no SDK needed) ──
+async function loginSupabase(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error_description || err.msg || 'Login failed');
+  }
+  const data = await res.json();
+  return { token: data.access_token, refresh: data.refresh_token, user: data.user };
+}
+
+async function registerSupabase(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.msg || 'Registration failed');
+  }
+  return res.json();
+}
+
+// ── API helpers ──
+async function apiCall(path, token, { method = 'GET', body } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export default function App() {
+  // ── Auth state ──
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('login'); // login | register
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // ── Chat state ──
   const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem('japan_admission_chat_history');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to parse chat history");
-      }
-    }
-    return [
-      { role: 'assistant', content: '🌸 欢迎回来！我已经准备好为你进行留学规划了。请直接输入你想了解的大学或专业信息。' }
-    ];
+    try { return JSON.parse(localStorage.getItem('chat_v2')) || []; } catch { return []; }
   });
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-    localStorage.setItem('japan_admission_chat_history', JSON.stringify(messages));
-  }, [messages, status]);
+  // ── Profile state ──
+  const [profile, setProfile] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
 
+  // ── Load profile on auth ──
+  useEffect(() => {
+    if (token) {
+      apiCall('/v1/profile', token).then(setProfile).catch(() => {});
+    }
+  }, [token]);
+
+  // ── Scroll to bottom ──
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    localStorage.setItem('chat_v2', JSON.stringify(messages.slice(-100)));
+  }, [messages]);
+
+  // ── Auth handlers ──
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await loginSupabase(email, password);
+      setToken(r.token);
+      setUser(r.user || { email });
+      setMessages([{ role: 'assistant', content: `欢迎回来, ${email}! 我是你的日本升学顾问，请告诉我你的目标。` }]);
+    } catch (err) {
+      alert(`登录失败: ${err.message}`);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      await registerSupabase(email, password);
+      alert('注册成功，请查收确认邮件后登录。');
+      setAuthMode('login');
+    } catch (err) {
+      alert(`注册失败: ${err.message}`);
+    }
+  };
+
+  const handleLogout = () => {
+    setToken(null); setUser(null); setProfile(null); setMessages([]);
+  };
+
+  // ── Chat ──
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
-
-    const userMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setLoading(true);
+    const userMsg = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput(''); setLoading(true);
 
     try {
-      // 默认空画像，实际应从 State/Supabase 获取
-      const mockProfile = {
-        jlpt_level: "无",
-        eju_score: 0,
-        gpa: 0.0,
-        target_major: "未设定",
-        undergraduate_school: "未设定",
-        english_score: "未参加"
-      };
-
-      const response = await fetch(`${API_BASE_URL}/v1/chat`, {
+      const res = await fetch(`${API}/v1/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: input, user_profile: mockProfile })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query: input }),
       });
 
-      const reader = response.body.getReader();
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        // The backend sends Server-Sent Events: "data: <content>\n\n"
-        const lines = chunk.split('\n');
-
-        let streamFinished = false;
+        const lines = decoder.decode(value, { stream: true }).split('\n');
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            let data = line.slice(6);
-            if (data === '[DONE]') {
-              streamFinished = true;
-              break; // Break from the for loop
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (parsed.done) break;
+            if (!parsed.is_status) {
+              assistantContent += parsed.content || '';
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
+                }
+                return [...prev, { role: 'assistant', content: assistantContent }];
+              });
             }
-
-            try {
-              const parsed = JSON.parse(data);
-
-              if (parsed.done) {
-                streamFinished = true;
-                break; // Break from the for loop
-              } else if (parsed.is_status) {
-                // 提取具体的 STATUS 名
-                const statusMatch = parsed.content.match(/\[STATUS:(.*?)\]/);
-                if (statusMatch) {
-                  setStatus(statusMatch[1]);
-                }
-              } else {
-                // 正式渲染的大模型回复内容
-                let appendedContent = parsed.content;
-                // If content is somehow an object (like {"content": "..."}), extract it
-                if (typeof appendedContent === 'object' && appendedContent !== null && 'content' in appendedContent) {
-                  appendedContent = appendedContent.content;
-                }
-
-                // If it is STILL an object, stringify it safely to avoid [object Object]
-                if (typeof appendedContent === 'object') {
-                  appendedContent = JSON.stringify(appendedContent);
-                }
-                assistantContent += (appendedContent || '');
-                setMessages(prev => {
-                  const lastMsg = prev[prev.length - 1];
-                  if (lastMsg.role === 'assistant') {
-                    return [...prev.slice(0, -1), { role: 'assistant', content: assistantContent }];
-                  } else {
-                    return [...prev, { role: 'assistant', content: assistantContent }];
-                  }
-                });
-              }
-            } catch (e) {
-              console.error("解析流式 JSON 失败:", e, "Raw data:", data);
-            }
-          }
-        }
-        if (streamFinished) {
-          await reader.cancel();
-          break; // Break from the while loop
+          } catch {}
         }
       }
-    } catch (error) {
-      console.error("Stream error:", error);
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ 抱歉，连接服务器失败或请求超时。可能是上下文过长导致AI处理卡住，你可以尝试点击左侧【清空当前对话】重试。' }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
     } finally {
       setLoading(false);
-      setStatus(null);
+      apiCall('/v1/profile', token).then(setProfile).catch(() => {});
     }
   };
 
-  return (
-    <div className="flex h-screen w-screen max-w-none bg-transparent overflow-hidden">
-      {/* 侧边栏 */}
-      <aside className="w-80 bg-white/40 backdrop-blur-xl border-r border-white/20 p-6 flex flex-col gap-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="bg-primary p-2 rounded-lg">
-            <ClipboardCheck className="text-white w-6 h-6" />
-          </div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent italic">
-            Japan Admission
-          </h1>
-        </div>
+  // ── Profile form submit ──
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const data = Object.fromEntries(form.entries());
+    // Convert numeric fields
+    if (data.gpa_score) data.gpa_score = parseFloat(data.gpa_score);
+    if (data.gpa_scale) data.gpa_scale = parseFloat(data.gpa_scale);
+    if (data.eju_score) data.eju_score = parseInt(data.eju_score);
+    try {
+      const updated = await apiCall('/v1/profile', token, { method: 'PUT', body: data });
+      setProfile(updated);
+      setShowProfile(false);
+    } catch (err) {
+      alert(`保存失败: ${err.message}`);
+    }
+  };
 
-        <div className="premium-card bg-primary-light/50 border-primary/20">
-          <h2 className="flex items-center gap-2 text-primary-dark font-bold mb-2">
-            <LayoutDashboard size={18} /> 申请准备度
-          </h2>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: '45%' }}
-              className="h-full bg-primary"
+  // ── Login screen ──
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
+          <h1 className="text-2xl font-bold text-gray-800 mb-6">日本升学顾问</h1>
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >登录</button>
+            <button
+              onClick={() => setAuthMode('register')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >注册</button>
+          </div>
+          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister}>
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="邮箱" required
+              className="w-full p-3 border rounded-lg mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-          </div>
-          <p className="text-xs text-primary-dark mt-2">当前处于：早期调研阶段 (45%)</p>
+            <input
+              type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="密码" required minLength={6}
+              className="w-full p-3 border rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition">
+              {authMode === 'login' ? '登录' : '注册'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main app ──
+  return (
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-80 bg-white border-r flex flex-col shrink-0">
+        <div className="p-6 border-b">
+          <h1 className="text-lg font-bold text-gray-800">升学顾问</h1>
+          <p className="text-xs text-gray-400 mt-1">{user?.email}</p>
         </div>
 
-        <nav className="flex flex-col gap-2 mt-auto">
-          <button className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/50 transition-all text-gray-700">
-            <User size={20} /> 背景画像管理
+        <div className="p-4 border-b">
+          <button onClick={() => setShowProfile(!showProfile)}
+            className="flex items-center gap-2 text-sm text-gray-600 hover:text-indigo-600 w-full p-2 rounded-lg hover:bg-gray-50">
+            <Settings size={16} /> 学生背景
           </button>
-          <button className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/50 transition-all text-gray-700">
-            <Database size={20} /> 院校数据库
-          </button>
+          {profile && (
+            <div className="mt-2 text-xs text-gray-500 space-y-1">
+              <div>JLPT: {profile.jlpt_level} | 英语: {profile.english_score || '-'}</div>
+              {profile.gpa_score > 0 && <div>GPA: {profile.gpa_score}/{profile.gpa_scale}</div>}
+              <div>专业: {profile.target_major || '未设定'}</div>
+              {profile.research_area && <div>方向: {profile.research_area}</div>}
+              {profile.facts && Object.keys(profile.facts).length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-indigo-600">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
+                  {Object.entries(profile.facts).map(([k, v]) => (
+                    <div key={k} className="ml-2">{k}: {v}</div>
+                  ))}
+                </details>
+              )}
+            </div>
+          )}
+        </div>
 
-          <button
-            onClick={() => {
-              if (window.confirm('确定要清空目前的聊天记录吗？')) {
-                setMessages([{ role: 'assistant', content: '🌸 欢迎回来！我已经准备好为你进行留学规划了。请直接输入你想了解的大学或专业信息。' }]);
-                localStorage.removeItem('japan_admission_chat_history');
-              }
-            }}
-            className="flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 transition-all text-red-500 mt-4 border border-red-100 bg-white"
-          >
-            <ClipboardCheck size={20} /> 清空当前对话
+        {/* Profile edit form */}
+        {showProfile && (
+          <div className="p-4 border-b bg-gray-50">
+            <form onSubmit={saveProfile} className="space-y-2 text-sm">
+              <select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
+                className="w-full p-2 border rounded">
+                {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
+              </select>
+              <input name="english_score" defaultValue={profile?.english_score || ''}
+                placeholder="英语: TOEFL 95" className="w-full p-2 border rounded" />
+              <div className="flex gap-2">
+                <input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
+                  placeholder="GPA" className="w-1/2 p-2 border rounded" />
+                <select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
+                  className="w-1/2 p-2 border rounded">
+                  {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <input name="target_major" defaultValue={profile?.target_major || ''}
+                placeholder="目标专业" className="w-full p-2 border rounded" />
+              <input name="research_area" defaultValue={profile?.research_area || ''}
+                placeholder="研究方向" className="w-full p-2 border rounded" />
+              <input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
+                placeholder="本科院校" className="w-full p-2 border rounded" />
+              <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded text-sm">
+                保存
+              </button>
+            </form>
+          </div>
+        )}
+
+        <div className="mt-auto p-4 border-t">
+          <button onClick={handleLogout}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-500 w-full p-2">
+            <LogOut size={16} /> 退出
           </button>
-        </nav>
+        </div>
       </aside>
 
-      {/* 主聊天区 */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-transparent">
-        <div className="w-full max-w-4xl h-full flex flex-col gap-6 relative">
-
-          {/* 消息历史 */}
-          <div
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto pr-4 flex flex-col gap-6 scroll-smooth"
-          >
-            <AnimatePresence>
-              {messages.map((msg, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md shrink-0 ${msg.role === 'user' ? 'bg-secondary' : 'bg-primary'
-                    }`}>
-                    {msg.role === 'user' ? <User className="text-white" size={20} /> : <Bot className="text-white" size={20} />}
-                  </div>
-                  <div className={`premium-card !p-4 max-w-[80%] ${msg.role === 'user' ? '!bg-secondary-light !border-secondary/10' : ''
-                    }`}>
-                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            {/* 状态反馈 */}
-            {status && (
-              <div className="flex items-center gap-2 text-primary text-sm font-medium animate-pulse ml-14">
-                <Loader2 size={16} className="animate-spin" />
-                正在 {status === 'UNDERSTANDING' ? '理解问题' :
-                  status === 'RETRIEVING' ? '检索院校库' :
-                    status === 'THINKING' ? '深度思考' : '组织语言'}...
+      {/* Chat area */}
+      <main className="flex-1 flex flex-col">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
+                {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-            )}
-          </div>
+              <div className={`max-w-[75%] p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white' : 'bg-white border shadow-sm'}`}>
+                <div className="whitespace-pre-wrap">{msg.content}</div>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex items-center gap-2 text-gray-400 text-sm ml-11">
+              <Loader2 size={14} className="animate-spin" /> 思考中...
+            </div>
+          )}
+        </div>
 
-          {/* 输入框 */}
-          <div className="relative">
+        {/* Input */}
+        <div className="p-4 border-t bg-white">
+          <div className="max-w-3xl mx-auto flex gap-3">
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage()}
               disabled={loading}
               placeholder="输入你的留学疑问..."
-              className="premium-input !pr-16 !py-4 text-lg"
+              className="flex-1 p-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center bg-primary rounded-xl text-white hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+              className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0"
             >
-              <Send size={20} />
+              <Send size={18} />
             </button>
           </div>
         </div>
@@ -242,5 +321,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

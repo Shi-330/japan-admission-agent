@@ -7,6 +7,7 @@ from demo.matching_engine import StudentProfile, match_schools, generate_timelin
 from rag.rag_service import RagSummarizeService
 from model.factory import chat_model
 from user.profile_manager import ProfileManager, UserProfile
+from agent.orchestrator import ChatOrchestrator
 
 
 # ── helpers ──
@@ -19,11 +20,18 @@ def _get_profile():
         undergraduate_school=p.undergraduate_school,
     )
 
+
 def _profile_str(profile_mgr=None):
     p = st.session_state.user_profile
     if profile_mgr:
         return profile_mgr.format_for_prompt(p)
-    return f"JLPT {p.jlpt_level}, EJU {p.eju_score}, GPA {p.gpa}, 目标 {p.target_major or '未设置'}, 英语 {p.english_score or '无'}"
+    return f"JLPT {p.jlpt_level}, 目标 {p.target_major or '未设置'}, 英语 {p.english_score or '无'}"
+
+
+def _get_orchestrator():
+    if "_orchestrator" not in st.session_state:
+        st.session_state._orchestrator = ChatOrchestrator()
+    return st.session_state._orchestrator
 
 
 # ── lazy RAG singleton (created once per session, not per request) ──
@@ -60,22 +68,53 @@ def render_simple_agent():
         st.subheader("学生背景")
         current_p = st.session_state.user_profile
         with st.form("profile_form"):
+            st.caption(f"学位: {current_p.target_degree}")
             jlpt = st.selectbox("JLPT", ["无","N5","N4","N3","N2","N1"],
-                                index=["无","N5","N4","N3","N2","N1"].index(current_p.jlpt_level))
-            eju = st.number_input("EJU总分", 0, 800, int(current_p.eju_score))
-            gpa = st.number_input("GPA", 0.0, 4.0, float(current_p.gpa), 0.1)
+                                index=["无","N5","N4","N3","N2","N1"].index(current_p.jlpt_level)
+                                if current_p.jlpt_level in ["无","N5","N4","N3","N2","N1"] else 0)
+            eng = st.text_input("英语成绩 (如 TOEFL 95)", current_p.english_score)
+            col1, col2 = st.columns(2)
+            with col1:
+                gpa_score = st.number_input("GPA", 0.0, 5.0, float(current_p.gpa_score), 0.1)
+            with col2:
+                gpa_scale = st.selectbox("满绩", [4.0, 4.3, 5.0, 100.0],
+                    index=[4.0,4.3,5.0,100.0].index(current_p.gpa_scale)
+                    if current_p.gpa_scale in [4.0,4.3,5.0,100.0] else 0)
             major = st.text_input("目标专业", current_p.target_major)
-            eng = st.text_input("英语成绩 (如 TOEFL 80)", current_p.english_score)
+            research = st.text_input("研究方向", current_p.research_area,
+                                     placeholder="如: 自然语言处理 / 地震工学")
+            school = st.text_input("本科院校", current_p.undergraduate_school)
             if st.form_submit_button("保存背景"):
                 updated = UserProfile(
-                    jlpt_level=jlpt, eju_score=eju, gpa=gpa,
-                    target_major=major, english_score=eng,
+                    jlpt_level=jlpt, english_score=eng,
+                    gpa_score=gpa_score, gpa_scale=gpa_scale,
+                    target_major=major, research_area=research,
+                    undergraduate_school=school,
+                    facts=current_p.facts, events=current_p.events,
+                    target_professors=current_p.target_professors,
+                    application_stage=current_p.application_stage,
+                    field_sources=current_p.field_sources,
                     suggestions=current_p.suggestions, report_status=current_p.report_status,
                 )
+                for f in ["jlpt_level","english_score","target_major","research_area",
+                          "undergraduate_school","gpa_score","gpa_scale"]:
+                    updated.field_sources[f] = {"source": "form", "at": __import__('datetime').datetime.now().isoformat()}
                 st.session_state.user_profile = updated
                 profile_mgr.save_profile(current_user_id, updated)
                 st.success("已保存")
                 st.rerun()
+
+        # Show AI-learned facts
+        with st.expander("AI 已记录", expanded=False):
+            if current_p.facts:
+                for k, v in current_p.facts.items():
+                    st.caption(f"{k}: {v}")
+            if current_p.events:
+                st.caption("--- 时间线 ---")
+                for e in current_p.events[-5:]:
+                    st.caption(f"{e['date']} | {e['event']}")
+            if not current_p.facts and not current_p.events:
+                st.caption("对话中 AI 会自动记录你的经历和重要节点")
         st.caption(f"当前: {_profile_str(profile_mgr)}")
 
     # --- main area ---
@@ -121,18 +160,8 @@ def render_simple_agent():
 
         intent = triggered or "chat"
         if not triggered and prompt:
-            # Free text: quick LLM intent classification
-            intent_prompt = f"""判断意图，只输出一个词：
-用户说："{prompt}"
-背景：{_profile_str(profile_mgr)}
-输出: chat / match / report / qa"""
-            try:
-                resp = chat_model.invoke(intent_prompt)
-                for i in ["chat", "match", "report", "qa"]:
-                    if i in resp.content.lower():
-                        intent = i; break
-            except Exception:
-                intent = "qa"
+            orch = _get_orchestrator()
+            intent = orch.classify_intent(prompt, _profile_str(profile_mgr), chat_model)
 
         profile = _get_profile()
 
@@ -226,3 +255,9 @@ def render_simple_agent():
 
             st.write(response)
             st.session_state.messages_simple.append({"role": "assistant", "content": response})
+
+            # V2.1: extract & merge new facts from this turn
+            orch = _get_orchestrator()
+            st.session_state.user_profile = orch.finish_turn(
+                current_user_id, st.session_state.user_profile,
+                user_text, response, chat_model)
