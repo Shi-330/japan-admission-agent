@@ -1,131 +1,134 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
 ## Project Overview
 
-Japan-Admission-Agent is an AI chatbot for Japanese university admission consulting. It uses a LangChain ReAct agent with RAG (pgvector on Supabase), user profiles (Supabase), web search, and report generation. The primary frontend is Streamlit; a FastAPI + React decoupled variant is in progress.
+Japan-Admission-Agent — AI consultant for Japanese university (master's) admissions.
+Core capabilities: student profile memory, private knowledge base (RAG), school matching,
+application stage tracking, and report generation.
 
-## Commands
+Backend: FastAPI. Frontends: React (students) + Streamlit (admin).
+Supabase handles auth, profiles, RAG vectors, and school data.
+
+## How to Start
 
 ```bash
-# Streamlit app (primary)
+# Terminal 1: FastAPI backend (port 8000)
+venv/Scripts/python.exe -m uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2: React frontend (port 5173)
+cd frontend && npm run dev
+
+# Terminal 3 (optional): Streamlit admin (port 8501)
 streamlit run app.py
-
-# FastAPI backend (decoupled mode)
-uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
-
-# React frontend (decoupled mode)
-cd frontend && npm install && npm run dev      # dev server on :5173
-cd frontend && npm run build && npm run preview  # production
-
-# Tests
-pytest                                  # all tests
-pytest tests/test_profile_manager.py    # single file
 ```
+
+Test account: `test@example.com` / `AgentV2_test!`
 
 ## Architecture
 
-The project has two runtime modes sharing the same agent core:
+```
+                    ┌── agent/orchestrator.py (chat pipeline, zero-UI)
+FastAPI (:8000) ───┼── agent/state_machine.py (per-school stage tracking)
+                    ├── user/profile_manager.py (UserProfile V2 + Supabase CRUD)
+                    ├── rag/rag_service.py (pgvector semantic search)
+                    └── demo/matching_engine.py (deterministic school matching)
 
-### Streamlit Mode (primary)
-```
-app.py → views/auth_pages.py (login/register via Supabase Auth)
-       → views/main_agent.py (chat UI + dashboard)
-              → agent/react_agent.py (ReAct agent with 7 tools)
-              → user/profile_manager.py (Supabase CRUD)
-```
-
-### FastAPI + React Mode (in progress)
-```
-frontend/ (React 19 + Vite + Tailwind) → SSE → backend/api/server.py (:8000)
-                                                   → backend/core/agent.py (HeadlessAgent wrapper)
+React (:5173) ─── consumes /v1/* endpoints (chat SSE, profile, match, rag, stage)
+Streamlit (:8501) ─── admin panel, also consumes same agent/ modules
 ```
 
-### Core Agent (`agent/react_agent.py`)
+Key rule: `agent/`, `rag/`, `user/`, `utils/` are Streamlit-free.
+Both FastAPI and Streamlit call the same `agent/orchestrator.py`.
 
-`ReactAgent` is initialized with a `user_profile` dict. On each user query, it runs a **decision engine** (`make_decision`) before execution that classifies intent into 4 categories: `[ANSWER]` (respond directly), `[UPDATE_PLAN]` (RAG retrieval needed), `[MISSING_INFO]` (prompt user for profile data), or `[REPORT]` (generate a full planning report). Decisions are cached via `DecisionCache` (LRU + 30-min TTL in `agent/memory.py`).
+## API Endpoints (FastAPI :8000)
 
-Execution uses LangChain `create_agent` with `astream_events` for streaming. Middleware (`agent/tools/middleware.py`) hooks tool calls, model invocations, and dynamically swaps the system prompt when report generation is triggered.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /health | no | Health check |
+| GET | /v1/profile | JWT | Read user profile |
+| PUT | /v1/profile | JWT | Update profile fields |
+| POST | /v1/match | JWT | Deterministic school matching |
+| POST | /v1/rag | no | Semantic search knowledge base |
+| POST | /v1/chat | JWT | Intent classify → route → SSE stream |
+| GET | /v1/stage | JWT | Current application stage + timeline |
+| POST | /v1/stage/advance | JWT | Advance to next stage |
 
-### Tools (7 total, in `agent/tools/agent_tools.py`)
-- `rag_fetch_context` — private knowledge base retrieval via Supabase pgvector
-- `web_search_tool` — DuckDuckGo web search
-- `get_current_month` — returns YYYY-MM
-- `generate_external_data` / `fetch_external_data` — CSV-based data lookups
-- `fill_context_for_report` — signal tool that triggers report-mode prompt switching via middleware
-- `update_report_suggestions` — persists generated reports to Supabase `user_profiles`
+Auth: `backend/api/auth.py` — verifies Supabase JWT via API call (fallback: local decode).
 
-### Model Factory (`model/factory.py`)
+## UserProfile V2 (`user/profile_manager.py`)
 
-Abstract factory pattern. `ChatModelFactory` produces `ChatOpenAI` pointed at Alibaba DashScope's coding plan (`https://coding.dashscope.aliyuncs.com/v1`) using `OPENAI_API_KEY`. `EmbeddingModelFactory` produces `DashScopeEmbeddings` using `DASHSCOPE_API_KEY`. Both are instantiated as module-level singletons (`chat_model`, `embedding_model`).
+Pydantic model with these key additions over V1:
+- `target_degree` (default "修士"), `research_area`
+- `gpa_score` + `gpa_scale` (normalized to 4.0 via `gpa` property)
+- `facts: dict` — AI free-form storage, no schema. LLM drops anything worth remembering.
+- `events: list[dict]` — timeline entries `{date, event, source}`, deduplicated
+- `applications: list[dict]` — per-school tracking (see V2.2 below)
+- `field_sources: dict` — `{field: {source: "form"|"chat_inferred", at: ISO}}`. Form always wins.
 
-### RAG (`rag/rag_service.py`, `rag/vector_store.py`)
+ProfileManager methods:
+- `merge_delta(profile, delta)` — merge LLM-extracted changes with source priority
+- `extract_facts_from_chat(profile, conversation, chat_model)` — LLM scans for new facts
+- `format_for_prompt(profile)` — renders full profile including facts, events, applications
+- `upsert_application(school, **kwargs)` / `add_professor_attempt(school, prof, status, date)`
 
-Uses `SupabaseVectorStore` (PostgreSQL pgvector). Documents are chunked via `RecursiveCharacterTextSplitter` (chunk_size: 200, overlap: 20) with MD5 deduplication. The `match_documents` SQL function does cosine similarity search.
+## V2.2 Application Tracking (WIP)
 
-### User Profiles (`user/profile_manager.py`)
+Per-school, per-professor data model:
 
-Pydantic `UserProfile` model stored in Supabase `user_profiles` table. Fields: `jlpt_level`, `eju_score`, `gpa`, `target_major`, `undergraduate_school`, `english_score`, `report_suggestions`. Profile data is injected into the agent's system prompt dynamically.
+```python
+applications: [
+    {
+        "school": "京都大学 情报理工",
+        "stage": "contacting",          # preparing/contacting/applying/exam/waiting/decided
+        "needs_contact": True,
+        "professors": [
+            {"name": "田中太郎", "status": "sent", "date": "2026-06-20"},
+            {"name": "山田花子", "status": "sent", "date": "2026-07-05"}
+        ],
+        "deadlines": {"出願": "2026-12-15"},
+        "notes": "田中2周未回，已换山田"
+    },
+    {
+        "school": "北海道大学 情报科学",
+        "stage": "preparing",
+        "needs_contact": False,
+        "professors": [],
+        "deadlines": {"出願": "2027-01-20"}
+    }
+]
+```
 
-## Key Patterns
+Key: each school has its own stage. Each professor within a school has independent
+contact status. 2-week no-reply → switch professor or school.
 
-- **All external state in Supabase**: auth, user profiles, prompt templates (`prompts` table), and RAG vectors (`documents` table with pgvector). No local database.
-- **Prompt loading**: Fetched from Supabase `prompts` table (active version) via `utils/prompt_loader.py`, with local YAML fallback in `config/prompts.yml`.
-- **Caching**: Decision cache (LRU+TTL), RAG context cache (dict by query hash), web search cache (dict), and prompt cache (cachetools TTL). All in-memory.
-- **Centralized paths**: `utils/path_tool.py` provides `get_abs_path()` for resolving relative paths from any module.
-- **Agent modules must not import Streamlit**: `agent/`, `rag/`, `user/`, `utils/` are kept Streamlit-free so the decoupled FastAPI backend can use them directly.
+State machine definitions in `agent/state_machine.py` (STAGES dict).
+
+## V2 Remaining Tasks
+
+| Task | Status | What |
+|------|--------|------|
+| V2.1 Profile 2.0 | done | facts, events, field_sources, gpa_scale, extraction |
+| V2.2 State Machine | WIP | per-school tracks + professor attempts done. TODO: extraction prompt, React cards, reminder logic |
+| V2.3 Private DB | todo | real senpai cases, structured import |
+| V2.4 Hybrid Search | todo | metadata filter + vector + BM25 |
+| V2.5 Frontend Dashboard | todo | stage cards UI in React |
+| V2.6 Email Automation | todo | OAuth + draft + confirm + track |
+| FastAPI + Auth | done | 8 endpoints, JWT middleware |
+| React Frontend | done | login/chat/profile/stage progress |
 
 ## Configuration
 
-- `.env` — `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`
-- `config/rag.yml` — model names and chunking parameters
-- `config/agent.yml` — external data paths
-- Model is `qwen3.5-plus` via DashScope coding plan; embeddings via `text-embedding-v4`
+- `.env` — `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`, `EMBEDDING_MODE`
+- `config/rag.yml` — model names (documentation only, factory.py hardcodes values)
+- `frontend/.env` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`, `VITE_API_URL`
+- Model: `deepseek-chat` via DeepSeek API. Embedding: `BAAI/bge-small-zh-v1.5` (local) or DashScope `text-embedding-v4` (api)
 
-## V2 方向（2026.07）
+## Key Patterns
 
-V1 的核心问题是 **ReAct 不适合确定性业务流程**——日本升学咨询的步骤是已知的，不需要 Agent 在中间"思考"用什么 tool。V2 的核心转变：从匹配工具 → 项目管理系统。
-
-### 为什么需要专用 Agent（不是通用 Chat）
-
-1. **长期记忆**：记住学生的 JLPT 从 N2 考到 N1、三个月前套磁的教授回复了什么。
-2. **私有数据库**：学长真实案例，公开数据没有，通用 AI 拿不到。
-3. **当学生的手**：不只是告诉你怎么写，是帮你发出去、追踪回复、提醒下一步。
-
-### V2 Todo 依赖树
-
-```
-V2.1 ───────── 用户画像升级（对话中自然积累 + 显式更新优先）
-    │
-    ├──→ V2.5 ── 前端适配（看板式 UI：阶段进度 + 操作区 + 问答）
-    │
-V2.2 ───────── 状态机引擎（阶段锁定 + 倒计时 + 确定性流转）
-    │
-    ├──→ V2.5 ── 前端适配
-    ├──→ V2.6 ── 邮件自动化（OAuth + 草稿 + 确认 + 追踪）
-    │
-V2.3 ───────── 私有案例库（学长 Timeline + 教授信息 + 结果）
-    │
-    ├──→ V2.5 ── 前端适配
-    ├──→ V2.4 ── 混合检索（元数据 + 向量 + BM25）
-    └──→ V2.6 ── 邮件自动化
-
-并行：
-  #8  FastAPI 骨架（Supabase JWT 认证 + HeadlessAgent 重构）
-       ├── #9  端点 Profile CRUD
-       ├── #10 端点 院校匹配 + RAG
-       └── #11 端点 智能对话（意图分类 + SSE 流式）
-```
-
-### 前后端策略
-
-- **后端**：FastAPI，与 `agent/` `rag/` `user/` 共享模块（已解耦，零 Streamlit 依赖）
-- **前端**：Streamlit 跑通 V2 逻辑 → 状态机稳定后切 React
-- **Embedding**：开发 `EMBEDDING_MODE=local`（BGE-small 24MB），生产 `=api`（DashScope text-embedding-v4）
-
-### 关键原则
-
-- 先做匹配引擎（确定性逻辑），再考虑哪里需要 LLM
-- LLM 是润滑剂，不是引擎
-- 切到 React 的触发信号：需要拖拽发文件 / 第 3 个学生反馈体验烂 / 主动想学 React
+- All state in Supabase: auth, profiles, RAG vectors, school data. No local DB.
+- Agent modules (`agent/`, `rag/`, `user/`, `utils/`) never import Streamlit.
+- Caching: TTLCache (200 entries, 30min TTL) for RAG and web search. DecisionCache (LRU+TTL) for intent.
+- No emoji in UI strings (user preference).
+- Deterministic logic first, LLM as lubricant not engine.
