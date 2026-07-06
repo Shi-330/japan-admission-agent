@@ -14,15 +14,15 @@ Supabase handles auth, profiles, RAG vectors, and school data.
 ## How to Start
 
 ```bash
-# Terminal 1: FastAPI backend (port 8000)
-venv/Scripts/python.exe -m uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
+# Single command: backend + frontend both on port 8000
+venv/Scripts/python.exe -m uvicorn backend.api.server:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: React frontend (port 5173)
-cd frontend && npm run dev
-
-# Terminal 3 (optional): Streamlit admin (port 8501)
-streamlit run app.py
+# Visit: http://localhost:8000
 ```
+
+After editing frontend code: `cd frontend && npm run build`, refresh browser.
+
+No separate frontend server needed (FastAPI serves `frontend/dist/` as static files).
 
 Test account: `test@example.com` / `AgentV2_test!`
 
