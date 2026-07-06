@@ -1,30 +1,45 @@
 # V2 TODO
 
-> Last updated: 2026-07-06
+> Last updated: 2026-07-07
 
-## Now: V2.2 State Machine (done 2026-07-06)
+## Done
 
-- [x] Update extraction prompt in `user/profile_manager.py` to recognize per-school applications
-- [x] React frontend: replace single stage bar with per-school tracking cards
-- [x] `/v1/stage` and `/v1/stage/advance` API — adapt to `applications` list (currently single-stage)
-- [x] Professor no-reply reminder: 2 weeks → prompt to switch professor or school
-- [x] Chat flow: LLM aware of each school's stage when generating advice
+### V2.2 State Machine
+- [x] Per-school applications: extraction prompt, merge_delta, stage API, React cards
+- [x] Professor reminders (14-day no-reply detection)
+- [x] Bidirectional stages (forward + rollback)
+- [x] Manual school CRUD (add/delete via sidebar)
+- [x] Real-date timeline from 募集要項 deadlines
 
-## Next: V2.3 Private Case Database
+### UX
+- [x] Streaming chat (invoke → stream)
+- [x] Chat response cache (5-min TTL)
+- [x] Keyword intent classification (skip LLM for known patterns)
+- [x] Toast notifications (replaced alert())
+- [x] Proactive greeting on login (/v1/greeting)
+- [x] Single-server setup (FastAPI serves React build, port 8000)
+- [x] School auto-suggestion from chat (one-click add to tracking)
 
-- [ ] Design `senpai_cases` table schema (school, major, profile, timeline, result, tips)
-- [ ] Import path: manual form + batch CSV
-- [ ] Case-driven matching: "students like you who got into 東大 had..."
-- [ ] UI: case browser with filtering by major/school/result
+### School Plaza
+- [x] 7-school catalog with majors, deadlines, requirements
+- [x] Filter by major/name
+- [x] One-click "追踪" to add to sidebar
 
-## Next: V2.4 Hybrid Search
+### Calendar
+- [x] Horizontal timeline with month columns
+- [x] Deadline markers from applications[].deadlines
+- [x] Current month highlighted
 
-- [ ] Metadata pre-filter (time range, school, major) before vector search
-- [ ] Add BM25 keyword scoring alongside cosine similarity
-- [ ] Stage-aware search (different search strategies per application stage)
+### Data
+- [x] v2_migration.sql for Supabase user_profiles columns
+- [x] seed_schools.py with 5-school deadline reference
 
-## Later
+## Next
 
-- [ ] V2.5 Frontend dashboard (stage cards, timeline view, action center)
-- [ ] V2.6 Email automation (OAuth, draft generation, send tracking)
-- [ ] Streamlit → thin admin panel only
+- [ ] PDF 募集要項 upload + LLM extraction → auto-fill deadlines
+- [ ] Application card inline editing (professors, deadlines, notes)
+- [ ] Date-driven stage progression (real deadlines drive the timeline)
+- [ ] V2.3 Private Case Database (senpai cases)
+- [ ] V2.4 Hybrid Search
+- [ ] V2.5 Dashboard polish
+- [ ] V2.6 Email automation
