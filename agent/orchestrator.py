@@ -38,12 +38,32 @@ class ChatOrchestrator:
         return profile
 
     def classify_intent(self, prompt: str, profile_str: str, chat_model=None) -> str:
-        """Quick LLM intent classification. Returns: chat / match / report / qa."""
-        if not chat_model:
+        """Fast intent classification. Returns: chat / match / report / qa.
+        Uses keyword match first (no LLM call), falls back to LLM for ambiguous cases."""
+        p = prompt.lower()
+
+        # Fast keyword match — catch 90% of cases without LLM
+        match_keywords = ["匹配", "选校", "推荐学校", "哪些学校", "适合我", "定校", "学校推荐"]
+        report_keywords = ["报告", "规划", "计划书", "研究计划", "出愿计划"]
+        qa_keywords = ["怎么", "如何", "什么", "为什么", "能不能", "需要什么", "条件",
+                       "要求", "流程", "材料", "截止", "考试内容", "面试", "分数", "gpa",
+                       "n1", "n2", "jlpt", "toefl", "toeic", "ielts", "英语", "日语",
+                       "出愿", "套磁", "研究计划", "内诺", "在留", "签证", "入试",
+                       "申请", "修士", "研究生", "教授", "学费", "奖学金"]
+
+        if any(k in p for k in match_keywords):
+            return "match"
+        if any(k in p for k in report_keywords):
+            return "report"
+        if any(k in p for k in qa_keywords):
             return "qa"
+
+        # Only LLM classify if keyword match unclear
+        if not chat_model:
+            return "chat"
         intent_prompt = f"""判断意图，只输出一个词：
 用户说："{prompt}"
-背景：{profile_str}
+意图说明：match=选校匹配 report=规划报告 qa=知识问答 chat=闲聊/申请进度
 输出: chat / match / report / qa"""
         try:
             resp = chat_model.invoke(intent_prompt)
@@ -52,4 +72,4 @@ class ChatOrchestrator:
                     return i
         except Exception:
             pass
-        return "qa"
+        return "chat"

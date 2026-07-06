@@ -101,7 +101,7 @@ class UserProfile(BaseModel):
         app["professors"].append({"name": professor, "status": status, "date": date or datetime.now().strftime("%Y-%m-%d")})
         return app
 
-# ── Profile extraction prompt（V2.1: 每轮对话后 LLM 扫描新增信息）──
+# ── Profile extraction prompt（V2.2: 每轮对话后 LLM 扫描新增信息，支持多校申请追踪）──
 PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取学生的新信息，只输出变化的字段。
 
 学生当前画像：
@@ -111,6 +111,8 @@ PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取�
 {conversation}
 
 输出 JSON，只包含有变化的字段（没变化就不输出）。字段说明：
+
+基础字段：
 - jlpt_level: N1/N2/N3/N4/N5/无
 - english_score: 如 "TOEFL 95" / "TOEIC 800" / "IELTS 7.0"
 - target_major: 目标专业
@@ -118,16 +120,42 @@ PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取�
 - undergraduate_school: 本科院校
 - gpa_score: 绩点数值
 - gpa_scale: 满绩点（4.0/4.3/5.0/100）
-- target_professors: 数组，如 ["东大 田中太郎", "早大 佐藤花子"]
-- application_stage: preparing/contacting/applying/waiting/done
+- eju_score: 仅当学生明确是学部申请者时才提取
 - facts: 自由对象，如 {"实习":"腾讯NLP 3个月"}。key用中文描述，不要覆盖已有key
 - events: 数组，如 [{"date":"2026-07","event":"N1合格","source":"chat"}]
-- eju_score: 仅当学生明确是学部申请者时才提取
+
+申请追踪（V2.2 多校独立追踪）：
+- applications: 数组，每项代表一所志愿校的完整追踪记录。格式：
+  [
+    {{
+      "school": "京都大学 情报理工",
+      "stage": "contacting",           // preparing/contacting/applying/exam/waiting/decided
+      "needs_contact": true,           // 是否需要套磁
+      "professors": [                  // 该校联系的教授列表
+        {{"name": "田中太郎", "status": "sent", "date": "2026-07-01"}}
+      ],
+      "deadlines": {{"出愿": "2026-12-15"}},  // 截止日期
+      "notes": "田中2周未回，考虑换人"         // 备注
+    }}
+  ]
+  professor status 取值: pending(准备联系) / sent(已发信) / replied(收到回复) / rejected(婉拒) / no_reply(无回复超2周) / interview(获得面试)
+
+  重要规则：
+  - 只输出学生明确提到的新学校或状态变更，不要编造
+  - 如果学生说"给某某教授发了邮件"，新增该校 application 并添加 professor(status=sent)
+  - 如果学生说"某某教授回了"，更新对应 professor 的 status
+  - 如果学生说"某某教授两周没回"，更新 status=no_reply
+  - 每所学校在 applications 中只出现一次（用 school 字段去重），状态变更时更新已有记录
+  - 不要删除已有的 applications，只更新或新增
+
+- target_professors: 数组，如 ["东大 田中太郎"]（向后兼容，简单列表）
+- application_stage: 字符串（向后兼容，单校模式的总阶段）
 
 规则：
 1. 学生明确说的 > 你推断的。不确定就别写。
 2. facts 和 events 只追加新条目，不覆盖已有。
-3. 如果没有任何新信息，返回 {{}}。
+3. 如果有新的申请信息（套磁、出愿、考试等），优先用 applications 格式输出。
+4. 如果没有任何新信息，返回 {{}}。
 
 JSON:"""
 
@@ -166,11 +194,12 @@ class ProfileManager:
             logger.info(f"用户 {user_id} 画像已同步至数据库")
         except Exception as e:
             logger.error(f"保存数据库失败: {e}")
+            raise  # re-raise so caller sees the error
 
     def merge_delta(self, profile: UserProfile, delta: dict) -> UserProfile:
         """合并 LLM 提取的增量信息。form 来源的字段不会被 chat_inferred 覆盖。"""
         for field, value in delta.items():
-            if field in ("facts", "events", "target_professors"):
+            if field in ("facts", "events", "target_professors", "applications"):
                 continue  # 下面单独处理
             if field not in UserProfile.model_fields:
                 continue
@@ -194,6 +223,27 @@ class ProfileManager:
             if prof not in profile.target_professors:
                 profile.target_professors.append(prof)
 
+        # applications: 按 school 去重合并，逐校 upsert
+        for app_delta in delta.get("applications", []):
+            school = app_delta.get("school", "")
+            if not school:
+                continue
+            existing = profile.upsert_application(school)
+            # merge top-level fields
+            for k in ("stage", "needs_contact", "notes"):
+                if k in app_delta and app_delta[k]:
+                    existing[k] = app_delta[k]
+            # merge professors: dedupe by name, update status if newer
+            for prof in app_delta.get("professors", []):
+                profile.add_professor_attempt(
+                    school, prof.get("name", ""),
+                    prof.get("status", "pending"),
+                    prof.get("date", "")
+                )
+            # merge deadlines
+            for k, v in app_delta.get("deadlines", {}).items():
+                existing.setdefault("deadlines", {})[k] = v
+
         return profile
 
     def extract_facts_from_chat(
@@ -213,6 +263,7 @@ class ProfileManager:
                 "gpa_scale": profile.gpa_scale,
                 "target_professors": profile.target_professors,
                 "application_stage": profile.application_stage,
+                "applications": profile.applications,
                 "facts": profile.facts,
                 "events": profile.events[-5:] if profile.events else [],
             }, ensure_ascii=False)

@@ -38,7 +38,10 @@ async function apiCall(path, token, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
 
@@ -75,6 +78,16 @@ export default function App() {
     localStorage.setItem('chat_v2', JSON.stringify(messages.slice(-100)));
   }, [messages]);
 
+  // ── Greeting helper ──
+  const loadGreeting = async (t) => {
+    try {
+      const g = await apiCall('/v1/greeting', t);
+      setMessages([{ role: 'assistant', content: g.message }]);
+    } catch {
+      setMessages([{ role: 'assistant', content: '欢迎回来！我是你的日本升学顾问，请告诉我你的目标。' }]);
+    }
+  };
+
   // ── Auth handlers ──
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -82,7 +95,7 @@ export default function App() {
       const r = await loginSupabase(email, password);
       setToken(r.token);
       setUser(r.user || { email });
-      setMessages([{ role: 'assistant', content: `欢迎回来, ${email}! 我是你的日本升学顾问，请告诉我你的目标。` }]);
+      await loadGreeting(r.token);
     } catch (err) {
       alert(`登录失败: ${err.message}`);
     }
@@ -105,18 +118,29 @@ export default function App() {
 
   // ── Stage state ──
   const [stage, setStage] = useState(null);
+  const [advancing, setAdvancing] = useState(null); // which stage button is loading
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
     }
-  }, [token, profile?.application_stage]);
+  }, [token, profile]); // refresh stage whenever profile changes (incl. applications)
 
-  const advanceStage = async (target) => {
+  const advanceStage = async (target, school) => {
+    const key = school || target;
+    setAdvancing(key);
     try {
-      const r = await apiCall('/v1/stage/advance', token, { method: 'POST', body: { target_stage: target } });
-      setStage(prev => ({ ...prev, stage_id: r.stage, label: r.label }));
+      const body = { target_stage: target };
+      if (school) body.school = school;
+      const r = await apiCall('/v1/stage/advance', token, { method: 'POST', body });
+      if (!r.unchanged) {
+        // Refresh full stage data
+        const updated = await apiCall('/v1/stage', token);
+        setStage(updated);
+      }
     } catch (err) {
       alert(`阶段切换失败: ${err.message}`);
+    } finally {
+      setAdvancing(null);
     }
   };
 
@@ -172,11 +196,15 @@ export default function App() {
   const saveProfile = async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
-    const data = Object.fromEntries(form.entries());
-    // Convert numeric fields
-    if (data.gpa_score) data.gpa_score = parseFloat(data.gpa_score);
-    if (data.gpa_scale) data.gpa_scale = parseFloat(data.gpa_scale);
-    if (data.eju_score) data.eju_score = parseInt(data.eju_score);
+    const raw = Object.fromEntries(form.entries());
+    // Clean: drop empty strings, convert numerics
+    const data = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === '' || v === null || v === undefined) continue;
+      if (k === 'gpa_score' || k === 'gpa_scale') data[k] = parseFloat(v);
+      else if (k === 'eju_score') data[k] = parseInt(v);
+      else data[k] = v;
+    }
     try {
       const updated = await apiCall('/v1/profile', token, { method: 'PUT', body: data });
       setProfile(updated);
@@ -232,7 +260,7 @@ export default function App() {
           <p className="text-xs text-gray-400 mt-1">{user?.email}</p>
         </div>
 
-        {/* Stage progress */}
+        {/* Stage progress — single bar (backward compat) */}
         {stage && (
           <div className="p-4 border-b">
             <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
@@ -253,21 +281,121 @@ export default function App() {
                 </ul>
               </details>
             )}
-            {stage.next_stages?.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {stage.next_stages.map(s => (
-                  <button key={s} onClick={() => advanceStage(s)}
-                    className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition">
-                    进入「{s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s}」
-                  </button>
+
+            {/* V2.2: Per-school application cards */}
+            {stage.applications?.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase">各校追踪</h4>
+                {stage.applications.map((app, i) => {
+                  const stageColors = { preparing: 'bg-gray-100 text-gray-700', contacting: 'bg-blue-100 text-blue-700',
+                    applying: 'bg-purple-100 text-purple-700', exam: 'bg-orange-100 text-orange-700',
+                    waiting: 'bg-amber-100 text-amber-700', decided: 'bg-green-100 text-green-700' };
+                  const profStatusColors = { pending: 'text-gray-400', sent: 'text-blue-600',
+                    replied: 'text-green-600', rejected: 'text-red-500', no_reply: 'text-amber-600',
+                    interview: 'text-teal-600' };
+                  const profStatusLabel = { pending: '待', sent: '已发', replied: '已回',
+                    rejected: '婉拒', no_reply: '未回', interview: '面试' };
+                  return (
+                    <div key={i} className="border rounded-lg p-2.5 bg-white">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-gray-800 truncate max-w-[140px]" title={app.school}>
+                          {app.school}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
+                          {app.label}
+                        </span>
+                      </div>
+                      {/* Professors */}
+                      {app.professors?.length > 0 && (
+                        <div className="text-[10px] text-gray-500 mb-1">
+                          {app.professors.map((p, j) => (
+                            <span key={j} className={`mr-2 ${profStatusColors[p.status] || 'text-gray-400'}`}>
+                              {p.name}({profStatusLabel[p.status] || p.status})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Deadlines */}
+                      {app.deadlines && Object.keys(app.deadlines).length > 0 && (
+                        <div className="text-[10px] text-gray-400 mb-1">
+                          {Object.entries(app.deadlines).map(([k, v], j) => (
+                            <span key={j} className="mr-2">{k}: {v}</span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Notes */}
+                      {app.notes && (
+                        <div className="text-[10px] text-gray-400 italic truncate">{app.notes}</div>
+                      )}
+                      {/* Advance button */}
+                      {app.next_stages?.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {app.next_stages.map(s => {
+                            const key = s + app.school;
+                            const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
+                            return (
+                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                                disabled={advancing === key}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-50 hover:bg-indigo-50 text-gray-500 hover:text-indigo-600 transition disabled:opacity-30 disabled:cursor-wait">
+                                {advancing === key ? '...' : label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Timeline mini */}
+                      {app.timeline?.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="text-[10px] text-gray-400 cursor-pointer">时间线</summary>
+                          <div className="mt-1 space-y-0.5">
+                            {app.timeline.map((t, j) => (
+                              <div key={j} className={`text-[10px] flex justify-between ${t.stage === app.stage_id ? 'font-medium text-indigo-600' : 'text-gray-400'}`}>
+                                <span>{t.label}</span>
+                                <span>{t.start} ~ {t.end}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* All reminders (per-school + per-professor) */}
+            {stage.all_reminders?.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {stage.all_reminders.map((r, i) => (
+                  <div key={i} className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded">
+                    {r.school ? `[${r.school}] ` : ''}{r.message}
+                  </div>
                 ))}
               </div>
             )}
-            {stage.reminders?.length > 0 && (
+
+            {/* Fallback: single-stage reminders (backward compat) */}
+            {(!stage.all_reminders || stage.all_reminders.length === 0) && stage.reminders?.length > 0 && (
               <div className="mt-2 space-y-1">
                 {stage.reminders.map((r, i) => (
                   <div key={i} className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded">{r}</div>
                 ))}
+              </div>
+            )}
+
+            {/* Single-stage advance buttons (backward compat, when no applications) */}
+            {(!stage.applications || stage.applications.length === 0) && stage.next_stages?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {stage.next_stages.map(s => {
+                  const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
+                  return (
+                    <button key={s} onClick={() => advanceStage(s)}
+                      disabled={advancing === s}
+                      className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30 disabled:cursor-wait">
+                      {advancing === s ? '处理中...' : `进入「${label}」`}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -2,13 +2,13 @@
 
 > Last updated: 2026-07-06
 
-## Now: V2.2 State Machine (in progress)
+## Now: V2.2 State Machine (done 2026-07-06)
 
-- [ ] Update extraction prompt in `user/profile_manager.py` to recognize per-school applications
-- [ ] React frontend: replace single stage bar with per-school tracking cards
-- [ ] `/v1/stage` and `/v1/stage/advance` API — adapt to `applications` list (currently single-stage)
-- [ ] Professor no-reply reminder: 2 weeks → prompt to switch professor or school
-- [ ] Chat flow: LLM aware of each school's stage when generating advice
+- [x] Update extraction prompt in `user/profile_manager.py` to recognize per-school applications
+- [x] React frontend: replace single stage bar with per-school tracking cards
+- [x] `/v1/stage` and `/v1/stage/advance` API — adapt to `applications` list (currently single-stage)
+- [x] Professor no-reply reminder: 2 weeks → prompt to switch professor or school
+- [x] Chat flow: LLM aware of each school's stage when generating advice
 
 ## Next: V2.3 Private Case Database
 
