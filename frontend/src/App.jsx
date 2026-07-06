@@ -52,6 +52,12 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // ── Toast ──
+  const [toast, setToast] = useState(null); // {text, type: 'error'|'success'}
+  const showToast = (text, type = 'error') => {
+    setToast({ text, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // ── Chat state ──
   const [messages, setMessages] = useState(() => {
@@ -119,6 +125,9 @@ export default function App() {
   // ── Stage state ──
   const [stage, setStage] = useState(null);
   const [advancing, setAdvancing] = useState(null); // which stage button is loading
+  const [showAddSchool, setShowAddSchool] = useState(false);
+  const [newSchool, setNewSchool] = useState('');
+  const [newSchoolStage, setNewSchoolStage] = useState('preparing');
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
@@ -138,9 +147,39 @@ export default function App() {
         setStage(updated);
       }
     } catch (err) {
-      alert(`阶段切换失败: ${err.message}`);
+      showToast(`阶段切换失败: ${err.message}`);
     } finally {
       setAdvancing(null);
+    }
+  };
+
+  const addSchool = async (e) => {
+    e.preventDefault();
+    if (!newSchool.trim()) return;
+    try {
+      const r = await apiCall('/v1/applications', token, {
+        method: 'POST',
+        body: { school: newSchool.trim(), stage: newSchoolStage }
+      });
+      // Refresh stage data
+      const updated = await apiCall('/v1/stage', token);
+      setStage(updated);
+      setNewSchool('');
+      setNewSchoolStage('preparing');
+      setShowAddSchool(false);
+    } catch (err) {
+      showToast(`添加失败: ${err.message}`);
+    }
+  };
+
+  const removeSchool = async (school) => {
+    if (!confirm(`确认删除「${school}」？`)) return;
+    try {
+      await apiCall(`/v1/applications?school=${encodeURIComponent(school)}`, token, { method: 'DELETE' });
+      const updated = await apiCall('/v1/stage', token);
+      setStage(updated);
+    } catch (err) {
+      showToast(`删除失败: ${err.message}`);
     }
   };
 
@@ -210,7 +249,7 @@ export default function App() {
       setProfile(updated);
       setShowProfile(false);
     } catch (err) {
-      alert(`保存失败: ${err.message}`);
+      showToast(`保存失败: ${err.message}`);
     }
   };
 
@@ -253,8 +292,18 @@ export default function App() {
   // ── Main app ──
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className={`px-4 py-2 rounded-lg shadow-lg text-sm font-medium ${
+            toast.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'
+          }`}>
+            {toast.text}
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r flex flex-col shrink-0">
+      <aside className="w-80 bg-white border-r flex flex-col shrink-0 overflow-hidden">
         <div className="p-6 border-b">
           <h1 className="text-lg font-bold text-gray-800">升学顾问</h1>
           <p className="text-xs text-gray-400 mt-1">{user?.email}</p>
@@ -283,10 +332,37 @@ export default function App() {
             )}
 
             {/* V2.2: Per-school application cards */}
-            {stage.applications?.length > 0 && (
-              <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold text-gray-400 uppercase">各校追踪</h4>
-                {stage.applications.map((app, i) => {
+                <button onClick={() => setShowAddSchool(!showAddSchool)}
+                  className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition"
+                  title="添加学校">+</button>
+              </div>
+              {/* Add school form */}
+              {showAddSchool && (
+                <form onSubmit={addSchool} className="border rounded-lg p-2 bg-indigo-50 space-y-1.5">
+                  <input value={newSchool} onChange={e => setNewSchool(e.target.value)}
+                    placeholder="学校名称，如：京都大学 情报理工"
+                    className="w-full text-xs p-1.5 border rounded" autoFocus />
+                  <select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
+                    className="w-full text-xs p-1.5 border rounded">
+                    <option value="preparing">准备阶段</option>
+                    <option value="contacting">套磁阶段</option>
+                    <option value="applying">出愿阶段</option>
+                    <option value="exam">考试阶段</option>
+                    <option value="waiting">等待结果</option>
+                    <option value="decided">确定去向</option>
+                  </select>
+                  <div className="flex gap-1">
+                    <button type="submit" disabled={!newSchool.trim()}
+                      className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 transition">添加</button>
+                    <button type="button" onClick={() => setShowAddSchool(false)}
+                      className="text-xs px-2 py-1 rounded bg-white text-gray-500 hover:bg-gray-100 transition">取消</button>
+                  </div>
+                </form>
+              )}
+              {stage.applications?.length > 0 && stage.applications.map((app, i) => {
                   const stageColors = { preparing: 'bg-gray-100 text-gray-700', contacting: 'bg-blue-100 text-blue-700',
                     applying: 'bg-purple-100 text-purple-700', exam: 'bg-orange-100 text-orange-700',
                     waiting: 'bg-amber-100 text-amber-700', decided: 'bg-green-100 text-green-700' };
@@ -301,9 +377,13 @@ export default function App() {
                         <span className="text-xs font-medium text-gray-800 truncate max-w-[140px]" title={app.school}>
                           {app.school}
                         </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
-                          {app.label}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
+                            {app.label}
+                          </span>
+                          <button onClick={() => removeSchool(app.school)}
+                            className="text-[10px] text-gray-300 hover:text-red-500 leading-none" title="删除">x</button>
+                        </div>
                       </div>
                       {/* Professors */}
                       {app.professors?.length > 0 && (
@@ -327,10 +407,21 @@ export default function App() {
                       {app.notes && (
                         <div className="text-[10px] text-gray-400 italic truncate">{app.notes}</div>
                       )}
-                      {/* Advance button */}
-                      {app.next_stages?.length > 0 && (
+                      {/* Advance & Rollback buttons */}
+                      {(app.next_stages?.length > 0 || app.prev_stages?.length > 0) && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
-                          {app.next_stages.map(s => {
+                          {app.prev_stages?.map(s => {
+                            const key = 'back-' + s + app.school;
+                            const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
+                            return (
+                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                                disabled={advancing === key}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30 disabled:cursor-wait">
+                                {advancing === key ? '...' : `← ${label}`}
+                              </button>
+                            );
+                          })}
+                          {app.next_stages?.map(s => {
                             const key = s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                             return (
@@ -360,8 +451,7 @@ export default function App() {
                     </div>
                   );
                 })}
-              </div>
-            )}
+            </div>
 
             {/* All reminders (per-school + per-professor) */}
             {stage.all_reminders?.length > 0 && (
@@ -383,10 +473,20 @@ export default function App() {
               </div>
             )}
 
-            {/* Single-stage advance buttons (backward compat, when no applications) */}
-            {(!stage.applications || stage.applications.length === 0) && stage.next_stages?.length > 0 && (
+            {/* Single-stage advance / rollback buttons (backward compat, when no applications) */}
+            {(!stage.applications || stage.applications.length === 0) && (stage.next_stages?.length > 0 || stage.prev_stages?.length > 0) && (
               <div className="mt-2 flex flex-wrap gap-1">
-                {stage.next_stages.map(s => {
+                {stage.prev_stages?.map(s => {
+                  const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
+                  return (
+                    <button key={'back-' + s} onClick={() => advanceStage(s)}
+                      disabled={advancing === s}
+                      className="text-xs px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30 disabled:cursor-wait">
+                      {advancing === s ? '处理中...' : `← 回退「${label}」`}
+                    </button>
+                  );
+                })}
+                {stage.next_stages?.map(s => {
                   const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                   return (
                     <button key={s} onClick={() => advanceStage(s)}

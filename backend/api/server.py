@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import hashlib
 import json
 import time
@@ -18,6 +18,9 @@ from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
 from model.factory import chat_model
 from utils.logger_handler import logger
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
 app = FastAPI(title="Japan Admission Agent API")
 
@@ -162,10 +165,13 @@ async def rag_endpoint(body: RagRequest):
 
 @app.get("/")
 async def root():
+    """Serve frontend at root, API docs at /docs."""
+    if os.path.isdir(FRONTEND_DIR):
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
     return {
         "name": "Japan Admission Agent API",
         "docs": "/docs",
-        "endpoints": ["/health", "/v1/profile", "/v1/match", "/v1/rag", "/v1/chat"],
+        "endpoints": ["/health", "/v1/profile", "/v1/match", "/v1/rag", "/v1/chat", "/v1/stage", "/v1/applications"],
     }
 
 
@@ -320,6 +326,7 @@ async def get_stage(user_id: str = Depends(get_user_id)):
         app_tracks.append({
             "school": school,
             **info,
+            "prev_stages": info.get("prev_stages", []),
             "professors": app.get("professors", []),
             "deadlines": app.get("deadlines", {}),
             "notes": app.get("notes", ""),
@@ -343,6 +350,7 @@ async def get_stage(user_id: str = Depends(get_user_id)):
         "actions": fallback_info.get("actions", []),
         "conditions": fallback_info.get("conditions", []),
         "next_stages": fallback_info.get("next_stages", []),
+        "prev_stages": fallback_info.get("prev_stages", []),
         "timeline": generate_timeline(fallback_stage, fallback_started),
         "reminders": check_reminders(fallback_stage, fallback_started),
         # Also include per-application professor reminders
@@ -356,7 +364,7 @@ class AdvanceRequest(BaseModel):
 
 @app.post("/v1/stage/advance")
 async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(get_user_id)):
-    from agent.state_machine import advance_stage, STAGES
+    from agent.state_machine import can_transition, get_allowed_stages, STAGES
     profile = profile_mgr.get_profile(user_id)
 
     if body.school:
@@ -372,10 +380,11 @@ async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(ge
         if body.target_stage == current:
             # Idempotent: already at target
             return {"stage": current, "school": body.school, "label": STAGES[current]["label"], "unchanged": True}
-        if not advance_stage(current, body.target_stage):
-            valid = STAGES.get(current, {}).get("next_stages", [])
+        if not can_transition(current, body.target_stage):
+            allowed = get_allowed_stages(current)
+            valid = allowed["next"] + allowed["prev"]
             valid_labels = [f"{s}({STAGES.get(s,{}).get('label','')})" for s in valid]
-            raise HTTPException(400, f"当前阶段「{STAGES.get(current,{}).get('label',current)}」不能直接到「{STAGES.get(body.target_stage,{}).get('label',body.target_stage)}」，允许的下一步: {', '.join(valid_labels)}")
+            raise HTTPException(400, f"「{STAGES.get(current,{}).get('label',current)}」不能直接到「{STAGES.get(body.target_stage,{}).get('label',body.target_stage)}」，允许: {', '.join(valid_labels)}")
         profile.upsert_application(body.school, stage=body.target_stage)
         profile.field_sources[f"app_stage_{body.school}"] = {"source": "form", "at": datetime.now().isoformat()}
     else:
@@ -383,10 +392,11 @@ async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(ge
         current = profile.application_stage or "preparing"
         if body.target_stage == current:
             return {"stage": current, "label": STAGES[current]["label"], "unchanged": True}
-        if not advance_stage(current, body.target_stage):
-            valid = STAGES.get(current, {}).get("next_stages", [])
+        if not can_transition(current, body.target_stage):
+            allowed = get_allowed_stages(current)
+            valid = allowed["next"] + allowed["prev"]
             valid_labels = [f"{s}({STAGES.get(s,{}).get('label','')})" for s in valid]
-            raise HTTPException(400, f"当前阶段「{STAGES.get(current,{}).get('label',current)}」不能直接到「{STAGES.get(body.target_stage,{}).get('label',body.target_stage)}」，允许的下一步: {', '.join(valid_labels)}")
+            raise HTTPException(400, f"「{STAGES.get(current,{}).get('label',current)}」不能直接到「{STAGES.get(body.target_stage,{}).get('label',body.target_stage)}」，允许: {', '.join(valid_labels)}")
         profile.set_field("application_stage", body.target_stage, "form")
 
     profile_mgr.save_profile(user_id, profile)
@@ -471,6 +481,40 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
     }
 
 
+# ── Application CRUD (V2.2: manual school management) ──
+class ApplicationUpsert(BaseModel):
+    school: str
+    stage: str = "preparing"
+    needs_contact: bool = False
+    professors: List[Dict[str, Any]] = []
+    deadlines: Dict[str, str] = {}
+    notes: str = ""
+
+@app.post("/v1/applications")
+async def upsert_application(body: ApplicationUpsert, user_id: str = Depends(get_user_id)):
+    """Add or update a school application entry."""
+    profile = profile_mgr.get_profile(user_id)
+    profile.upsert_application(
+        body.school,
+        stage=body.stage,
+        needs_contact=body.needs_contact,
+        professors=body.professors,
+        deadlines=body.deadlines,
+        notes=body.notes,
+    )
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True, "school": body.school, "applications": profile.applications}
+
+
+@app.delete("/v1/applications")
+async def delete_application(school: str, user_id: str = Depends(get_user_id)):
+    """Remove a school application entry."""
+    profile = profile_mgr.get_profile(user_id)
+    profile.applications = [a for a in profile.applications if a.get("school") != school]
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True, "school": school, "applications": profile.applications}
+
+
 def _collect_all_reminders(profile: UserProfile) -> list:
     """Collect professor no-reply reminders across all applications."""
     from agent.state_machine import check_reminders
@@ -505,6 +549,21 @@ def _collect_all_reminders(profile: UserProfile) -> list:
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# ── Serve React frontend (production build) ──
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """SPA fallback: serve index.html for all non-API routes."""
+        # Already handled: /v1/*, /health, /docs, /openapi.json, /assets/*
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
 if __name__ == "__main__":

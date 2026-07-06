@@ -27,6 +27,7 @@ STAGES: Dict[str, dict] = {
         ],
         "typical_duration_days": 90,
         "next_stages": ["contacting"],
+        "prev_stages": [],
     },
     "contacting": {
         "order": 1,
@@ -44,7 +45,8 @@ STAGES: Dict[str, dict] = {
             "收到积极回复后深度研究该教授近期方向",
         ],
         "typical_duration_days": 60,
-        "next_stages": ["applying", "contacting"],  # contacting can loop
+        "next_stages": ["applying"],
+        "prev_stages": ["preparing"],
         "reminders": [
             {"days": 14, "message": "教授 14 天未回复，建议发一封跟进邮件"},
             {"days": 30, "message": "教授 30 天未回复，建议转向其他教授"},
@@ -67,7 +69,8 @@ STAGES: Dict[str, dict] = {
             "邮寄或在线提交出愿材料",
         ],
         "typical_duration_days": 45,
-        "next_stages": ["exam", "waiting"],  # some programs skip exam
+        "next_stages": ["exam", "waiting"],
+        "prev_stages": ["contacting"],
         "deadlines": [
             {"label": "4 月入学出愿", "months": [10, 11, 12]},
             {"label": "9 月入学出愿", "months": [4, 5, 6]},
@@ -89,6 +92,7 @@ STAGES: Dict[str, dict] = {
         ],
         "typical_duration_days": 30,
         "next_stages": ["waiting"],
+        "prev_stages": ["applying"],
     },
     "waiting": {
         "order": 4,
@@ -105,6 +109,7 @@ STAGES: Dict[str, dict] = {
         ],
         "typical_duration_days": 60,
         "next_stages": ["decided"],
+        "prev_stages": ["exam"],
     },
     "decided": {
         "order": 5,
@@ -117,6 +122,7 @@ STAGES: Dict[str, dict] = {
         ],
         "typical_duration_days": 0,
         "next_stages": [],
+        "prev_stages": ["waiting"],
     },
 }
 
@@ -153,9 +159,24 @@ def get_next_actions(application_stage: str) -> List[str]:
 
 
 def advance_stage(current_stage: str, target_stage: str) -> bool:
-    """Check if transitioning from current to target is valid."""
+    """Check if forward transition is valid."""
     stage = STAGES.get(current_stage, {})
     return target_stage in stage.get("next_stages", [])
+
+
+def can_transition(current_stage: str, target_stage: str) -> bool:
+    """Check if any transition (forward or backward) is valid."""
+    stage = STAGES.get(current_stage, {})
+    return target_stage in stage.get("next_stages", []) or target_stage in stage.get("prev_stages", [])
+
+
+def get_allowed_stages(current_stage: str) -> dict:
+    """Get {next: [...], prev: [...]} allowed transitions from current stage."""
+    stage = STAGES.get(current_stage, {})
+    return {
+        "next": stage.get("next_stages", []),
+        "prev": stage.get("prev_stages", []),
+    }
 
 
 def stage_context_for_prompt(application_stage: str) -> str:
