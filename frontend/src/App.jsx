@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle } from 'lucide-react';
+import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -129,7 +129,7 @@ export default function App() {
   const [newSchool, setNewSchool] = useState('');
   const [newSchoolStage, setNewSchoolStage] = useState('preparing');
   // ── Plaza state ──
-  const [activeTab, setActiveTab] = useState('chat'); // chat | plaza
+  const [activeTab, setActiveTab] = useState('chat'); // chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
   useEffect(() => {
@@ -617,6 +617,11 @@ export default function App() {
               activeTab === 'plaza' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
             <LayoutGrid size={16} /> 广场
           </button>
+          <button onClick={() => setActiveTab('calendar')}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+              activeTab === 'calendar' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <Calendar size={16} /> 日历
+          </button>
         </div>
 
         {activeTab === 'chat' ? (
@@ -671,7 +676,7 @@ export default function App() {
           </div>
         </div>
         </>
-        ) : (
+        ) : activeTab === 'plaza' ? (
         /* Plaza view */
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto">
@@ -717,6 +722,76 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+        ) : (
+        /* Calendar view */
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">申请日历</h2>
+            {!stage?.applications?.length ? (
+              <p className="text-sm text-gray-400">还没有追踪的学校，去「广场」添加吧</p>
+            ) : (() => {
+              const now = new Date();
+              const months = [];
+              for (let i = -1; i <= 8; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                months.push(d);
+              }
+              return (
+                <div className="overflow-x-auto">
+                  <div className="flex min-w-[800px]">
+                    <div className="w-36 shrink-0">
+                      <div className="h-8"></div>
+                      {stage.applications.map((app, i) => (
+                        <div key={i} className="h-16 flex items-center text-xs font-medium text-gray-700 border-b border-gray-50 pr-2 truncate">{app.school}</div>
+                      ))}
+                    </div>
+                    <div className="flex-1 flex">
+                      {months.map((m, mi) => {
+                        const isCurrent = m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
+                        const mKey = `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`;
+                        return (
+                          <div key={mi} className={`flex-1 min-w-[55px] border-l ${isCurrent ? 'bg-indigo-50/40' : ''}`}>
+                            <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-indigo-600' : 'text-gray-400'}`}>
+                              {m.getMonth()+1}月
+                            </div>
+                            {stage.applications.map((app, ai) => {
+                              const dots = [];
+                              if (app.deadlines) {
+                                Object.entries(app.deadlines).forEach(([k, v]) => {
+                                  try {
+                                    const ds = String(v).split(/[~～]/)[0].trim().replace(/[年月]/g,'-').replace(/[日]/g,'');
+                                    const d = new Date(ds);
+                                    if (!isNaN(d.getTime()) && d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()) {
+                                      dots.push({ label: k, date: ds, type: 'deadline' });
+                                    }
+                                  } catch {}
+                                });
+                              }
+                              return (
+                                <div key={ai} className={`h-16 border-b border-gray-50 relative ${isCurrent ? '' : ''}`}>
+                                  {dots.map((dot, di) => (
+                                    <div key={di} className="absolute left-0.5 right-0.5 text-[8px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
+                                      style={{ top: `${2 + di * 16}px` }} title={`${dot.label}: ${dot.date}`}>
+                                      {dot.label}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-400">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 inline-block"></span> 截止日</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-50 inline-block"></span> 本月</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
         )}
