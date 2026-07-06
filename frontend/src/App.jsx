@@ -200,6 +200,7 @@ export default function App() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
+      let suggested = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -209,6 +210,10 @@ export default function App() {
           if (!line.startsWith('data: ')) continue;
           try {
             const parsed = JSON.parse(line.slice(6));
+            if (parsed.suggested_schools) {
+              suggested = parsed.suggested_schools;
+              break;
+            }
             if (parsed.done) break;
             if (!parsed.is_status) {
               assistantContent += parsed.content || '';
@@ -222,6 +227,15 @@ export default function App() {
             }
           } catch {}
         }
+      }
+
+      // After streaming done, show school suggestions if any
+      if (suggested.length > 0) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: '',
+          suggestedSchools: suggested
+        }]);
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
@@ -304,49 +318,58 @@ export default function App() {
       )}
       {/* Sidebar */}
       <aside className="w-80 bg-white border-r flex flex-col shrink-0 overflow-hidden">
-        <div className="p-6 border-b">
+        <div className="p-5 border-b">
           <h1 className="text-lg font-bold text-gray-800">升学顾问</h1>
-          <p className="text-xs text-gray-400 mt-1">{user?.email}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{user?.email}</p>
         </div>
 
-        {/* Stage progress — single bar (backward compat) */}
+        <div className="flex-1 overflow-y-auto">
+        {/* Stage + Applications */}
         {stage && (
           <div className="p-4 border-b">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all"
-                  style={{ width: `${(stage.progress || 0) * 100}%` }}></div>
-              </div>
-              <span className="text-xs text-gray-400">{Math.round((stage.progress || 0) * 100)}%</span>
-            </div>
-            <p className="text-sm font-medium text-indigo-700">{stage.label}</p>
-            <p className="text-xs text-gray-500 mt-1">{stage.description}</p>
-            {stage.actions?.length > 0 && (
-              <details className="mt-2">
-                <summary className="text-xs text-indigo-500 cursor-pointer">建议行动 ({stage.actions.length})</summary>
-                <ul className="mt-1 text-xs text-gray-500 space-y-0.5 ml-3">
-                  {stage.actions.map((a, i) => <li key={i} className="list-disc">{a}</li>)}
-                </ul>
-              </details>
+            {/* Single progress bar — only show when no per-school cards */}
+            {(!stage.applications || stage.applications.length === 0) && (
+              <>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full transition-all"
+                      style={{ width: `${(stage.progress || 0) * 100}%` }}></div>
+                  </div>
+                  <span className="text-xs text-gray-400">{Math.round((stage.progress || 0) * 100)}%</span>
+                </div>
+                <p className="text-sm font-medium text-indigo-700">{stage.label}</p>
+                <p className="text-xs text-gray-500 mt-1">{stage.description}</p>
+                {stage.actions?.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-indigo-500 cursor-pointer">建议行动 ({stage.actions.length})</summary>
+                    <ul className="mt-1 text-xs text-gray-500 space-y-0.5 ml-3">
+                      {stage.actions.map((a, i) => <li key={i} className="list-disc">{a}</li>)}
+                    </ul>
+                  </details>
+                )}
+              </>
             )}
 
-            {/* V2.2: Per-school application cards */}
-            <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
+            {/* Per-school cards */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-gray-400 uppercase">各校追踪</h4>
+                <h4 className="text-xs font-semibold text-gray-400 uppercase">
+                  {stage.applications?.length > 0 ? `志愿校 (${stage.applications.length})` : '各校追踪'}
+                </h4>
                 <button onClick={() => setShowAddSchool(!showAddSchool)}
-                  className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition"
-                  title="添加学校">+</button>
+                  className="text-xs px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium"
+                  title="添加学校">+ 添加</button>
               </div>
-              {/* Add school form */}
+
               {showAddSchool && (
-                <form onSubmit={addSchool} className="border rounded-lg p-2 bg-indigo-50 space-y-1.5">
+                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-indigo-50/50 space-y-1.5">
                   <input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
-                    className="w-full text-xs p-1.5 border rounded" autoFocus />
+                    className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
                   <select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
-                    className="w-full text-xs p-1.5 border rounded">
+                    className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                    <option value="browsing">关注中</option>
                     <option value="preparing">准备阶段</option>
                     <option value="contacting">套磁阶段</option>
                     <option value="applying">出愿阶段</option>
@@ -354,37 +377,46 @@ export default function App() {
                     <option value="waiting">等待结果</option>
                     <option value="decided">确定去向</option>
                   </select>
-                  <div className="flex gap-1">
+                  <div className="flex gap-2">
                     <button type="submit" disabled={!newSchool.trim()}
-                      className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 transition">添加</button>
+                      className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</button>
                     <button type="button" onClick={() => setShowAddSchool(false)}
-                      className="text-xs px-2 py-1 rounded bg-white text-gray-500 hover:bg-gray-100 transition">取消</button>
+                      className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</button>
                   </div>
                 </form>
               )}
-              {stage.applications?.length > 0 && stage.applications.map((app, i) => {
-                  const stageColors = { preparing: 'bg-gray-100 text-gray-700', contacting: 'bg-blue-100 text-blue-700',
+
+              {stage.applications?.map((app, i) => {
+                  const stageColors = { browsing: 'bg-slate-100 text-slate-500', preparing: 'bg-gray-100 text-gray-600', contacting: 'bg-blue-100 text-blue-700',
                     applying: 'bg-purple-100 text-purple-700', exam: 'bg-orange-100 text-orange-700',
                     waiting: 'bg-amber-100 text-amber-700', decided: 'bg-green-100 text-green-700' };
                   const profStatusColors = { pending: 'text-gray-400', sent: 'text-blue-600',
                     replied: 'text-green-600', rejected: 'text-red-500', no_reply: 'text-amber-600',
                     interview: 'text-teal-600' };
-                  const profStatusLabel = { pending: '待', sent: '已发', replied: '已回',
-                    rejected: '婉拒', no_reply: '未回', interview: '面试' };
+                  const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
+                    rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
-                    <div key={i} className="border rounded-lg p-2.5 bg-white">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-gray-800 truncate max-w-[140px]" title={app.school}>
+                    <div key={i} className="border rounded-lg p-2.5 bg-white hover:shadow-sm transition-shadow">
+                      {/* Header: school + stage + delete */}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-gray-800 truncate max-w-[130px]" title={app.school}>
                           {app.school}
                         </span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
                             {app.label}
                           </span>
                           <button onClick={() => removeSchool(app.school)}
-                            className="text-[10px] text-gray-300 hover:text-red-500 leading-none" title="删除">x</button>
+                            className="text-gray-300 hover:text-red-400 text-xs leading-none transition" title="删除">&times;</button>
                         </div>
                       </div>
+
+                      {/* Progress mini-bar */}
+                      <div className="h-1 bg-gray-100 rounded-full mb-1.5 overflow-hidden">
+                        <div className="h-full bg-indigo-400 rounded-full transition-all"
+                          style={{ width: `${(app.progress || 0) * 100}%` }}></div>
+                      </div>
+
                       {/* Professors */}
                       {app.professors?.length > 0 && (
                         <div className="text-[10px] text-gray-500 mb-1">
@@ -395,28 +427,29 @@ export default function App() {
                           ))}
                         </div>
                       )}
-                      {/* Deadlines */}
-                      {app.deadlines && Object.keys(app.deadlines).length > 0 && (
+
+                      {/* Deadlines + Notes */}
+                      {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
                         <div className="text-[10px] text-gray-400 mb-1">
                           {Object.entries(app.deadlines).map(([k, v], j) => (
                             <span key={j} className="mr-2">{k}: {v}</span>
                           ))}
                         </div>
                       )}
-                      {/* Notes */}
                       {app.notes && (
-                        <div className="text-[10px] text-gray-400 italic truncate">{app.notes}</div>
+                        <div className="text-[10px] text-gray-400 italic truncate mb-1">{app.notes}</div>
                       )}
-                      {/* Advance & Rollback buttons */}
+
+                      {/* Stage buttons */}
                       {(app.next_stages?.length > 0 || app.prev_stages?.length > 0) && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-gray-50">
                           {app.prev_stages?.map(s => {
                             const key = 'back-' + s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
                             return (
                               <button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30 disabled:cursor-wait">
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
                                 {advancing === key ? '...' : `← ${label}`}
                               </button>
                             );
@@ -427,14 +460,15 @@ export default function App() {
                             return (
                               <button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-50 hover:bg-indigo-50 text-gray-500 hover:text-indigo-600 transition disabled:opacity-30 disabled:cursor-wait">
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
                                 {advancing === key ? '...' : label}
                               </button>
                             );
                           })}
                         </div>
                       )}
-                      {/* Timeline mini */}
+
+                      {/* Timeline */}
                       {app.timeline?.length > 0 && (
                         <details className="mt-1">
                           <summary className="text-[10px] text-gray-400 cursor-pointer">时间线</summary>
@@ -555,7 +589,9 @@ export default function App() {
           </div>
         )}
 
-        <div className="mt-auto p-4 border-t">
+        </div>{/* end scrollable area */}
+
+        <div className="p-4 border-t shrink-0">
           <button onClick={handleLogout}
             className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-500 w-full p-2">
             <LogOut size={16} /> 退出
@@ -571,8 +607,31 @@ export default function App() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white' : 'bg-white border shadow-sm'}`}>
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-gray-800 text-white' : msg.suggestedSchools ? 'bg-indigo-50 border border-indigo-200' : 'bg-white border shadow-sm'} p-4 rounded-2xl text-sm leading-relaxed`}>
+                {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                {msg.suggestedSchools && (
+                  <div>
+                    <p className="text-gray-600 mb-2">要将这些学校加入申请追踪吗？</p>
+                    <div className="flex flex-wrap gap-2">
+                      {msg.suggestedSchools.map(school => (
+                        <button key={school} onClick={async () => {
+                          try {
+                            await apiCall('/v1/applications', token, { method: 'POST', body: { school } });
+                            const updated = await apiCall('/v1/stage', token);
+                            setStage(updated);
+                            // Remove the suggestion message
+                            setMessages(prev => prev.map(m => m.suggestedSchools ? { ...m, suggestedSchools: null, content: `已添加「${school}」到追踪列表` } : m));
+                          } catch (err) {
+                            showToast(`添加失败: ${err.message}`);
+                          }
+                        }}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                          + {school}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}

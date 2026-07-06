@@ -9,6 +9,20 @@ from typing import List, Dict, Optional
 
 # ── Stage definitions ──
 STAGES: Dict[str, dict] = {
+    "browsing": {
+        "order": -1,
+        "label": "关注中",
+        "description": "浏览学校信息，尚未开始正式准备",
+        "conditions": [],
+        "actions": [
+            "查看募集要项，了解出愿要求和考试科目",
+            "浏览教授研究方向，初步筛选感兴趣的方向",
+            "确认是否需要联系教授（内诺制/事前連絡）",
+        ],
+        "typical_duration_days": 0,
+        "next_stages": ["preparing"],
+        "prev_stages": [],
+    },
     "preparing": {
         "order": 0,
         "label": "准备阶段",
@@ -227,20 +241,81 @@ def check_reminders(application_stage: str, stage_started_at: Optional[str] = No
     return due
 
 
-def generate_timeline(stage_id: str, start_date: Optional[str] = None) -> List[Dict[str, str]]:
-    """Generate a projected timeline from current stage through remaining stages."""
+def generate_timeline(stage_id: str, start_date: Optional[str] = None,
+                      deadlines: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+    """Generate a projected timeline. Uses real deadline dates when available."""
+    now = datetime.now()
+
+    # ── Try real-date timeline from deadlines ──
+    if deadlines:
+        # Map deadline keywords to stages
+        keyword_stage = {
+            "出願": "applying", "出願期間": "applying", "願書": "applying",
+            "試験": "exam", "試験日": "exam", "入試": "exam", "筆記": "exam",
+            "口述": "exam", "面接": "exam",
+            "合格": "waiting", "合格発表": "waiting",
+            "入学": "decided", "入学手続": "decided", "手続": "decided",
+        }
+        # Collect dates per stage
+        stage_dates = {}
+        for key, val in deadlines.items():
+            for kw, stage in keyword_stage.items():
+                if kw in key:
+                    # Parse date — try various formats
+                    ds = val.strip()
+                    try:
+                        # "2026-12-15" or "2026-12-10 ~ 2027-01-09"
+                        ds = ds.split("~")[0].split("～")[0].strip()
+                        ds = ds.replace("年","-").replace("月","-").replace("日","")
+                        d = datetime.fromisoformat(ds[:10]) if len(ds) >= 10 else None
+                        if d:
+                            if stage not in stage_dates or d < stage_dates[stage]:
+                                stage_dates[stage] = d
+                    except (ValueError, TypeError):
+                        continue
+                    break
+
+        if stage_dates:
+            # Build timeline from real dates
+            timeline = []
+            ordered = ["preparing", "contacting", "applying", "exam", "waiting", "decided"]
+            prev_date = now
+            for sid in ordered:
+                stage = STAGES.get(sid, {})
+                label = stage.get("label", sid)
+                if sid in stage_dates:
+                    d = stage_dates[sid]
+                    timeline.append({
+                        "stage": sid, "label": label,
+                        "start": prev_date.strftime("%Y-%m-%d"),
+                        "end": d.strftime("%Y-%m-%d"),
+                        "is_real": True,
+                    })
+                    prev_date = d
+                else:
+                    timeline.append({
+                        "stage": sid, "label": label,
+                        "start": prev_date.strftime("%Y-%m-%d"),
+                        "end": "",
+                        "is_real": False,
+                    })
+            return timeline
+
+    # ── Fallback: generic duration-based timeline ──
     if not start_date:
-        start_date = datetime.now().isoformat()
+        start_date = now.isoformat()
 
     try:
         base = datetime.fromisoformat(start_date)
     except (ValueError, TypeError):
-        base = datetime.now()
+        base = now
 
     timeline = []
     current = base
     for sid, stage in sorted(STAGES.items(), key=lambda x: x[1]["order"]):
         if stage["order"] < STAGES.get(stage_id, {}).get("order", 0):
+            continue
+        if stage["order"] < 0:  # skip browsing
             continue
         days = stage.get("typical_duration_days", 30)
         end = current + timedelta(days=days)

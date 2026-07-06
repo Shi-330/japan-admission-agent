@@ -297,6 +297,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             if assistant_text:
                 _cache_set(cache_key, assistant_text)
                 orchestrator.finish_turn(user_id, profile, body.query, assistant_text, chat_model)
+                # 4. Detect schools mentioned in reply but not yet tracked
+                suggested = _detect_new_schools(profile, assistant_text)
+                if suggested:
+                    yield f"data: {json.dumps({'suggested_schools': suggested, 'done': True})}\n\n"
+                    return
 
         except Exception as e:
             logger.error(f"Chat error: {e}")
@@ -323,15 +328,16 @@ async def get_stage(user_id: str = Depends(get_user_id)):
         info = get_current_stage_info(stage_id)
         # Use the app's own field_sources or application_stage timestamp as start
         started = profile.field_sources.get(f"app_stage_{school}", {}).get("at")
+        deadlines = app.get("deadlines", {})
         app_tracks.append({
             "school": school,
             **info,
             "prev_stages": info.get("prev_stages", []),
             "professors": app.get("professors", []),
-            "deadlines": app.get("deadlines", {}),
+            "deadlines": deadlines,
             "notes": app.get("notes", ""),
             "needs_contact": app.get("needs_contact", False),
-            "timeline": generate_timeline(stage_id, started),
+            "timeline": generate_timeline(stage_id, started, deadlines),
             "reminders": check_reminders(stage_id, started),
         })
 
@@ -481,6 +487,88 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
     }
 
 
+# ── Doc fetch + LLM extraction ──
+class DocFetchRequest(BaseModel):
+    url: str
+    school: str = ""  # optional, if known
+
+@app.post("/v1/docs/fetch")
+async def fetch_and_extract(body: DocFetchRequest, user_id: str = Depends(get_user_id)):
+    """Fetch a URL, extract text, use LLM to find deadlines/exam info."""
+    import urllib.request
+    import re
+
+    # 1. Fetch the URL
+    try:
+        req = urllib.request.Request(body.url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; JapanAdmissionAgent/1.0)"
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        raise HTTPException(400, f"无法访问该链接: {e}")
+
+    # 2. Strip HTML tags, keep text
+    text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    # Keep first 8000 chars for LLM
+    text = text[:8000].strip()
+
+    if len(text) < 100:
+        raise HTTPException(400, "页面内容过少，可能为动态页面，请尝试直接粘贴关键信息")
+
+    # 3. LLM extraction
+    extract_prompt = f"""从以下日本大学募集要项网页内容中，提取关键日期和信息。
+只输出 JSON，不要解释。
+
+网页内容：
+{text}
+
+提取以下信息（没有就 null）：
+- school_name: 大学+研究科名称
+- degree: 修士/博士/研究生
+- deadlines: 对象，key用中文，如 {{"出願期間":"2026-7-1 ~ 2026-7-15","試験日":"2026-8-25","合格発表":"2026-9-5","入学手続期限":"2026-9-20"}}
+- exam_type: 考试类型（書類選考/筆記/面接/口頭試問 等）
+- exam_subjects: 考试科目列表
+- fees: {{"入学検定料":"30000円","入学金":"282000円","授業料":"535800円/年"}}
+- notes: 其他重要信息
+
+JSON:"""
+
+    resp = chat_model.invoke(extract_prompt)
+    raw = resp.content if hasattr(resp, "content") else str(resp)
+    # Strip markdown fences
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+
+    try:
+        extracted = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        extracted = {"raw": raw, "error": "JSON parse failed"}
+
+    # 4. If school specified, upsert deadlines
+    if body.school:
+        profile = profile_mgr.get_profile(user_id)
+        deadlines_from_extract = extracted.get("deadlines", {}) if isinstance(extracted, dict) else {}
+        if deadlines_from_extract:
+            profile.upsert_application(body.school, deadlines=deadlines_from_extract,
+                notes=f"来源: {body.url}")
+            profile_mgr.save_profile(user_id, profile)
+
+    return {
+        "url": body.url,
+        "school": body.school,
+        "extracted": extracted,
+        "text_preview": text[:300],
+        "updated": bool(body.school and extracted.get("deadlines")),
+    }
+
+
 # ── Application CRUD (V2.2: manual school management) ──
 class ApplicationUpsert(BaseModel):
     school: str
@@ -513,6 +601,20 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     profile.applications = [a for a in profile.applications if a.get("school") != school]
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True, "school": school, "applications": profile.applications}
+
+
+def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
+    """Find university names mentioned in text that aren't yet in applications."""
+    import re
+    existing = {a.get("school", "") for a in profile.applications}
+    # Match Japanese university names: XX大学, XX大学院, or specific patterns like 北海道大学
+    found = set()
+    for pattern in [r'([一-鿿]{2,6}(?:大学|大学院))', r'(北海道大学|东京大学|京都大学|大阪大学|名古屋大学|九州大学|东北大学|早稻田大学|庆应义塾大学|筑波大学|神户大学|广岛大学|一桥大学|东京工业大学|横滨国立大学)']:
+        for m in re.finditer(pattern, text):
+            name = m.group(0)
+            if name not in existing and name not in [a.split()[0] if ' ' in a else a for a in existing]:
+                found.add(name)
+    return list(found)[:3]  # max 3 suggestions
 
 
 def _collect_all_reminders(profile: UserProfile) -> list:
