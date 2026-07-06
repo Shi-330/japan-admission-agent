@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Loader2, LogOut, Settings } from 'lucide-react';
+import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -124,10 +124,14 @@ export default function App() {
 
   // ── Stage state ──
   const [stage, setStage] = useState(null);
-  const [advancing, setAdvancing] = useState(null); // which stage button is loading
+  const [advancing, setAdvancing] = useState(null);
   const [showAddSchool, setShowAddSchool] = useState(false);
   const [newSchool, setNewSchool] = useState('');
   const [newSchoolStage, setNewSchoolStage] = useState('preparing');
+  // ── Plaza state ──
+  const [activeTab, setActiveTab] = useState('chat'); // chat | plaza
+  const [catalog, setCatalog] = useState([]);
+  const [plazaFilter, setPlazaFilter] = useState('');
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
@@ -599,8 +603,24 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Chat area */}
+      {/* Main area: chat + plaza */}
       <main className="flex-1 flex flex-col">
+        {/* Tab bar */}
+        <div className="flex border-b bg-white px-4 shrink-0">
+          <button onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+              activeTab === 'chat' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <MessageCircle size={16} /> 对话
+          </button>
+          <button onClick={() => { setActiveTab('plaza'); if (catalog.length === 0) apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {}); }}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+              activeTab === 'plaza' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <LayoutGrid size={16} /> 广场
+          </button>
+        </div>
+
+        {activeTab === 'chat' ? (
+        <>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((msg, i) => (
             <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
@@ -619,11 +639,8 @@ export default function App() {
                             await apiCall('/v1/applications', token, { method: 'POST', body: { school } });
                             const updated = await apiCall('/v1/stage', token);
                             setStage(updated);
-                            // Remove the suggestion message
                             setMessages(prev => prev.map(m => m.suggestedSchools ? { ...m, suggestedSchools: null, content: `已添加「${school}」到追踪列表` } : m));
-                          } catch (err) {
-                            showToast(`添加失败: ${err.message}`);
-                          }
+                          } catch (err) { showToast(`添加失败: ${err.message}`); }
                         }}
                           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
                           + {school}
@@ -641,27 +658,68 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* Input */}
         <div className="p-4 border-t bg-white">
           <div className="max-w-3xl mx-auto flex gap-3">
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendMessage()}
-              disabled={loading}
+            <input value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder="输入你的留学疑问..."
-              className="flex-1 p-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0"
-            >
+              className="flex-1 p-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button onClick={sendMessage} disabled={loading || !input.trim()}
+              className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0">
               <Send size={18} />
             </button>
           </div>
         </div>
+        </>
+        ) : (
+        /* Plaza view */
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
+            <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
+            <input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
+              placeholder="筛选专业，如：情报理工、NLP..."
+              className="w-full max-w-md p-2.5 border rounded-lg text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {catalog.filter(s => !plazaFilter || s.majors?.some(m => m.includes(plazaFilter)) || s.name.includes(plazaFilter)).map((s, i) => (
+                <div key={i} className="border rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
+                    <button onClick={async () => {
+                      try {
+                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, deadlines: s.deadlines, notes: s.notes } });
+                        const updated = await apiCall('/v1/stage', token);
+                        setStage(updated);
+                        showToast(`已添加「${s.name}」`, 'success');
+                      } catch (err) { showToast(`添加失败: ${err.message}`); }
+                    }}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium shrink-0">
+                      追踪
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {s.majors?.map(m => (
+                      <span key={m} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-gray-400 space-y-0.5 mb-2">
+                    <div>JLPT: {s.jlpt} | 英语: {s.english} | 考试: {s.exam}</div>
+                  </div>
+                  <details className="text-[10px]">
+                    <summary className="text-gray-400 cursor-pointer">截止日期</summary>
+                    <div className="mt-1 space-y-0.5 text-gray-500">
+                      {Object.entries(s.deadlines || {}).map(([k, v]) => (
+                        <div key={k} className="flex justify-between"><span>{k}</span><span>{v}</span></div>
+                      ))}
+                    </div>
+                  </details>
+                  {s.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{s.notes}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        )}
       </main>
     </div>
   );
