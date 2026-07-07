@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar } from 'lucide-react';
+import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -71,10 +71,11 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
-  // ── Load profile on auth ──
+  // ── Load profile + catalog on auth ──
   useEffect(() => {
     if (token) {
       apiCall('/v1/profile', token).then(setProfile).catch(() => {});
+      apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {});
     }
   }, [token]);
 
@@ -232,12 +233,8 @@ export default function App() {
           if (!line.startsWith('data: ')) continue;
           try {
             const parsed = JSON.parse(line.slice(6));
-            if (parsed.plaza_action) {
-              if (parsed.plaza_action.action === 'filter_plaza') {
-                setPlazaFilter(parsed.plaza_action.filter);
-                setActiveTab('plaza');
-                if (catalog.length === 0) apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {});
-              }
+            if (parsed.nav_suggestion) {
+              suggested = [{ type: 'nav', ...parsed.nav_suggestion }];
               break;
             }
             if (parsed.suggested_schools) {
@@ -261,13 +258,22 @@ export default function App() {
         }
       }
 
-      // After streaming done, show school suggestions if any
+      // After streaming done, show suggestions
       if (suggested.length > 0) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: '',
-          suggestedSchools: suggested
-        }]);
+        if (suggested[0].type === 'nav') {
+          // Navigation suggestion
+          const nav = suggested[0];
+          setMessages(prev => [...prev, {
+            role: 'assistant', content: '',
+            navSuggestion: { prompt: nav.prompt, filter: nav.filter, action: nav.action }
+          }]);
+        } else {
+          // School suggestions
+          setMessages(prev => [...prev, {
+            role: 'assistant', content: '',
+            suggestedSchools: suggested
+          }]);
+        }
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
@@ -722,7 +728,7 @@ export default function App() {
               activeTab === 'chat' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
             <MessageCircle size={16} /> 对话
           </button>
-          <button onClick={() => { setActiveTab('plaza'); if (catalog.length === 0) apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {}); }}
+          <button onClick={() => setActiveTab('plaza')}
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
               activeTab === 'plaza' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
             <LayoutGrid size={16} /> 广场
@@ -744,6 +750,27 @@ export default function App() {
               </div>
               <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-gray-800 text-white' : msg.suggestedSchools ? 'bg-indigo-50 border border-indigo-200' : 'bg-white border shadow-sm'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                {msg.navSuggestion && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                    <p className="text-sm text-gray-700 mb-2">{msg.navSuggestion.prompt || '一起去选校广场看看？'}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => {
+                        setPlazaFilter(msg.navSuggestion.filter || '');
+                        setActiveTab('plaza');
+                        setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '已跳转到广场' } : m));
+                      }}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                        去看看
+                      </button>
+                      <button onClick={() => {
+                        setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '' } : m));
+                      }}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-white border text-gray-500 hover:bg-gray-50 transition">
+                        不了
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {msg.suggestedSchools && (
                   <div>
                     <p className="text-gray-600 mb-2">要将这些学校加入申请追踪吗？</p>
@@ -929,6 +956,12 @@ export default function App() {
             <button onClick={sendMessage} disabled={loading || !input.trim()}
               className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0">
               <Send size={16} />
+            </button>
+            <button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
+              disabled={!input.trim()}
+              className="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 transition shrink-0"
+              title="在广场搜索学校">
+              <Search size={16} />
             </button>
           </div>
         </div>

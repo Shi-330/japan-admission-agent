@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import hashlib
+import asyncio
 import json
 import time
 
@@ -264,6 +265,20 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
                 yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
+            elif intent == "search_schools":
+                prompt = f"学生说：{body.query}。背景：{profile_str}。简洁推荐匹配的学校，说明为什么适合，最多3所。"
+                for chunk in chat_model.stream(prompt):
+                    c = chunk.content if hasattr(chunk, "content") else str(chunk)
+                    if c:
+                        assistant_text += c
+                        yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
+                        await asyncio.sleep(0.01)
+                plaza = _detect_nav_suggestion(body.query, assistant_text) or _detect_nav_suggestion(body.query, body.query)
+                done_event = {'content': '', 'is_status': False, 'done': True}
+                if plaza:
+                    done_event['nav_suggestion'] = plaza
+                yield f"data: {json.dumps(done_event)}\n\n"
+
             elif intent in ("qa", "report"):
                 from rag.rag_service import RagSummarizeService
                 try:
@@ -282,10 +297,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                plaza = _detect_plaza_action(body.query, assistant_text)
+                        await asyncio.sleep(0.01)
+                plaza = _detect_nav_suggestion(body.query, assistant_text)
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
-                    done_event['plaza_action'] = plaza
+                    done_event['nav_suggestion'] = plaza
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
@@ -295,11 +311,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                # Check for plaza action
-                plaza = _detect_plaza_action(body.query, assistant_text)
+                        await asyncio.sleep(0.01)
+                # Check for plaza action in chat — only if query has school signals
+                plaza = None
+                if _has_school_signal(body.query):
+                    plaza = _detect_nav_suggestion(body.query, assistant_text)
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
-                    done_event['plaza_action'] = plaza
+                    done_event['nav_suggestion'] = plaza
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             # 3. Extract new facts + cache response
@@ -633,27 +652,34 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     return {"ok": True, "school": school, "applications": profile.applications}
 
 
-def _detect_plaza_action(query: str, assistant_text: str) -> Optional[dict]:
-    """Detect if user is searching/filtering schools. Extract keywords for filter."""
+def _has_school_signal(query: str) -> bool:
+    """Check if query likely relates to school search (not just casual chat)."""
     p = query.lower()
-    triggers = ["哪些学校", "有没有", "帮我找", "帮我选", "推荐", "找", "怎么选"]
-    if not any(t in p for t in triggers):
-        return None
+    # School-related keywords
+    school_words = ["学校", "大学", "研究科", "英語", "英语", "toefl", "toeic", "ielts",
+                    "jlpt", "n1", "n2", "笔試", "筆記", "面接", "試験", "出願", "内诺",
+                    "情報", "情报", "计算机", "cs", "nlp", "自然语言", "研究室",
+                    "教授", "修士", "研究生", "博士", "进学", "入学",
+                    "东京", "京都", "大阪", "名古屋", "筑波", "早稻田", "东北",
+                    "北海道", "九州", "哪个", "什么学校", "有没有"]
+    return any(w in p for w in school_words)
 
-    # Extract meaningful filter keywords
+
+def _detect_nav_suggestion(query: str, assistant_text: str) -> Optional[dict]:
+    """Extract filter keywords from a school-search query. Intent is already determined by LLM."""
+    p = query.lower()
     keywords = []
+
     # English requirements
-    if any(k in p for k in ["不要英语", "不需要英语", "免英语", "英语不要", "不要toefl", "不要托福", "英语不要"]):
+    if any(k in p for k in ["不要英语", "不需要英语", "免英语", "英语不要", "不要toefl", "不要托福", "不考英语"]):
         keywords.append("英語不要")
-    elif any(k in p for k in ["英语", "toefl", "toeic", "托福"]):
-        keywords.append("英語")
+    elif any(k in p for k in ["要英语", "需要英语", "英语必要"]):
+        keywords.append("英語必要")
     # Exam type
     if any(k in p for k in ["免笔试", "不要笔试", "免筆試", "没有笔试", "书类", "書類"]):
         keywords.append("書類選考")
     elif any(k in p for k in ["笔试", "筆試", "筆記"]):
         keywords.append("筆記")
-    elif any(k in p for k in ["面试", "面接"]):
-        keywords.append("面接")
     # JLPT
     if "n1" in p:
         keywords.append("N1")
@@ -664,12 +690,19 @@ def _detect_plaza_action(query: str, assistant_text: str) -> Optional[dict]:
         keywords.append("情報")
         if any(k in p for k in ["nlp", "自然语言"]):
             keywords.append("NLP")
-    # Only meaningful if we extracted keywords
+    # Location
+    for loc in ["东京", "京都", "大阪", "名古屋", "筑波", "北海道", "九州", "东北", "早稻田", "庆应"]:
+        if loc in p or loc in query:
+            keywords.append(loc)
+    # Default: if no keywords extracted, leave filter empty (show all schools)
     if not keywords:
-        # Fallback: use the whole query
+        # Skip contextual references like "这种", "这样的", "类似的"
+        if any(w in p for w in ["这种", "这样", "类似", "那个", "这个", "还有吗", "还有啥", "其他的"]):
+            return {"action": "filter_plaza", "filter": "", "prompt": "已切换到广场"}
         keywords.append(query.strip())
-    kw_str = " ".join(keywords)
-    return {"action": "filter_plaza", "filter": kw_str, "prompt": f"已按「{'、'.join(keywords)}」筛选"}
+
+    return {"action": "filter_plaza", "filter": " ".join(keywords),
+            "prompt": f"已按「{'、'.join(keywords)}」筛选"}
 
 
 def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
