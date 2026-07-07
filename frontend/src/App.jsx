@@ -426,10 +426,10 @@ export default function App() {
               )}
 
               {stage.applications?.map((app, i) => {
-                  const stageColors = { browsing: 'bg-[#F3F2F0] text-muted-foreground', preparing: 'bg-[#EDEBE7] text-[#6B6A67]', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
+                  const stageColors = { browsing: 'bg-muted text-muted-foreground', preparing: 'bg-secondary text-foreground/70', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
                     applying: 'bg-[#F0EDF7] text-[#5B4D7D]', exam: 'bg-[#FDF2E6] text-[#8C6D41]',
                     waiting: 'bg-[#F9F1E7] text-[#8C6D41]', decided: 'bg-[#E8F0EC] text-[#2F5233]' };
-                  const profStatusColors = { pending: 'text-[#B0AFAD]', sent: 'text-[#5B6D8A]',
+                  const profStatusColors = { pending: 'text-muted-foreground', sent: 'text-[#5B6D8A]',
                     replied: 'text-[#3D6B52]', rejected: 'text-[#C4655A]', no_reply: 'text-[#D4A853]',
                     interview: 'text-[#4A7C8C]' };
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
@@ -749,7 +749,7 @@ export default function App() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-foreground text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
                 {msg.navSuggestion && (
                   <div className="bg-primary/10 border border-indigo-200 rounded-xl p-3">
@@ -956,14 +956,14 @@ export default function App() {
             <Input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
-              className="flex-1 p-2.5 bg-[#F6F5F3] border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-[#B0AFAD]" />
+              className="flex-1 p-2.5 bg-muted border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-muted-foreground" />
             <Button onClick={sendMessage} disabled={loading || !input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-[#1A1A1A] text-white rounded-xl hover:bg-[#333] disabled:opacity-30 transition shrink-0">
+              className="w-10 h-10 flex items-center justify-center bg-foreground text-white rounded-xl hover:bg-foreground/80 disabled:opacity-30 transition shrink-0">
               <Send size={15} />
             </Button>
             <Button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
               disabled={!input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-muted-foreground rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
+              className="w-10 h-10 flex items-center justify-center bg-muted text-muted-foreground rounded-xl hover:bg-[#ECEBE8] hover:text-foreground/70 disabled:opacity-30 transition shrink-0"
               title="在广场搜索学校">
               <Search size={15} />
             </Button>
