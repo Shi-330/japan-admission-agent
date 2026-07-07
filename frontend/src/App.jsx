@@ -3,6 +3,7 @@ import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -316,29 +317,25 @@ export default function App() {
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">日本升学顾问</h1>
           <div className="flex gap-2 mb-6">
-            <button
+            <Button
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'login' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-600'}`}
-            >登录</button>
-            <button
+              variant={authMode === 'login' ? 'default' : 'secondary'}
+              className="flex-1"
+            >登录</Button>
+            <Button
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'register' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-600'}`}
-            >注册</button>
+              variant={authMode === 'register' ? 'default' : 'secondary'}
+              className="flex-1"
+            >注册</Button>
           </div>
-          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister}>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="邮箱" required
-              className="w-full p-3 border rounded-lg mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <input
-              type="password" value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="密码" required minLength={6}
-              className="w-full p-3 border rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-indigo-700 transition">
+          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-3">
+            <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="邮箱" required />
+            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="密码" required minLength={6} />
+            <Button type="submit" className="w-full">
               {authMode === 'login' ? '登录' : '注册'}
-            </button>
+            </Button>
           </form>
         </div>
       </div>
@@ -706,9 +703,9 @@ export default function App() {
                 placeholder="研究方向" className="w-full p-2 border rounded" />
               <input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
                 placeholder="本科院校" className="w-full p-2 border rounded" />
-              <button type="submit" className="w-full py-2 bg-primary text-primary-foreground rounded text-sm">
+              <Button type="submit" className="w-full" size="sm">
                 保存
-              </button>
+              </Button>
             </form>
           </div>
         )}
