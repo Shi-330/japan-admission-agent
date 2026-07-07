@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -315,11 +318,11 @@ export default function App() {
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'login' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-600'}`}
             >登录</button>
             <button
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'register' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-600'}`}
             >注册</button>
           </div>
           <form onSubmit={authMode === 'login' ? handleLogin : handleRegister}>
@@ -333,7 +336,7 @@ export default function App() {
               placeholder="密码" required minLength={6}
               className="w-full p-3 border rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition">
+            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-indigo-700 transition">
               {authMode === 'login' ? '登录' : '注册'}
             </button>
           </form>
@@ -372,7 +375,7 @@ export default function App() {
                 <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
                 <div className="flex items-center gap-2 mb-2">
                   <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full transition-all"
+                    <div className="h-full bg-primary/100 rounded-full transition-all"
                       style={{ width: `${(stage.progress || 0) * 100}%` }}></div>
                   </div>
                   <span className="text-xs text-gray-400">{Math.round((stage.progress || 0) * 100)}%</span>
@@ -397,12 +400,12 @@ export default function App() {
                   {stage.applications?.length > 0 ? `志愿校 (${stage.applications.length})` : '各校追踪'}
                 </h4>
                 <button onClick={() => setShowAddSchool(!showAddSchool)}
-                  className="text-xs px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium"
+                  className="text-xs px-2 py-0.5 rounded bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium"
                   title="添加学校">+ 添加</button>
               </div>
 
               {showAddSchool && (
-                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-indigo-50/50 space-y-1.5">
+                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-primary/10/50 space-y-1.5">
                   <input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
@@ -418,7 +421,7 @@ export default function App() {
                   </select>
                   <div className="flex gap-2">
                     <button type="submit" disabled={!newSchool.trim()}
-                      className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</button>
+                      className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</button>
                     <button type="button" onClick={() => setShowAddSchool(false)}
                       className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</button>
                   </div>
@@ -503,7 +506,7 @@ export default function App() {
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
                             onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
                           <button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
                         </div>
                       ) : (
                         <div className="text-[10px] text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
@@ -533,7 +536,7 @@ export default function App() {
                               setEditCard(null); setEditProfName('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
                         </div>
                       ) : (
                         <button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
@@ -554,7 +557,7 @@ export default function App() {
                               setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
                         </div>
                       ) : (
                         <button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
@@ -595,7 +598,7 @@ export default function App() {
                           <summary className="text-[10px] text-gray-400 cursor-pointer">时间线</summary>
                           <div className="mt-1 space-y-0.5">
                             {app.timeline.map((t, j) => (
-                              <div key={j} className={`text-[10px] flex justify-between ${t.stage === app.stage_id ? 'font-medium text-indigo-600' : 'text-gray-400'}`}>
+                              <div key={j} className={`text-[10px] flex justify-between ${t.stage === app.stage_id ? 'font-medium text-primary' : 'text-gray-400'}`}>
                                 <span>{t.label}</span>
                                 <span>{t.start} ~ {t.end}</span>
                               </div>
@@ -658,7 +661,7 @@ export default function App() {
 
         <div className="p-4 border-b">
           <button onClick={() => setShowProfile(!showProfile)}
-            className="flex items-center gap-2 text-sm text-gray-600 hover:text-indigo-600 w-full p-2 rounded-lg hover:bg-gray-50">
+            className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary w-full p-2 rounded-lg hover:bg-gray-50">
             <Settings size={16} /> 学生背景
           </button>
           {profile && (
@@ -669,7 +672,7 @@ export default function App() {
               {profile.research_area && <div>方向: {profile.research_area}</div>}
               {profile.facts && Object.keys(profile.facts).length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-indigo-600">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
+                  <summary className="cursor-pointer text-primary">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
                   {Object.entries(profile.facts).map(([k, v]) => (
                     <div key={k} className="ml-2">{k}: {v}</div>
                   ))}
@@ -703,7 +706,7 @@ export default function App() {
                 placeholder="研究方向" className="w-full p-2 border rounded" />
               <input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
                 placeholder="本科院校" className="w-full p-2 border rounded" />
-              <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded text-sm">
+              <button type="submit" className="w-full py-2 bg-primary text-primary-foreground rounded text-sm">
                 保存
               </button>
             </form>
@@ -723,23 +726,19 @@ export default function App() {
       {/* Main area */}
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
-        <div className="flex border-b border-border bg-white px-4 shrink-0">
-          <button onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'chat' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
-            <MessageCircle size={15} /> 对话
-          </button>
-          <button onClick={() => setActiveTab('plaza')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'plaza' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
-            <LayoutGrid size={15} /> 广场
-          </button>
-          <button onClick={() => setActiveTab('calendar')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'calendar' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
-            <Calendar size={15} /> 日历
-          </button>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="border-b border-border bg-card px-4">
+          <TabsList className="w-full justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
+            <TabsTrigger value="chat" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <MessageCircle size={15} /> 对话
+            </TabsTrigger>
+            <TabsTrigger value="plaza" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <LayoutGrid size={15} /> 广场
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <Calendar size={15} /> 日历
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {activeTab === 'chat' ? (
         <>
@@ -754,7 +753,7 @@ export default function App() {
               <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
                 {msg.navSuggestion && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                  <div className="bg-primary/10 border border-indigo-200 rounded-xl p-3">
                     <p className="text-sm text-gray-700 mb-2">{msg.navSuggestion.prompt || '一起去选校广场看看？'}</p>
                     <div className="flex gap-2">
                       <button onClick={() => {
@@ -762,7 +761,7 @@ export default function App() {
                         setActiveTab('plaza');
                         setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '已跳转到广场' } : m));
                       }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                        className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                         去看看
                       </button>
                       <button onClick={() => {
@@ -787,7 +786,7 @@ export default function App() {
                             setMessages(prev => prev.map(m => m.suggestedSchools ? { ...m, suggestedSchools: null, content: `已添加「${school}」到追踪列表` } : m));
                           } catch (err) { showToast(`添加失败: ${err.message}`); }
                         }}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                          className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                           + {school}
                         </button>
                       ))}
@@ -816,7 +815,7 @@ export default function App() {
                 placeholder="筛选专业，如：情报理工、NLP..."
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {plazaFilter && (
-                <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full whitespace-nowrap">
+                <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
                   {catalog.filter(s => {
                     const text = JSON.stringify(s).toLowerCase();
                     const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
@@ -852,7 +851,7 @@ export default function App() {
                         showToast(`已添加「${s.name}」`, 'success');
                       } catch (err) { showToast(`添加失败: ${err.message}`); }
                     }}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium shrink-0">
+                      className="text-xs px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium shrink-0">
                       追踪
                     </button>
                   </div>
@@ -907,8 +906,8 @@ export default function App() {
                         const isCurrent = m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
                         const mKey = `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`;
                         return (
-                          <div key={mi} className={`flex-1 min-w-[55px] border-l ${isCurrent ? 'bg-indigo-50/40' : ''}`}>
-                            <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-indigo-600' : 'text-gray-400'}`}>
+                          <div key={mi} className={`flex-1 min-w-[55px] border-l ${isCurrent ? 'bg-primary/10/40' : ''}`}>
+                            <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-primary' : 'text-gray-400'}`}>
                               {m.getMonth()+1}月
                             </div>
                             {stage.applications.map((app, ai) => {
@@ -942,7 +941,7 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-400">
                     <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 inline-block"></span> 截止日</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-50 inline-block"></span> 本月</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/10 inline-block"></span> 本月</span>
                   </div>
                 </div>
               );
