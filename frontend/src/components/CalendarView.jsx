@@ -1,5 +1,3 @@
-import { Card, CardContent } from '@/components/ui/card'
-
 function getMonths() {
   const now = new Date()
   const months = []
@@ -35,6 +33,7 @@ export default function CalendarView({ applications }) {
 
   const now = new Date()
   const months = getMonths()
+  let lastYear = null
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -54,10 +53,13 @@ export default function CalendarView({ applications }) {
           <div className="flex-1 flex">
             {months.map((m, mi) => {
               const isCurrent = m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear()
+              const showYear = m.getFullYear() !== lastYear
+              lastYear = m.getFullYear()
               return (
                 <div key={mi} className={`flex-1 min-w-[55px] border-l border-border ${isCurrent ? 'bg-muted/50' : ''}`}>
-                  <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {m.getMonth() + 1}月
+                  <div className={`h-8 text-center pt-1 font-medium tabular-nums ${isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {showYear && <div className="text-[8px] leading-tight">{m.getFullYear()}年</div>}
+                    <div className={showYear ? 'text-[10px]' : 'text-[10px] pt-1'}>{m.getMonth() + 1}月</div>
                   </div>
                   {applications.map((app, ai) => {
                     const dots = getDeadlineDates(app.deadlines).filter(
