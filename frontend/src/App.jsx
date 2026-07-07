@@ -896,7 +896,6 @@ export default function App() {
         <CalendarView applications={stage?.applications} />
         )}
 
-        )}
         {/* Always-visible chat input */}
         <div className={`border-t border-border bg-card shrink-0 transition-all duration-200 ${inputOpen ? 'p-3' : 'p-1'}`}>
           {!inputOpen && (
