@@ -344,7 +344,7 @@ export default function App() {
 
   // ── Main app ──
   return (
-    <div className="flex h-screen bg-[#FAF9F7]">
+    <div className="flex h-screen bg-background">
       {/* Toast notification */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
@@ -356,16 +356,16 @@ export default function App() {
         </div>
       )}
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-[#ECEBE8] flex flex-col shrink-0 overflow-hidden">
-        <div className="p-5 border-b border-[#ECEBE8]">
-          <h1 className="text-lg font-bold text-[#1A1A1A] tracking-tight">升学顾问</h1>
-          <p className="text-[11px] text-[#8E8D8A] mt-0.5">{user?.email}</p>
+      <aside className="w-80 bg-white border-r border-border flex flex-col shrink-0 overflow-hidden">
+        <div className="p-5 border-b border-border">
+          <h1 className="text-lg font-bold text-foreground tracking-tight">升学顾问</h1>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{user?.email}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
         {/* Stage + Applications */}
         {stage && (
-          <div className="p-4 border-b border-[#ECEBE8]">
+          <div className="p-4 border-b border-border">
             {/* Single progress bar — only show when no per-school cards */}
             {(!stage.applications || stage.applications.length === 0) && (
               <>
@@ -426,7 +426,7 @@ export default function App() {
               )}
 
               {stage.applications?.map((app, i) => {
-                  const stageColors = { browsing: 'bg-[#F3F2F0] text-[#8E8D8A]', preparing: 'bg-[#EDEBE7] text-[#6B6A67]', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
+                  const stageColors = { browsing: 'bg-[#F3F2F0] text-muted-foreground', preparing: 'bg-[#EDEBE7] text-[#6B6A67]', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
                     applying: 'bg-[#F0EDF7] text-[#5B4D7D]', exam: 'bg-[#FDF2E6] text-[#8C6D41]',
                     waiting: 'bg-[#F9F1E7] text-[#8C6D41]', decided: 'bg-[#E8F0EC] text-[#2F5233]' };
                   const profStatusColors = { pending: 'text-[#B0AFAD]', sent: 'text-[#5B6D8A]',
@@ -723,20 +723,20 @@ export default function App() {
       {/* Main area */}
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
-        <div className="flex border-b border-[#ECEBE8] bg-white px-4 shrink-0">
+        <div className="flex border-b border-border bg-white px-4 shrink-0">
           <button onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'chat' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+              activeTab === 'chat' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
             <MessageCircle size={15} /> 对话
           </button>
           <button onClick={() => setActiveTab('plaza')}
             className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'plaza' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+              activeTab === 'plaza' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
             <LayoutGrid size={15} /> 广场
           </button>
           <button onClick={() => setActiveTab('calendar')}
             className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'calendar' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+              activeTab === 'calendar' ? 'border-[#1A1A1A] text-foreground' : 'border-transparent text-muted-foreground hover:text-[#4B4A47]'}`}>
             <Calendar size={15} /> 日历
           </button>
         </div>
@@ -751,7 +751,7 @@ export default function App() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-[#ECEBE8] card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
                 {msg.navSuggestion && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
@@ -951,7 +951,7 @@ export default function App() {
         </div>
         )}
         {/* Always-visible chat input */}
-        <div className="p-3 border-t border-[#ECEBE8] bg-white shrink-0">
+        <div className="p-3 border-t border-border bg-white shrink-0">
           <div className="max-w-3xl mx-auto flex gap-2">
             <input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
@@ -963,7 +963,7 @@ export default function App() {
             </button>
             <button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
               disabled={!input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-[#8E8D8A] rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
+              className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-muted-foreground rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
               title="在广场搜索学校">
               <Search size={15} />
             </button>
