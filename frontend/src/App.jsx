@@ -403,7 +403,7 @@ export default function App() {
 
               {showAddSchool && (
                 <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-primary/10/50 space-y-1.5">
-                  <input value={newSchool} onChange={e => setNewSchool(e.target.value)}
+                  <Input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
                   <select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
@@ -435,7 +435,8 @@ export default function App() {
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
                     rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
-                    <div key={i} className="card-float p-3">
+                    <Card key={i} className="card-float">
+<CardContent className="p-3">
                       {/* Header: school + stage + delete */}
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-semibold text-gray-800 truncate max-w-[130px]" title={app.school}>
@@ -499,7 +500,7 @@ export default function App() {
                       {/* Notes — click to edit */}
                       {editCard === app.school + '-notes' ? (
                         <div className="flex gap-1 mb-1">
-                          <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
+                          <Input value={editNotes} onChange={e => setEditNotes(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
                             onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
                           <Button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
@@ -515,7 +516,7 @@ export default function App() {
                       {/* Add professor */}
                       {editCard === app.school + '-prof' ? (
                         <div className="flex gap-1 mb-1 items-center">
-                          <input value={editProfName} onChange={e => setEditProfName(e.target.value)}
+                          <Input value={editProfName} onChange={e => setEditProfName(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="教授姓名" autoFocus />
                           <select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
                             className="text-[10px] p-1 border rounded w-16">
@@ -543,9 +544,9 @@ export default function App() {
                       {/* Add deadline */}
                       {editCard === app.school + '-dl' ? (
                         <div className="flex gap-1 mb-1">
-                          <input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
+                          <Input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
                             className="w-20 text-[10px] p-1 border rounded" placeholder="如：出願締切" autoFocus />
-                          <input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
+                          <Input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="如：2026-12-15" />
                           <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
@@ -603,9 +604,10 @@ export default function App() {
                           </div>
                         </details>
                       )}
-                    </div>
-                  );
-                })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             {/* All reminders (per-school + per-professor) */}
@@ -687,21 +689,21 @@ export default function App() {
                 className="w-full p-2 border rounded">
                 {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
               </select>
-              <input name="english_score" defaultValue={profile?.english_score || ''}
+              <Input name="english_score" defaultValue={profile?.english_score || ''}
                 placeholder="英语: TOEFL 95" className="w-full p-2 border rounded" />
               <div className="flex gap-2">
-                <input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
+                <Input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
                   placeholder="GPA" className="w-1/2 p-2 border rounded" />
                 <select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
                   className="w-1/2 p-2 border rounded">
                   {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              <input name="target_major" defaultValue={profile?.target_major || ''}
+              <Input name="target_major" defaultValue={profile?.target_major || ''}
                 placeholder="目标专业" className="w-full p-2 border rounded" />
-              <input name="research_area" defaultValue={profile?.research_area || ''}
+              <Input name="research_area" defaultValue={profile?.research_area || ''}
                 placeholder="研究方向" className="w-full p-2 border rounded" />
-              <input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
+              <Input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
                 placeholder="本科院校" className="w-full p-2 border rounded" />
               <Button type="submit" className="w-full" size="sm">
                 保存
@@ -808,7 +810,7 @@ export default function App() {
             <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
             <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
             <div className="flex items-center gap-2 mb-4">
-              <input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
+              <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
                 placeholder="筛选专业，如：情报理工、NLP..."
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {plazaFilter && (
@@ -837,7 +839,8 @@ export default function App() {
                   </div>;
                 }
                 return filtered.map((s, i) => (
-                <div key={i} className="card-float p-5">
+                <Card key={i} className="card-float">
+<CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
                     <Button onClick={async () => {
@@ -869,7 +872,8 @@ export default function App() {
                     </div>
                   </details>
                   {s.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{s.notes}</div>}
-                </div>
+                </CardContent>
+              </Card>
               ));
               })()}
             </div>
@@ -949,7 +953,7 @@ export default function App() {
         {/* Always-visible chat input */}
         <div className="p-3 border-t border-border bg-white shrink-0">
           <div className="max-w-3xl mx-auto flex gap-2">
-            <input value={input} onChange={e => setInput(e.target.value)}
+            <Input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
               className="flex-1 p-2.5 bg-[#F6F5F3] border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-[#B0AFAD]" />

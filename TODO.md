@@ -1,45 +1,37 @@
-# V2 TODO
+# Frontend Refactor TODO
 
-> Last updated: 2026-07-07
+> Branch: feat/refactor-frontend | Started: 2026-07-08
 
 ## Done
+- [x] CSS variable theme system (zinc-based, shadcn compatible)
+- [x] shadcn/ui components: Button, Card, Input, Tabs
+- [x] Vite @ alias
+- [x] All `<button>` → `<Button>`
+- [x] Tab bar → Radix Tabs
+- [x] Login page → Button + Input
 
-### V2.2 State Machine
-- [x] Per-school applications: extraction prompt, merge_delta, stage API, React cards
-- [x] Professor reminders (14-day no-reply detection)
-- [x] Bidirectional stages (forward + rollback)
-- [x] Manual school CRUD (add/delete via sidebar)
-- [x] Real-date timeline from 募集要項 deadlines
+## Component Migration
+- [x] Plaza cards → Card/CardContent
+- [x] Per-school tracking cards → Card/CardContent
+- [x] All `<input>` → `<Input>`
+- [ ] All `<select>` → styled select or shadcn Select
+- [ ] `<textarea>` where applicable → Input
 
-### UX
-- [x] Streaming chat (invoke → stream)
-- [x] Chat response cache (5-min TTL)
-- [x] Keyword intent classification (skip LLM for known patterns)
-- [x] Toast notifications (replaced alert())
-- [x] Proactive greeting on login (/v1/greeting)
-- [x] Single-server setup (FastAPI serves React build, port 8000)
-- [x] School auto-suggestion from chat (one-click add to tracking)
+## Dialogs & Overlays
+- [ ] confirm() → Dialog component (delete confirmation, etc.)
+- [ ] Add school form → Dialog/Sheet
+- [ ] Profile edit → Sheet (slide-out)
 
-### School Plaza
-- [x] 7-school catalog with majors, deadlines, requirements
-- [x] Filter by major/name
-- [x] One-click "追踪" to add to sidebar
+## Polish
+- [ ] Remove all hardcoded hex colors → semantic classes
+- [ ] Calendar → date-fns + hand-written grid (remove inline IIFE)
+- [ ] AnimatePresence on tab content switch
+- [ ] Card hover → Framer Motion spring
+- [ ] Toast → shadcn Sonner or custom toast component
+- [ ] Stage tag colors → CSS variable-based variants
+- [ ] Chat bubbles → variant styling
 
-### Calendar
-- [x] Horizontal timeline with month columns
-- [x] Deadline markers from applications[].deadlines
-- [x] Current month highlighted
-
-### Data
-- [x] v2_migration.sql for Supabase user_profiles columns
-- [x] seed_schools.py with 5-school deadline reference
-
-## Next
-
-- [ ] PDF 募集要項 upload + LLM extraction → auto-fill deadlines
-- [ ] Application card inline editing (professors, deadlines, notes)
-- [ ] Date-driven stage progression (real deadlines drive the timeline)
-- [ ] V2.3 Private Case Database (senpai cases)
-- [ ] V2.4 Hybrid Search
-- [ ] V2.5 Dashboard polish
-- [ ] V2.6 Email automation
+## Later
+- [ ] Dark mode toggle
+- [ ] Responsive sidebar
+- [ ] Loading skeletons
