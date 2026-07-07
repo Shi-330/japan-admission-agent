@@ -343,7 +343,7 @@ export default function App() {
 
   // ── Main app ──
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-[#FAF9F7]">
       {/* Toast notification */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
@@ -355,16 +355,16 @@ export default function App() {
         </div>
       )}
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r flex flex-col shrink-0 overflow-hidden">
-        <div className="p-5 border-b">
-          <h1 className="text-lg font-bold text-gray-800">升学顾问</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{user?.email}</p>
+      <aside className="w-80 bg-white border-r border-[#ECEBE8] flex flex-col shrink-0 overflow-hidden">
+        <div className="p-5 border-b border-[#ECEBE8]">
+          <h1 className="text-lg font-bold text-[#1A1A1A] tracking-tight">升学顾问</h1>
+          <p className="text-[11px] text-[#8E8D8A] mt-0.5">{user?.email}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
         {/* Stage + Applications */}
         {stage && (
-          <div className="p-4 border-b">
+          <div className="p-4 border-b border-[#ECEBE8]">
             {/* Single progress bar — only show when no per-school cards */}
             {(!stage.applications || stage.applications.length === 0) && (
               <>
@@ -425,16 +425,16 @@ export default function App() {
               )}
 
               {stage.applications?.map((app, i) => {
-                  const stageColors = { browsing: 'bg-slate-100 text-slate-500', preparing: 'bg-gray-100 text-gray-600', contacting: 'bg-blue-100 text-blue-700',
-                    applying: 'bg-purple-100 text-purple-700', exam: 'bg-orange-100 text-orange-700',
-                    waiting: 'bg-amber-100 text-amber-700', decided: 'bg-green-100 text-green-700' };
-                  const profStatusColors = { pending: 'text-gray-400', sent: 'text-blue-600',
-                    replied: 'text-green-600', rejected: 'text-red-500', no_reply: 'text-amber-600',
-                    interview: 'text-teal-600' };
+                  const stageColors = { browsing: 'bg-[#F3F2F0] text-[#8E8D8A]', preparing: 'bg-[#EDEBE7] text-[#6B6A67]', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
+                    applying: 'bg-[#F0EDF7] text-[#5B4D7D]', exam: 'bg-[#FDF2E6] text-[#8C6D41]',
+                    waiting: 'bg-[#F9F1E7] text-[#8C6D41]', decided: 'bg-[#E8F0EC] text-[#2F5233]' };
+                  const profStatusColors = { pending: 'text-[#B0AFAD]', sent: 'text-[#5B6D8A]',
+                    replied: 'text-[#3D6B52]', rejected: 'text-[#C4655A]', no_reply: 'text-[#D4A853]',
+                    interview: 'text-[#4A7C8C]' };
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
                     rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
-                    <div key={i} className="border rounded-lg p-2.5 bg-white hover:shadow-sm transition-shadow">
+                    <div key={i} className="card-float p-3">
                       {/* Header: school + stage + delete */}
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-semibold text-gray-800 truncate max-w-[130px]" title={app.school}>
@@ -722,21 +722,21 @@ export default function App() {
       {/* Main area */}
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
-        <div className="flex border-b bg-white px-4 shrink-0">
+        <div className="flex border-b border-[#ECEBE8] bg-white px-4 shrink-0">
           <button onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
-              activeTab === 'chat' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-            <MessageCircle size={16} /> 对话
+            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
+              activeTab === 'chat' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+            <MessageCircle size={15} /> 对话
           </button>
           <button onClick={() => setActiveTab('plaza')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
-              activeTab === 'plaza' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-            <LayoutGrid size={16} /> 广场
+            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
+              activeTab === 'plaza' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+            <LayoutGrid size={15} /> 广场
           </button>
           <button onClick={() => setActiveTab('calendar')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
-              activeTab === 'calendar' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-            <Calendar size={16} /> 日历
+            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
+              activeTab === 'calendar' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
+            <Calendar size={15} /> 日历
           </button>
         </div>
 
@@ -748,7 +748,7 @@ export default function App() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-gray-800 text-white' : msg.suggestedSchools ? 'bg-indigo-50 border border-indigo-200' : 'bg-white border shadow-sm'} p-4 rounded-2xl text-sm leading-relaxed`}>
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-[#ECEBE8] card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
                 {msg.navSuggestion && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
@@ -837,7 +837,7 @@ export default function App() {
                   </div>;
                 }
                 return filtered.map((s, i) => (
-                <div key={i} className="border rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
+                <div key={i} className="card-float p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
                     <button onClick={async () => {
@@ -947,21 +947,21 @@ export default function App() {
         </div>
         )}
         {/* Always-visible chat input */}
-        <div className="p-3 border-t bg-white shrink-0">
+        <div className="p-3 border-t border-[#ECEBE8] bg-white shrink-0">
           <div className="max-w-3xl mx-auto flex gap-2">
             <input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
-              className="flex-1 p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="flex-1 p-2.5 bg-[#F6F5F3] border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-[#B0AFAD]" />
             <button onClick={sendMessage} disabled={loading || !input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0">
-              <Send size={16} />
+              className="w-10 h-10 flex items-center justify-center bg-[#1A1A1A] text-white rounded-xl hover:bg-[#333] disabled:opacity-30 transition shrink-0">
+              <Send size={15} />
             </button>
             <button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
               disabled={!input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 transition shrink-0"
+              className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-[#8E8D8A] rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
               title="在广场搜索学校">
-              <Search size={16} />
+              <Search size={15} />
             </button>
           </div>
         </div>
