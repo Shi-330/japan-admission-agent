@@ -236,7 +236,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             for i in range(0, len(cached), 2):
                 chunk = cached[i:i+2]
                 yield f"data: {json.dumps({'content': chunk, 'is_status': False, 'done': False})}\n\n"
-                await __import__('asyncio').sleep(0.01)
+                await asyncio.sleep(0.003)
             yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
         return StreamingResponse(
             cached_generator(),
@@ -272,8 +272,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.01)
-                plaza = _detect_nav_suggestion(body.query, assistant_text) or _detect_nav_suggestion(body.query, body.query)
+                        await asyncio.sleep(0.003)
+                plaza = _detect_nav_suggestion(body.query)
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
                     done_event['nav_suggestion'] = plaza
@@ -297,7 +297,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.01)
+                        await asyncio.sleep(0.003)
                 plaza = _detect_nav_suggestion(body.query, assistant_text)
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
@@ -311,11 +311,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.01)
-                # Check for plaza action in chat — only if query has school signals
-                plaza = None
-                if _has_school_signal(body.query):
-                    plaza = _detect_nav_suggestion(body.query, assistant_text)
+                        await asyncio.sleep(0.003)
+                plaza = _detect_nav_suggestion(body.query)
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
                     done_event['nav_suggestion'] = plaza
@@ -652,20 +649,7 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     return {"ok": True, "school": school, "applications": profile.applications}
 
 
-def _has_school_signal(query: str) -> bool:
-    """Check if query likely relates to school search (not just casual chat)."""
-    p = query.lower()
-    # School-related keywords
-    school_words = ["学校", "大学", "研究科", "英語", "英语", "toefl", "toeic", "ielts",
-                    "jlpt", "n1", "n2", "笔試", "筆記", "面接", "試験", "出願", "内诺",
-                    "情報", "情报", "计算机", "cs", "nlp", "自然语言", "研究室",
-                    "教授", "修士", "研究生", "博士", "进学", "入学",
-                    "东京", "京都", "大阪", "名古屋", "筑波", "早稻田", "东北",
-                    "北海道", "九州", "哪个", "什么学校", "有没有"]
-    return any(w in p for w in school_words)
-
-
-def _detect_nav_suggestion(query: str, assistant_text: str) -> Optional[dict]:
+def _detect_nav_suggestion(query: str, assistant_text: str = "") -> Optional[dict]:
     """Extract filter keywords from a school-search query. Intent is already determined by LLM."""
     p = query.lower()
     keywords = []
