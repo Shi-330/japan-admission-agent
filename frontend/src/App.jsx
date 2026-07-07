@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import CalendarView from '@/components/CalendarView';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -141,10 +143,13 @@ export default function App() {
   const [editDeadlineKey, setEditDeadlineKey] = useState('');
   const [editDeadlineVal, setEditDeadlineVal] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null); // school name to delete
   // ── Plaza state ──
   const [activeTab, setActiveTab] = useState('chat'); // chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [inputOpen, setInputOpen] = useState(true);
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
@@ -189,14 +194,18 @@ export default function App() {
     }
   };
 
-  const removeSchool = async (school) => {
-    if (!confirm(`确认删除「${school}」？`)) return;
+  const removeSchool = async () => {
+    const school = deleteTarget;
+    if (!school) return;
     try {
       await apiCall(`/v1/applications?school=${encodeURIComponent(school)}`, token, { method: 'DELETE' });
       const updated = await apiCall('/v1/stage', token);
       setStage(updated);
+      showToast(`已删除「${school}」`, 'success');
     } catch (err) {
       showToast(`删除失败: ${err.message}`);
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -356,11 +365,13 @@ export default function App() {
         </div>
       )}
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-border flex flex-col shrink-0 overflow-hidden">
-        <div className="p-5 border-b border-border">
-          <h1 className="text-lg font-bold text-foreground tracking-tight">升学顾问</h1>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{user?.email}</p>
+      <aside className={`bg-card border-r border-border flex flex-col shrink-0 overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-80' : 'w-12'}`}>
+        <div className="p-3 border-b border-border flex justify-center">
+          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? '收起' : '展开'}>
+            <LayoutGrid size={14} />
+          </Button>
         </div>
+        <div className={`flex-1 overflow-hidden ${sidebarOpen ? '' : 'hidden'}`}>
 
         <div className="flex-1 overflow-y-auto">
         {/* Stage + Applications */}
@@ -446,8 +457,8 @@ export default function App() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
                             {app.label}
                           </span>
-                          <Button onClick={() => removeSchool(app.school)}
-                            className="text-gray-300 hover:text-red-400 text-xs leading-none transition" title="删除">&times;</Button>
+                          <Button onClick={() => setDeleteTarget(app.school)} variant="ghost" size="icon"
+                            className="text-muted-foreground hover:text-red-500 h-5 w-5" title="删除">&times;</Button>
                         </div>
                       </div>
 
@@ -714,11 +725,12 @@ export default function App() {
 
         </div>{/* end scrollable area */}
 
-        <div className="p-4 border-t shrink-0">
-          <Button onClick={handleLogout}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-500 w-full p-2">
-            <LogOut size={16} /> 退出
+        <div className="p-2 border-t border-border shrink-0 flex justify-center">
+          <Button onClick={handleLogout} variant="ghost" size="icon"
+            className="text-muted-foreground hover:text-red-500" title="退出">
+            <LogOut size={15} />
           </Button>
+        </div>
         </div>
       </aside>
 
@@ -881,77 +893,20 @@ export default function App() {
         </div>
         ) : (
         /* Calendar view */
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">申请日历</h2>
-            {!stage?.applications?.length ? (
-              <p className="text-sm text-gray-400">还没有追踪的学校，去「广场」添加吧</p>
-            ) : (() => {
-              const now = new Date();
-              const months = [];
-              for (let i = -1; i <= 8; i++) {
-                const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-                months.push(d);
-              }
-              return (
-                <div className="overflow-x-auto">
-                  <div className="flex min-w-[800px]">
-                    <div className="w-36 shrink-0">
-                      <div className="h-8"></div>
-                      {stage.applications.map((app, i) => (
-                        <div key={i} className="h-16 flex items-center text-xs font-medium text-gray-700 border-b border-gray-50 pr-2 truncate">{app.school}</div>
-                      ))}
-                    </div>
-                    <div className="flex-1 flex">
-                      {months.map((m, mi) => {
-                        const isCurrent = m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
-                        const mKey = `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`;
-                        return (
-                          <div key={mi} className={`flex-1 min-w-[55px] border-l ${isCurrent ? 'bg-primary/10/40' : ''}`}>
-                            <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-primary' : 'text-gray-400'}`}>
-                              {m.getMonth()+1}月
-                            </div>
-                            {stage.applications.map((app, ai) => {
-                              const dots = [];
-                              if (app.deadlines) {
-                                Object.entries(app.deadlines).forEach(([k, v]) => {
-                                  try {
-                                    const ds = String(v).split(/[~～]/)[0].trim().replace(/[年月]/g,'-').replace(/[日]/g,'');
-                                    const d = new Date(ds);
-                                    if (!isNaN(d.getTime()) && d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()) {
-                                      dots.push({ label: k, date: ds, type: 'deadline' });
-                                    }
-                                  } catch {}
-                                });
-                              }
-                              return (
-                                <div key={ai} className={`h-16 border-b border-gray-50 relative ${isCurrent ? '' : ''}`}>
-                                  {dots.map((dot, di) => (
-                                    <div key={di} className="absolute left-0.5 right-0.5 text-[8px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
-                                      style={{ top: `${2 + di * 16}px` }} title={`${dot.label}: ${dot.date}`}>
-                                      {dot.label}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-400">
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 inline-block"></span> 截止日</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/10 inline-block"></span> 本月</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+        <CalendarView applications={stage?.applications} />
+        )}
+
         )}
         {/* Always-visible chat input */}
-        <div className="p-3 border-t border-border bg-white shrink-0">
+        <div className={`border-t border-border bg-card shrink-0 transition-all duration-200 ${inputOpen ? 'p-3' : 'p-1'}`}>
+          {!inputOpen && (
+            <div className="flex justify-center">
+              <Button variant="ghost" size="icon" onClick={() => setInputOpen(true)} title="展开输入框">
+                <Send size={14} />
+              </Button>
+            </div>
+          )}
+          <div className={inputOpen ? '' : 'hidden'}>
           <div className="max-w-3xl mx-auto flex gap-2">
             <Input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
@@ -967,8 +922,12 @@ export default function App() {
               title="在广场搜索学校">
               <Search size={15} />
             </Button>
+            <Button variant="ghost" size="icon" onClick={() => setInputOpen(false)} title="收起输入框" className="shrink-0">
+              <LayoutGrid size={12} />
+            </Button>
           </div>
         </div>
+        </div>{/* close input hidden wrapper */}
         {/* Mini chat panel in plaza/calendar — shows latest messages */}
         {activeTab !== 'chat' && messages.length > 0 && (
           <div className="border-t bg-white px-4 py-2 max-h-32 overflow-y-auto shrink-0">
@@ -984,6 +943,22 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Delete confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要移除「{deleteTarget}」吗？该操作不会删除已记录的数据，但会从追踪列表中移除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={removeSchool}>确认删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

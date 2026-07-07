@@ -4,34 +4,21 @@
 
 ## Done
 - [x] CSS variable theme system (zinc-based, shadcn compatible)
-- [x] shadcn/ui components: Button, Card, Input, Tabs
+- [x] shadcn/ui: Button, Card, Input, Tabs, Dialog (all 5)
 - [x] Vite @ alias
-- [x] All `<button>` → `<Button>`
+- [x] All `<button>` → `<Button>`, `<input>` → `<Input>`
 - [x] Tab bar → Radix Tabs
 - [x] Login page → Button + Input
+- [x] Plaza + tracking cards → Card/CardContent
+- [x] Structural hex colors → semantic classes (21→0 structural)
+- [x] Calendar → CalendarView component (extracted inline IIFE)
+- [x] confirm() → Dialog (Radix Dialog with overlay + animation)
+- [x] Collapsible sidebar (toggle to 48px thin strip)
+- [x] Collapsible chat input bar
 
-## Component Migration
-- [x] Plaza cards → Card/CardContent
-- [x] Per-school tracking cards → Card/CardContent
-- [x] All `<input>` → `<Input>`
-- [ ] All `<select>` → styled select or shadcn Select
-- [ ] `<textarea>` where applicable → Input
-
-## Dialogs & Overlays
-- [ ] confirm() → Dialog component (delete confirmation, etc.)
-- [ ] Add school form → Dialog/Sheet
-- [ ] Profile edit → Sheet (slide-out)
-
-## Polish
-- [ ] Remove all hardcoded hex colors → semantic classes
-- [ ] Calendar → date-fns + hand-written grid (remove inline IIFE)
+## Remaining Polish
+- [ ] Select styling
 - [ ] AnimatePresence on tab content switch
-- [ ] Card hover → Framer Motion spring
-- [ ] Toast → shadcn Sonner or custom toast component
-- [ ] Stage tag colors → CSS variable-based variants
-- [ ] Chat bubbles → variant styling
-
-## Later
+- [ ] Toast → shadcn Sonner
 - [ ] Dark mode toggle
-- [ ] Responsive sidebar
 - [ ] Loading skeletons
