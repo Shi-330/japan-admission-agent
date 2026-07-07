@@ -232,11 +232,21 @@ export default function App() {
           if (!line.startsWith('data: ')) continue;
           try {
             const parsed = JSON.parse(line.slice(6));
+            if (parsed.plaza_action) {
+              if (parsed.plaza_action.action === 'filter_plaza') {
+                setPlazaFilter(parsed.plaza_action.filter);
+                setActiveTab('plaza');
+                if (catalog.length === 0) apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {});
+              }
+              break;
+            }
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
               break;
             }
-            if (parsed.done) break;
+            if (parsed.done) {
+              break;
+            }
             if (!parsed.is_status) {
               assistantContent += parsed.content || '';
               setMessages(prev => {
@@ -703,7 +713,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main area: chat + plaza */}
+      {/* Main area */}
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
         <div className="flex border-b bg-white px-4 shrink-0">
@@ -763,18 +773,6 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="p-4 border-t bg-white">
-          <div className="max-w-3xl mx-auto flex gap-3">
-            <input value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
-              placeholder="输入你的留学疑问..."
-              className="flex-1 p-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <button onClick={sendMessage} disabled={loading || !input.trim()}
-              className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0">
-              <Send size={18} />
-            </button>
-          </div>
-        </div>
         </>
         ) : activeTab === 'plaza' ? (
         /* Plaza view */
@@ -782,11 +780,36 @@ export default function App() {
           <div className="max-w-5xl mx-auto">
             <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
             <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
-            <input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
-              placeholder="筛选专业，如：情报理工、NLP..."
-              className="w-full max-w-md p-2.5 border rounded-lg text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <div className="flex items-center gap-2 mb-4">
+              <input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
+                placeholder="筛选专业，如：情报理工、NLP..."
+                className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              {plazaFilter && (
+                <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full whitespace-nowrap">
+                  {catalog.filter(s => {
+                    const text = JSON.stringify(s).toLowerCase();
+                    const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
+                    return words.some(w => text.includes(w.toLowerCase()));
+                  }).length} 条结果
+                  <button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</button>
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {catalog.filter(s => !plazaFilter || s.majors?.some(m => m.includes(plazaFilter)) || s.name.includes(plazaFilter)).map((s, i) => (
+              {(() => {
+                const filtered = catalog.filter(s => {
+                  if (!plazaFilter) return true;
+                  const text = JSON.stringify(s).toLowerCase();
+                  const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
+                  return words.some(w => text.includes(w.toLowerCase()));
+                });
+                if (filtered.length === 0 && plazaFilter) {
+                  return <div className="col-span-2 text-center py-12 text-gray-400">
+                    <p className="text-lg mb-2">没有完全匹配的学校</p>
+                    <p className="text-sm">试试换个说法，或者 <button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</button> 查看全部</p>
+                  </div>;
+                }
+                return filtered.map((s, i) => (
                 <div key={i} className="border rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
@@ -820,7 +843,8 @@ export default function App() {
                   </details>
                   {s.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{s.notes}</div>}
                 </div>
-              ))}
+              ));
+              })()}
             </div>
           </div>
         </div>
@@ -894,6 +918,33 @@ export default function App() {
             })()}
           </div>
         </div>
+        )}
+        {/* Always-visible chat input */}
+        <div className="p-3 border-t bg-white shrink-0">
+          <div className="max-w-3xl mx-auto flex gap-2">
+            <input value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
+              placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
+              className="flex-1 p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button onClick={sendMessage} disabled={loading || !input.trim()}
+              className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition shrink-0">
+              <Send size={16} />
+            </button>
+          </div>
+        </div>
+        {/* Mini chat panel in plaza/calendar — shows latest messages */}
+        {activeTab !== 'chat' && messages.length > 0 && (
+          <div className="border-t bg-white px-4 py-2 max-h-32 overflow-y-auto shrink-0">
+            {messages.slice(-3).map((msg, i) => (
+              <div key={i} className={`text-xs mb-1 ${msg.role === 'user' ? 'text-gray-500' : 'text-gray-700'}`}>
+                <span className="font-medium">{msg.role === 'user' ? '你: ' : '顾问: '}</span>
+                <span className="whitespace-pre-wrap line-clamp-2">{(msg.content || '').slice(0, 150)}</span>
+              </div>
+            ))}
+            <button onClick={() => setActiveTab('chat')} className="text-[10px] text-indigo-500 hover:underline mt-1">
+              查看完整对话 →
+            </button>
+          </div>
         )}
       </main>
     </div>

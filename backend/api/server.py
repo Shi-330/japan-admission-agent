@@ -282,7 +282,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
+                plaza = _detect_plaza_action(body.query, assistant_text)
+                done_event = {'content': '', 'is_status': False, 'done': True}
+                if plaza:
+                    done_event['plaza_action'] = plaza
+                yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
                 prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。结合学生的申请状态，友好回复并给出针对性建议。如果有教授长时间未回复，提醒学生跟进。"
@@ -291,7 +295,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if c:
                         assistant_text += c
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
+                # Check for plaza action
+                plaza = _detect_plaza_action(body.query, assistant_text)
+                done_event = {'content': '', 'is_status': False, 'done': True}
+                if plaza:
+                    done_event['plaza_action'] = plaza
+                yield f"data: {json.dumps(done_event)}\n\n"
 
             # 3. Extract new facts + cache response
             if assistant_text:
@@ -572,13 +581,13 @@ JSON:"""
 # ── School Plaza (browse/discover) ──
 # Reference school data with deadlines from 募集要項
 SCHOOL_CATALOG = [
-    {"name": "京都大学 情报学研究科", "majors": ["知能情報学", "社会情報学", "数理工学", "システム科学", "通信情報システム", "データ科学"], "degree": "修士", "jlpt": "N1", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"出願期間": "2026-12-10 ~ 2027-01-09", "試験日": "2027年2月", "合格発表": "2027年2月下旬"}, "notes": "一般入試+国際プログラム(英語可)。教授内諾不要。"},
-    {"name": "东京科学大学 情報理工学院", "majors": ["情報工学", "数理計算科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記(数学+専門)+面接", "deadlines": {"A日程出願": "2026年6月", "A日程試験": "2026年8月", "B日程出願": "2026年11~12月", "B日程試験": "2027年1~2月"}, "notes": "旧东京工业大学。A/B两轮入试。"},
-    {"name": "筑波大学 システム情報工学研究群", "majors": ["情報理工", "知能機能システム", "エンパワーメント情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL/IELTS", "exam": "書類+面接(筆記なしの場合も)", "deadlines": {"8月選考出願": "2026-07-09~22", "8月試験": "2026-08-19~21", "1-2月選考出願": "2026-11-30~12-10", "1-2月試験": "2027-01-26~28"}, "notes": "8月+1-2月两轮。英語スコア必須。"},
-    {"name": "大阪大学 情報科学研究科", "majors": ["情報数理学", "コンピュータサイエンス", "情報システム工学", "情報ネットワーク学", "マルチメディア工学", "バイオ情報工学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL必須", "exam": "口頭試問+書類審査", "deadlines": {"一般出願": "2026-05-21~23", "一般試験": "2026-07-07", "留学生夏出願": "2026-06-23~27", "留学生冬出願": "2026-10-27~31"}, "notes": "6専攻。受入教員の承認印必須。ITSCE英語コース有。"},
-    {"name": "名古屋大学 情報学研究科", "majors": ["数理情報学", "複雑系科学", "社会情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接(専攻による)", "deadlines": {"第1回出願": "2026-06-26~07-02", "第1回試験": "2026-08-05~06", "第2回出願": "2026-12-17~23", "第2回試験": "2027年2月"}, "notes": "年2回入試。出願前に志望教員に連絡必須。"},
-    {"name": "早稻田大学 基幹理工学研究科", "majors": ["情報理工", "情報通信"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"7月入試出願": "2026年5月", "7月試験": "2026年7月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "情報理工学専攻。年2回入試。"},
-    {"name": "东北大学 情報科学研究科", "majors": ["情報基礎科学", "システム情報科学", "人間社会情報科学", "応用情報科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+口頭試問", "deadlines": {"8月入試出願": "2026年7月", "8月試験": "2026年8月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "4専攻。教授事前連絡推奨。"},
+    {"name": "京都大学 情报学研究科", "majors": ["知能情報学", "社会情報学", "数理工学", "システム科学", "通信情報システム", "データ科学"], "degree": "修士", "jlpt": "N1", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"出願期間": "2026-12-10 ~ 2027-01-09", "試験日": "2027年2月", "合格発表": "2027年2月下旬"}, "notes": "一般入試+国際プログラム。教授内諾不要。", "tags": ["情報", "筆記", "面接", "英語必要", "国際プログラム"]},
+    {"name": "东京科学大学 情報理工学院", "majors": ["情報工学", "数理計算科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記(数学+専門)+面接", "deadlines": {"A日程出願": "2026年6月", "A日程試験": "2026年8月", "B日程出願": "2026年11~12月", "B日程試験": "2027年1~2月"}, "notes": "旧东京工业大学。A/B两轮入试。", "tags": ["情報", "筆記", "面接", "英語必要"]},
+    {"name": "筑波大学 システム情報工学研究群", "majors": ["情報理工", "知能機能システム", "エンパワーメント情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL/IELTS", "exam": "書類+面接(筆記なしの場合も)", "deadlines": {"8月選考出願": "2026-07-09~22", "8月試験": "2026-08-19~21", "1-2月選考出願": "2026-11-30~12-10", "1-2月試験": "2027-01-26~28"}, "notes": "8月+1-2月两轮。英語スコア必須。", "tags": ["情報", "書類選考", "面接", "英語必要", "筆記なし可能"]},
+    {"name": "大阪大学 情報科学研究科", "majors": ["情報数理学", "コンピュータサイエンス", "情報システム工学", "情報ネットワーク学", "マルチメディア工学", "バイオ情報工学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL必須", "exam": "口頭試問+書類審査", "deadlines": {"一般出願": "2026-05-21~23", "一般試験": "2026-07-07", "留学生夏出願": "2026-06-23~27", "留学生冬出願": "2026-10-27~31"}, "notes": "6専攻。受入教員の承認印必須。ITSCE英語コース有。", "tags": ["情報", "口頭試問", "書類選考", "英語必要", "英語コース"]},
+    {"name": "名古屋大学 情報学研究科", "majors": ["数理情報学", "複雑系科学", "社会情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接(専攻による)", "deadlines": {"第1回出願": "2026-06-26~07-02", "第1回試験": "2026-08-05~06", "第2回出願": "2026-12-17~23", "第2回試験": "2027年2月"}, "notes": "年2回入試。出願前に志望教員に連絡必須。", "tags": ["情報", "筆記", "面接", "英語必要", "事前連絡必須"]},
+    {"name": "早稻田大学 基幹理工学研究科", "majors": ["情報理工", "情報通信"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"7月入試出願": "2026年5月", "7月試験": "2026年7月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "情報理工学専攻。年2回入試。", "tags": ["情報", "筆記", "面接", "英語必要"]},
+    {"name": "东北大学 情報科学研究科", "majors": ["情報基礎科学", "システム情報科学", "人間社会情報科学", "応用情報科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+口頭試問", "deadlines": {"8月入試出願": "2026年7月", "8月試験": "2026年8月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "4専攻。教授事前連絡推奨。", "tags": ["情報", "筆記", "口頭試問", "英語必要"]},
 ]
 
 @app.get("/v1/schools")
@@ -622,6 +631,45 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     profile.applications = [a for a in profile.applications if a.get("school") != school]
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True, "school": school, "applications": profile.applications}
+
+
+def _detect_plaza_action(query: str, assistant_text: str) -> Optional[dict]:
+    """Detect if user is searching/filtering schools. Extract keywords for filter."""
+    p = query.lower()
+    triggers = ["哪些学校", "有没有", "帮我找", "帮我选", "推荐", "找", "怎么选"]
+    if not any(t in p for t in triggers):
+        return None
+
+    # Extract meaningful filter keywords
+    keywords = []
+    # English requirements
+    if any(k in p for k in ["不要英语", "不需要英语", "免英语", "英语不要", "不要toefl", "不要托福", "英语不要"]):
+        keywords.append("英語不要")
+    elif any(k in p for k in ["英语", "toefl", "toeic", "托福"]):
+        keywords.append("英語")
+    # Exam type
+    if any(k in p for k in ["免笔试", "不要笔试", "免筆試", "没有笔试", "书类", "書類"]):
+        keywords.append("書類選考")
+    elif any(k in p for k in ["笔试", "筆試", "筆記"]):
+        keywords.append("筆記")
+    elif any(k in p for k in ["面试", "面接"]):
+        keywords.append("面接")
+    # JLPT
+    if "n1" in p:
+        keywords.append("N1")
+    elif "n2" in p:
+        keywords.append("N2")
+    # Majors
+    if any(k in p for k in ["情报", "情報", "计算机", "cs", "nlp", "自然语言"]):
+        keywords.append("情報")
+        if any(k in p for k in ["nlp", "自然语言"]):
+            keywords.append("NLP")
+    # Only meaningful if we extracted keywords
+    if not keywords:
+        # Fallback: use the whole query
+        keywords.append(query.strip())
+    kw_str = " ".join(keywords)
+    return {"action": "filter_plaza", "filter": kw_str, "prompt": f"已按「{'、'.join(keywords)}」筛选"}
 
 
 def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
