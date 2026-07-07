@@ -396,9 +396,9 @@ export default function App() {
                 <h4 className="text-xs font-semibold text-gray-400 uppercase">
                   {stage.applications?.length > 0 ? `志愿校 (${stage.applications.length})` : '各校追踪'}
                 </h4>
-                <button onClick={() => setShowAddSchool(!showAddSchool)}
+                <Button onClick={() => setShowAddSchool(!showAddSchool)}
                   className="text-xs px-2 py-0.5 rounded bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium"
-                  title="添加学校">+ 添加</button>
+                  title="添加学校">+ 添加</Button>
               </div>
 
               {showAddSchool && (
@@ -417,10 +417,10 @@ export default function App() {
                     <option value="decided">确定去向</option>
                   </select>
                   <div className="flex gap-2">
-                    <button type="submit" disabled={!newSchool.trim()}
-                      className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</button>
-                    <button type="button" onClick={() => setShowAddSchool(false)}
-                      className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</button>
+                    <Button type="submit" disabled={!newSchool.trim()}
+                      className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</Button>
+                    <Button type="button" onClick={() => setShowAddSchool(false)}
+                      className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</Button>
                   </div>
                 </form>
               )}
@@ -445,8 +445,8 @@ export default function App() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
                             {app.label}
                           </span>
-                          <button onClick={() => removeSchool(app.school)}
-                            className="text-gray-300 hover:text-red-400 text-xs leading-none transition" title="删除">&times;</button>
+                          <Button onClick={() => removeSchool(app.school)}
+                            className="text-gray-300 hover:text-red-400 text-xs leading-none transition" title="删除">&times;</Button>
                         </div>
                       </div>
 
@@ -502,8 +502,8 @@ export default function App() {
                           <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
                             onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
-                          <button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
+                          <Button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
                         <div className="text-[10px] text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
@@ -526,18 +526,18 @@ export default function App() {
                             <option value="no_reply">无回复</option>
                             <option value="interview">获面试</option>
                           </select>
-                          <button onClick={() => {
+                          <Button onClick={() => {
                             if (editProfName.trim()) {
                               const profs = [...(app.professors || []), { name: editProfName.trim(), status: editProfStatus, date: new Date().toISOString().slice(0, 10) }];
                               updateApplication(app.school, { professors: profs });
                               setEditCard(null); setEditProfName('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 教授</button>
+                        <Button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
+                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 教授</Button>
                       )}
 
                       {/* Add deadline */}
@@ -547,18 +547,18 @@ export default function App() {
                             className="w-20 text-[10px] p-1 border rounded" placeholder="如：出願締切" autoFocus />
                           <input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="如：2026-12-15" />
-                          <button onClick={() => {
+                          <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
                               const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
                               updateApplication(app.school, { deadlines: dl });
                               setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</button>
+                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</button>
+                        <Button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
+                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</Button>
                       )}
 
                       {/* Stage buttons */}
@@ -568,22 +568,22 @@ export default function App() {
                             const key = 'back-' + s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
                             return (
-                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                              <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
                                 className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
                                 {advancing === key ? '...' : `← ${label}`}
-                              </button>
+                              </Button>
                             );
                           })}
                           {app.next_stages?.map(s => {
                             const key = s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                             return (
-                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                              <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
                                 className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
                                 {advancing === key ? '...' : label}
-                              </button>
+                              </Button>
                             );
                           })}
                         </div>
@@ -634,21 +634,21 @@ export default function App() {
                 {stage.prev_stages?.map(s => {
                   const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
                   return (
-                    <button key={'back-' + s} onClick={() => advanceStage(s)}
+                    <Button key={'back-' + s} onClick={() => advanceStage(s)}
                       disabled={advancing === s}
                       className="text-xs px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30 disabled:cursor-wait">
                       {advancing === s ? '处理中...' : `← 回退「${label}」`}
-                    </button>
+                    </Button>
                   );
                 })}
                 {stage.next_stages?.map(s => {
                   const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                   return (
-                    <button key={s} onClick={() => advanceStage(s)}
+                    <Button key={s} onClick={() => advanceStage(s)}
                       disabled={advancing === s}
                       className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30 disabled:cursor-wait">
                       {advancing === s ? '处理中...' : `进入「${label}」`}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -657,10 +657,10 @@ export default function App() {
         )}
 
         <div className="p-4 border-b">
-          <button onClick={() => setShowProfile(!showProfile)}
+          <Button onClick={() => setShowProfile(!showProfile)}
             className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary w-full p-2 rounded-lg hover:bg-gray-50">
             <Settings size={16} /> 学生背景
-          </button>
+          </Button>
           {profile && (
             <div className="mt-2 text-xs text-gray-500 space-y-1">
               <div>JLPT: {profile.jlpt_level} | 英语: {profile.english_score || '-'}</div>
@@ -713,10 +713,10 @@ export default function App() {
         </div>{/* end scrollable area */}
 
         <div className="p-4 border-t shrink-0">
-          <button onClick={handleLogout}
+          <Button onClick={handleLogout}
             className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-500 w-full p-2">
             <LogOut size={16} /> 退出
-          </button>
+          </Button>
         </div>
       </aside>
 
@@ -753,20 +753,20 @@ export default function App() {
                   <div className="bg-primary/10 border border-indigo-200 rounded-xl p-3">
                     <p className="text-sm text-gray-700 mb-2">{msg.navSuggestion.prompt || '一起去选校广场看看？'}</p>
                     <div className="flex gap-2">
-                      <button onClick={() => {
+                      <Button onClick={() => {
                         setPlazaFilter(msg.navSuggestion.filter || '');
                         setActiveTab('plaza');
                         setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '已跳转到广场' } : m));
                       }}
                         className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                         去看看
-                      </button>
-                      <button onClick={() => {
+                      </Button>
+                      <Button onClick={() => {
                         setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '' } : m));
                       }}
                         className="text-xs px-3 py-1.5 rounded-lg bg-white border text-gray-500 hover:bg-gray-50 transition">
                         不了
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -775,7 +775,7 @@ export default function App() {
                     <p className="text-gray-600 mb-2">要将这些学校加入申请追踪吗？</p>
                     <div className="flex flex-wrap gap-2">
                       {msg.suggestedSchools.map(school => (
-                        <button key={school} onClick={async () => {
+                        <Button key={school} onClick={async () => {
                           try {
                             await apiCall('/v1/applications', token, { method: 'POST', body: { school } });
                             const updated = await apiCall('/v1/stage', token);
@@ -785,7 +785,7 @@ export default function App() {
                         }}
                           className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                           + {school}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -818,7 +818,7 @@ export default function App() {
                     const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
                     return words.some(w => text.includes(w.toLowerCase()));
                   }).length} 条结果
-                  <button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</button>
+                  <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
                 </span>
               )}
             </div>
@@ -833,14 +833,14 @@ export default function App() {
                 if (filtered.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>
-                    <p className="text-sm">试试换个说法，或者 <button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</button> 查看全部</p>
+                    <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
                   </div>;
                 }
                 return filtered.map((s, i) => (
                 <div key={i} className="card-float p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
-                    <button onClick={async () => {
+                    <Button onClick={async () => {
                       try {
                         await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, deadlines: s.deadlines, notes: s.notes } });
                         const updated = await apiCall('/v1/stage', token);
@@ -850,7 +850,7 @@ export default function App() {
                     }}
                       className="text-xs px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium shrink-0">
                       追踪
-                    </button>
+                    </Button>
                   </div>
                   <div className="flex flex-wrap gap-1 mb-2">
                     {s.majors?.map(m => (
@@ -953,16 +953,16 @@ export default function App() {
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
               className="flex-1 p-2.5 bg-[#F6F5F3] border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-[#B0AFAD]" />
-            <button onClick={sendMessage} disabled={loading || !input.trim()}
+            <Button onClick={sendMessage} disabled={loading || !input.trim()}
               className="w-10 h-10 flex items-center justify-center bg-[#1A1A1A] text-white rounded-xl hover:bg-[#333] disabled:opacity-30 transition shrink-0">
               <Send size={15} />
-            </button>
-            <button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
+            </Button>
+            <Button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
               disabled={!input.trim()}
               className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-muted-foreground rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
               title="在广场搜索学校">
               <Search size={15} />
-            </button>
+            </Button>
           </div>
         </div>
         {/* Mini chat panel in plaza/calendar — shows latest messages */}
@@ -974,9 +974,9 @@ export default function App() {
                 <span className="whitespace-pre-wrap line-clamp-2">{(msg.content || '').slice(0, 150)}</span>
               </div>
             ))}
-            <button onClick={() => setActiveTab('chat')} className="text-[10px] text-indigo-500 hover:underline mt-1">
+            <Button onClick={() => setActiveTab('chat')} className="text-[10px] text-indigo-500 hover:underline mt-1">
               查看完整对话 →
-            </button>
+            </Button>
           </div>
         )}
       </main>
