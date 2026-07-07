@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -743,8 +744,10 @@ export default function App() {
         {activeTab === 'chat' ? (
         <>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+          <AnimatePresence>
           {messages.map((msg, i) => (
-            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+              className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
@@ -792,8 +795,9 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
+          </AnimatePresence>
           {loading && (
             <div className="flex items-center gap-2 text-gray-400 text-sm ml-11">
               <Loader2 size={14} className="animate-spin" /> 思考中...
