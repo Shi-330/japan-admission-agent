@@ -128,6 +128,13 @@ export default function App() {
   const [showAddSchool, setShowAddSchool] = useState(false);
   const [newSchool, setNewSchool] = useState('');
   const [newSchoolStage, setNewSchoolStage] = useState('preparing');
+  // ── Card edit state ──
+  const [editCard, setEditCard] = useState(null); // school name being edited
+  const [editProfName, setEditProfName] = useState('');
+  const [editProfStatus, setEditProfStatus] = useState('sent');
+  const [editDeadlineKey, setEditDeadlineKey] = useState('');
+  const [editDeadlineVal, setEditDeadlineVal] = useState('');
+  const [editNotes, setEditNotes] = useState('');
   // ── Plaza state ──
   const [activeTab, setActiveTab] = useState('chat'); // chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
@@ -184,6 +191,17 @@ export default function App() {
       setStage(updated);
     } catch (err) {
       showToast(`删除失败: ${err.message}`);
+    }
+  };
+
+  const updateApplication = async (school, updates) => {
+    try {
+      await apiCall('/v1/applications', token, { method: 'POST', body: { school, ...updates } });
+      const updated = await apiCall('/v1/stage', token);
+      setStage(updated);
+      showToast('已更新', 'success');
+    } catch (err) {
+      showToast(`更新失败: ${err.message}`);
     }
   };
 
@@ -421,27 +439,109 @@ export default function App() {
                           style={{ width: `${(app.progress || 0) * 100}%` }}></div>
                       </div>
 
-                      {/* Professors */}
+                      {/* Professors — click to cycle status */}
                       {app.professors?.length > 0 && (
-                        <div className="text-[10px] text-gray-500 mb-1">
-                          {app.professors.map((p, j) => (
-                            <span key={j} className={`mr-2 ${profStatusColors[p.status] || 'text-gray-400'}`}>
-                              {p.name}({profStatusLabel[p.status] || p.status})
+                        <div className="text-[10px] text-gray-500 mb-1 flex flex-wrap items-center gap-1">
+                          {app.professors.map((p, j) => {
+                            const nextStatus = { pending: 'sent', sent: 'replied', replied: 'interview', interview: 'rejected', rejected: 'no_reply', no_reply: 'pending' };
+                            return (
+                              <span key={j} className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded ${profStatusColors[p.status] || 'text-gray-400'} bg-white border cursor-pointer hover:shadow`}
+                                onClick={() => {
+                                  const profs = app.professors.map((x, xi) => xi === j ? { ...x, status: nextStatus[x.status] || 'sent' } : x);
+                                  updateApplication(app.school, { professors: profs });
+                                }}
+                                title="点击切换状态">
+                                {p.name}({profStatusLabel[p.status] || p.status})
+                                <span className="text-gray-300 hover:text-red-400 ml-0.5" onClick={e => {
+                                  e.stopPropagation();
+                                  const profs = app.professors.filter((_, xi) => xi !== j);
+                                  updateApplication(app.school, { professors: profs });
+                                }}>&times;</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Deadlines — clickable to delete */}
+                      {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
+                        <div className="text-[10px] text-gray-400 mb-1 flex flex-wrap gap-1">
+                          {Object.entries(app.deadlines).map(([k, v], j) => (
+                            <span key={j} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-gray-50 border cursor-pointer hover:shadow"
+                              onClick={() => {
+                                const dl = { ...app.deadlines };
+                                delete dl[k];
+                                updateApplication(app.school, { deadlines: dl });
+                              }} title="点击删除">
+                              {k}: {v}
+                              <span className="text-gray-300">&times;</span>
                             </span>
                           ))}
                         </div>
                       )}
-
-                      {/* Deadlines + Notes */}
-                      {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
-                        <div className="text-[10px] text-gray-400 mb-1">
-                          {Object.entries(app.deadlines).map(([k, v], j) => (
-                            <span key={j} className="mr-2">{k}: {v}</span>
-                          ))}
+                      {/* Notes — click to edit */}
+                      {editCard === app.school + '-notes' ? (
+                        <div className="flex gap-1 mb-1">
+                          <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
+                            className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
+                            onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
+                          <button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
+                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
+                          onClick={() => { setEditCard(app.school + '-notes'); setEditNotes(app.notes || ''); }}>
+                          {app.notes || '+ 备注'}
                         </div>
                       )}
-                      {app.notes && (
-                        <div className="text-[10px] text-gray-400 italic truncate mb-1">{app.notes}</div>
+
+                      {/* Add professor */}
+                      {editCard === app.school + '-prof' ? (
+                        <div className="flex gap-1 mb-1 items-center">
+                          <input value={editProfName} onChange={e => setEditProfName(e.target.value)}
+                            className="flex-1 text-[10px] p-1 border rounded" placeholder="教授姓名" autoFocus />
+                          <select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
+                            className="text-[10px] p-1 border rounded w-16">
+                            <option value="sent">已发信</option>
+                            <option value="pending">待联系</option>
+                            <option value="replied">已回复</option>
+                            <option value="rejected">婉拒</option>
+                            <option value="no_reply">无回复</option>
+                            <option value="interview">获面试</option>
+                          </select>
+                          <button onClick={() => {
+                            if (editProfName.trim()) {
+                              const profs = [...(app.professors || []), { name: editProfName.trim(), status: editProfStatus, date: new Date().toISOString().slice(0, 10) }];
+                              updateApplication(app.school, { professors: profs });
+                              setEditCard(null); setEditProfName('');
+                            }
+                          }}
+                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
+                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 教授</button>
+                      )}
+
+                      {/* Add deadline */}
+                      {editCard === app.school + '-dl' ? (
+                        <div className="flex gap-1 mb-1">
+                          <input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
+                            className="w-20 text-[10px] p-1 border rounded" placeholder="如：出願締切" autoFocus />
+                          <input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
+                            className="flex-1 text-[10px] p-1 border rounded" placeholder="如：2026-12-15" />
+                          <button onClick={() => {
+                            if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
+                              const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
+                              updateApplication(app.school, { deadlines: dl });
+                              setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
+                            }
+                          }}
+                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
+                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</button>
                       )}
 
                       {/* Stage buttons */}
