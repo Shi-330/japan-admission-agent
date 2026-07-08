@@ -701,12 +701,9 @@ def _detect_nav_suggestion(query: str, assistant_text: str = "") -> Optional[dic
     for loc in ["东京", "京都", "大阪", "名古屋", "筑波", "北海道", "九州", "东北", "早稻田", "庆应"]:
         if loc in p or loc in query:
             keywords.append(loc)
-    # Default: if no keywords extracted, leave filter empty (show all schools)
+    # No meaningful keywords? Skip — don't spam plaza with junk filters
     if not keywords:
-        # Skip contextual references like "这种", "这样的", "类似的"
-        if any(w in p for w in ["这种", "这样", "类似", "那个", "这个", "还有吗", "还有啥", "其他的"]):
-            return {"action": "filter_plaza", "filter": "", "prompt": "已切换到广场"}
-        keywords.append(query.strip())
+        return None
 
     return {"action": "filter_plaza", "filter": " ".join(keywords),
             "prompt": f"已按「{'、'.join(keywords)}」筛选"}
