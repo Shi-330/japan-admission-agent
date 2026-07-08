@@ -281,7 +281,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
             elif intent == "search_schools":
-                prompt = f"学生说：{body.query}。背景：{profile_str}。推荐最匹配的2-3所学校，每所一句话说明原因。"
+                # 选校意图：不推荐具体学校，引导学生去广场
+                prompt = f"学生说：{body.query}。学生背景：{profile_str}。学生想在广场上筛选学校。请用1句话回复，引导学生去广场筛选或补充条件（如：要不要英语？什么专业方向？），不要说具体学校名。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -294,6 +295,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     fw = plaza.get('filter', '').split()
                     if fw and all(any(w in s for w in fw) for s in tracked):
                         plaza = None
+                    if plaza:
+                        plaza['prompt'] = '去广场筛选一下？'
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
                     done_event['nav_suggestion'] = plaza
@@ -325,7 +328,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。用2-3句话简洁回复。不要用markdown格式（不要用**、#、-等符号），纯文本即可。只给最关键的1条建议。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是日本升学顾问。规则：1. 2-3句简洁回复 2. 学生有考学意愿但没说条件时，主动问要不要帮你筛学校 3. 纯文本不用markdown。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
