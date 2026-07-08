@@ -227,6 +227,18 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     profile_str = profile_mgr.format_for_prompt(profile)
     stage_ctx = _build_stage_context(profile)
 
+    # 0. Lightweight greeting — no LLM needed
+    light_greetings = ["你好", "嗨", "hi", "hello", "hey", "在吗", "在不在", "哈喽", "早", "晚上好", "早上好", "下午好"]
+    if body.query.strip().lower() in [g.lower() for g in light_greetings] or len(body.query.strip()) <= 2:
+        async def greet_generator():
+            yield f"data: {json.dumps({'content': '你好！有什么可以帮你的？', 'is_status': False, 'done': False})}\n\n"
+            yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
+        return StreamingResponse(
+            greet_generator(),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+
     # 1. Intent classification (with cache)
     profile_hash = hashlib.md5(profile_str.encode()).hexdigest()[:8]
     cache_key = _cache_key(user_id, body.query, profile_hash)
