@@ -17,6 +17,7 @@ import time
 from backend.api.auth import get_user_id
 from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
+from agent.conversation_router import ConversationRouter
 from model.factory import chat_model
 from utils.logger_handler import logger
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +89,7 @@ class ProfileUpdate(BaseModel):
 
 class ChatRequest(BaseModel):
     query: str
+    history: list = []  # [{role, content}] — last 5 messages for context
 
 class MatchRequest(BaseModel):
     target_major: Optional[str] = None
@@ -258,6 +260,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
     intent = orchestrator.classify_intent(body.query, profile_str, chat_model)
 
+    # Conversation flow routing
+    from agent.conversation_router import router as flow_router
+    history_texts = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in (body.history or [])]
+    flow_ctx = flow_router.route(history_texts, chat_model)
+
     async def event_generator():
         assistant_text = ""
         try:
@@ -328,7 +335,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是日本升学顾问。规则：1. 2-3句简洁回复 2. 学生有考学意愿但没说条件时，主动问要不要帮你筛学校 3. 纯文本不用markdown。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{flow_ctx.get('flow','general')}场景中(depth={flow_ctx.get('depth',0)})。{flow_ctx.get('prompt','')} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:

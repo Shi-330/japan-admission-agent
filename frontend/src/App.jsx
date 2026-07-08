@@ -231,7 +231,7 @@ export default function App() {
       const res = await fetch(`${API}/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ query: input }),
+        body: JSON.stringify({ query: input, history: messages.slice(-6) }),
       });
 
       const reader = res.body.getReader();
