@@ -17,8 +17,8 @@
 - [x] Collapsible chat input bar
 
 ## Remaining Polish
-- [ ] Select styling
-- [ ] AnimatePresence on tab content switch
-- [ ] Toast → shadcn Sonner
-- [ ] Dark mode toggle
-- [ ] Loading skeletons
+- [x] Select styling
+- [x] AnimatePresence on tab content switch
+- [x] Toast → shadcn Sonner
+- [x] Dark mode toggle
+- [x] Loading skipped — not needed at this scale

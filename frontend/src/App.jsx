@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import CalendarView from '@/components/CalendarView';
@@ -59,11 +61,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  // ── Toast ──
-  const [toast, setToast] = useState(null); // {text, type: 'error'|'success'}
+  // ── Toast uses Sonner (below) ──
   const showToast = (text, type = 'error') => {
-    setToast({ text, type });
-    setTimeout(() => setToast(null), 4000);
+    type === 'success' ? toast.success(text) : toast.error(text);
   };
 
   // ── Chat state ──
@@ -354,16 +354,7 @@ export default function App() {
   // ── Main app ──
   return (
     <div className="flex h-screen bg-background">
-      {/* Toast notification */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
-          <div className={`px-4 py-2 rounded-lg shadow-lg text-sm font-medium ${
-            toast.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'
-          }`}>
-            {toast.text}
-          </div>
-        </div>
-      )}
+      <Toaster position="top-center" richColors closeButton />
       {/* Sidebar */}
       <aside className={`bg-card border-r border-border flex flex-col shrink-0 overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-80' : 'w-12'}`}>
         <div className="p-3 border-b border-border flex justify-center">
@@ -417,7 +408,7 @@ export default function App() {
                   <Input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
-                  <select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
+                  <Select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400">
                     <option value="browsing">关注中</option>
                     <option value="preparing">准备阶段</option>
@@ -426,7 +417,7 @@ export default function App() {
                     <option value="exam">考试阶段</option>
                     <option value="waiting">等待结果</option>
                     <option value="decided">确定去向</option>
-                  </select>
+                  </Select>
                   <div className="flex gap-2">
                     <Button type="submit" disabled={!newSchool.trim()}
                       className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</Button>
@@ -529,7 +520,7 @@ export default function App() {
                         <div className="flex gap-1 mb-1 items-center">
                           <Input value={editProfName} onChange={e => setEditProfName(e.target.value)}
                             className="flex-1 text-[10px] p-1 border rounded" placeholder="教授姓名" autoFocus />
-                          <select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
+                          <Select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
                             className="text-[10px] p-1 border rounded w-16">
                             <option value="sent">已发信</option>
                             <option value="pending">待联系</option>
@@ -537,7 +528,7 @@ export default function App() {
                             <option value="rejected">婉拒</option>
                             <option value="no_reply">无回复</option>
                             <option value="interview">获面试</option>
-                          </select>
+                          </Select>
                           <Button onClick={() => {
                             if (editProfName.trim()) {
                               const profs = [...(app.professors || []), { name: editProfName.trim(), status: editProfStatus, date: new Date().toISOString().slice(0, 10) }];
@@ -696,19 +687,19 @@ export default function App() {
         {showProfile && (
           <div className="p-4 border-b bg-gray-50">
             <form onSubmit={saveProfile} className="space-y-2 text-sm">
-              <select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
+              <Select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
                 className="w-full p-2 border rounded">
                 {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
-              </select>
+              </Select>
               <Input name="english_score" defaultValue={profile?.english_score || ''}
                 placeholder="英语: TOEFL 95" className="w-full p-2 border rounded" />
               <div className="flex gap-2">
                 <Input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
                   placeholder="GPA" className="w-1/2 p-2 border rounded" />
-                <select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
+                <Select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
                   className="w-1/2 p-2 border rounded">
                   {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </Select>
               </div>
               <Input name="target_major" defaultValue={profile?.target_major || ''}
                 placeholder="目标专业" className="w-full p-2 border rounded" />
@@ -751,6 +742,7 @@ export default function App() {
           </TabsList>
         </Tabs>
 
+        <AnimatePresence mode="wait">
         {activeTab === 'chat' ? (
         <>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -896,6 +888,7 @@ export default function App() {
         <CalendarView applications={stage?.applications} />
         )}
 
+        </AnimatePresence>
         {/* Always-visible chat input */}
         <div className={`border-t border-border bg-card shrink-0 transition-all duration-200 ${inputOpen ? 'p-3' : 'p-1'}`}>
           {!inputOpen && (
