@@ -286,6 +286,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
                         await asyncio.sleep(0.003)
                 plaza = _detect_nav_suggestion(body.query)
+                if plaza:
+                    tracked = {a.get('school', '') for a in profile.applications}
+                    fw = plaza.get('filter', '').split()
+                    if fw and all(any(w in s for w in fw) for s in tracked):
+                        plaza = None
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
                     done_event['nav_suggestion'] = plaza
