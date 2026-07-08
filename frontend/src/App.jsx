@@ -293,6 +293,14 @@ export default function App() {
       setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
     } finally {
       setLoading(false);
+      // Ensure last assistant message is visible even if stream was empty
+      if (!assistantContent && suggested.length === 0) {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role !== 'assistant' || last.content) return prev;
+          return [...prev.slice(0, -1), { role: 'assistant', content: '抱歉，没有收到回复，请重试。' }];
+        });
+      }
       apiCall('/v1/profile', token).then(setProfile).catch(() => {});
     }
   };
