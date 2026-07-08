@@ -707,17 +707,17 @@ def _detect_nav_suggestion(query: str, assistant_text: str = "") -> Optional[dic
 
 
 def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
-    """Find university names mentioned in text that aren't yet in applications."""
-    import re
+    """Find school names mentioned in text that exist in catalog but aren't tracked yet."""
     existing = {a.get("school", "") for a in profile.applications}
-    # Match Japanese university names: XX大学, XX大学院, or specific patterns like 北海道大学
-    found = set()
-    for pattern in [r'([一-鿿]{2,6}(?:大学|大学院))', r'(北海道大学|东京大学|京都大学|大阪大学|名古屋大学|九州大学|东北大学|早稻田大学|庆应义塾大学|筑波大学|神户大学|广岛大学|一桥大学|东京工业大学|横滨国立大学)']:
-        for m in re.finditer(pattern, text):
-            name = m.group(0)
-            if name not in existing and name not in [a.split()[0] if ' ' in a else a for a in existing]:
-                found.add(name)
-    return list(found)[:3]  # max 3 suggestions
+    # Only suggest schools that actually exist in our catalog
+    catalog_names = {s["name"] for s in SCHOOL_CATALOG}
+    found = []
+    for name in catalog_names:
+        # Check if the school name or its short form appears in the text
+        short = name.split()[0] if ' ' in name else name  # e.g. "京都大学"
+        if (short in text or name in text) and name not in existing:
+            found.append(name)
+    return found[:3]
 
 
 def _collect_all_reminders(profile: UserProfile) -> list:
