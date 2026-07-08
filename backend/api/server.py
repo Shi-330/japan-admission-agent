@@ -266,7 +266,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
             elif intent == "search_schools":
-                prompt = f"学生说：{body.query}。背景：{profile_str}。简洁推荐匹配的学校，说明为什么适合，最多3所。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。推荐最匹配的2-3所学校，每所一句话说明原因。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -291,7 +291,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 【学生】{profile_str}
 {stage_ctx}
 【问题】{body.query}
-简洁中文回答，结合学生当前申请状态给出建议。资料为空则说明知识库暂无相关内容。"""
+用2-3句话简洁回答。资料为空则说明暂无相关内容。"""
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -305,7 +305,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。结合学生的申请状态，友好回复并给出针对性建议。如果有教授长时间未回复，提醒学生跟进。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。用2-3句话简洁回复。只给最关键的1条建议。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
