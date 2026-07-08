@@ -42,8 +42,8 @@ class ChatOrchestrator:
         Returns: chat / match / report / qa / search_schools"""
         p = prompt.lower()
 
-        # Obvious fast-path (no LLM needed)
-        if any(k in p for k in ["匹配", "选校", "适合我", "定校"]):
+        # Obvious fast-path (no LLM needed) — only trigger match for explicit matching requests
+        if any(k in p for k in ["匹配我的背景", "适合我", "定校"]):
             return "match"
         if any(k in p for k in ["报告", "计划书", "研究计划"]):
             return "report"
@@ -55,8 +55,8 @@ class ChatOrchestrator:
             resp = chat_model.invoke(
                 f"""判断意图，只输出一个词：
 用户说："{prompt}"
-search_schools=搜索/筛选学校（如"有没有不要英语的""NLP方向""哪些学校免笔试"等）
-match=匹配我的背景选校
+search_schools=搜索/筛选学校（如"有没有不要英语的""东京的学校""NLP方向"等）
+match=根据我的背景分數匹配（仅当明确说"匹配"时）
 report=生成规划报告
 qa=申请流程/材料/考试等知识问答
 chat=闲聊/进度更新/套磁/教授

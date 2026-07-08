@@ -271,10 +271,13 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     undergraduate_school=profile.undergraduate_school,
                 )
                 matches = match_schools(sp)
-                nl = "\n"
-                for m in matches:
-                    line = f"{STATUS_LABELS[m.status]} {m.school_name}{nl}"
-                    yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
+                if not matches:
+                    yield f"data: {json.dumps({'content': '匹配引擎暂无数据，去广场手动筛选吧', 'is_status': False, 'done': False})}\n\n"
+                else:
+                    nl = "\n"
+                    for m in matches:
+                        line = f"{STATUS_LABELS[m.status]} {m.school_name}{nl}"
+                        yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
                 yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
             elif intent == "search_schools":
