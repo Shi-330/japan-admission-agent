@@ -765,7 +765,12 @@ export default function App() {
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
               <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-foreground text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
-                {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                {msg.content && <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                  __html: msg.content
+                    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+                    .replace(/### (.+)/g, '<h4 class="font-semibold text-sm mt-2 mb-1">$1</h4>')
+                    .replace(/- (.+)/g, '<span class="block ml-2">· $1</span>')
+                }} />}
                 {msg.navSuggestion && (
                   <div className="bg-primary/10 border border-indigo-200 rounded-xl p-3">
                     <p className="text-sm text-gray-700 mb-2">{msg.navSuggestion.prompt || '一起去选校广场看看？'}</p>

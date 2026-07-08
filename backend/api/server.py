@@ -317,7 +317,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。用2-3句话简洁回复。只给最关键的1条建议。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。用2-3句话简洁回复。不要用markdown格式（不要用**、#、-等符号），纯文本即可。只给最关键的1条建议。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
