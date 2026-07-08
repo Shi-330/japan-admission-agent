@@ -58,7 +58,7 @@ export default function CalendarView({ applications }) {
               return (
                 <div key={mi} className={`flex-1 min-w-[55px] border-l border-border ${isCurrent ? 'bg-muted/50' : ''}`}>
                   <div className={`h-8 text-center pt-1 font-medium tabular-nums ${isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {showYear && <div className="text-[8px] leading-tight">{m.getFullYear()}年</div>}
+                    {showYear && <div className="text-[10px] leading-tight">{m.getFullYear()}年</div>}
                     <div className={showYear ? 'text-[10px]' : 'text-[10px] pt-1'}>{m.getMonth() + 1}月</div>
                   </div>
                   {applications.map((app, ai) => {
@@ -69,7 +69,7 @@ export default function CalendarView({ applications }) {
                       <div key={ai} className="h-16 border-b border-border relative">
                         {dots.map((dot, di) => (
                           <div key={di}
-                            className="absolute left-0.5 right-0.5 text-[8px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
+                            className="absolute left-0.5 right-0.5 text-[10px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
                             style={{ top: `${2 + di * 16}px` }}
                             title={`${dot.label}: ${dot.ds}`}
                           >

@@ -445,7 +445,7 @@ export default function App() {
                           {app.school}
                         </span>
                         <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
                             {app.label}
                           </span>
                           <Button onClick={() => setDeleteTarget(app.school)} variant="ghost" size="icon"
@@ -461,7 +461,7 @@ export default function App() {
 
                       {/* Professors — click to cycle status */}
                       {app.professors?.length > 0 && (
-                        <div className="text-[10px] text-gray-500 mb-1 flex flex-wrap items-center gap-1">
+                        <div className="text-xs text-gray-500 mb-1 flex flex-wrap items-center gap-1">
                           {app.professors.map((p, j) => {
                             const nextStatus = { pending: 'sent', sent: 'replied', replied: 'interview', interview: 'rejected', rejected: 'no_reply', no_reply: 'pending' };
                             return (
@@ -485,7 +485,7 @@ export default function App() {
 
                       {/* Deadlines — clickable to delete */}
                       {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
-                        <div className="text-[10px] text-gray-400 mb-1 flex flex-wrap gap-1">
+                        <div className="text-xs text-gray-400 mb-1 flex flex-wrap gap-1">
                           {Object.entries(app.deadlines).map(([k, v], j) => (
                             <span key={j} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-gray-50 border cursor-pointer hover:shadow"
                               onClick={() => {
@@ -503,13 +503,13 @@ export default function App() {
                       {editCard === app.school + '-notes' ? (
                         <div className="flex gap-1 mb-1">
                           <Input value={editNotes} onChange={e => setEditNotes(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
+                            className="flex-1 text-xs p-1 border rounded" placeholder="备注..." autoFocus
                             onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
                           <Button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <div className="text-[10px] text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
+                        <div className="text-xs text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
                           onClick={() => { setEditCard(app.school + '-notes'); setEditNotes(app.notes || ''); }}>
                           {app.notes || '+ 备注'}
                         </div>
@@ -519,9 +519,9 @@ export default function App() {
                       {editCard === app.school + '-prof' ? (
                         <div className="flex gap-1 mb-1 items-center">
                           <Input value={editProfName} onChange={e => setEditProfName(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="教授姓名" autoFocus />
+                            className="flex-1 text-xs p-1 border rounded" placeholder="教授姓名" autoFocus />
                           <Select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
-                            className="text-[10px] p-1 border rounded w-16">
+                            className="text-xs p-1 border rounded w-16">
                             <option value="sent">已发信</option>
                             <option value="pending">待联系</option>
                             <option value="replied">已回复</option>
@@ -536,20 +536,20 @@ export default function App() {
                               setEditCard(null); setEditProfName('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
                         <Button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 教授</Button>
+                          className="text-xs text-gray-400 hover:text-indigo-500 mb-1">+ 教授</Button>
                       )}
 
                       {/* Add deadline */}
                       {editCard === app.school + '-dl' ? (
                         <div className="flex gap-1 mb-1">
                           <Input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
-                            className="w-20 text-[10px] p-1 border rounded" placeholder="如：出願締切" autoFocus />
+                            className="w-20 text-xs p-1 border rounded" placeholder="如：出願締切" autoFocus />
                           <Input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="如：2026-12-15" />
+                            className="flex-1 text-xs p-1 border rounded" placeholder="如：2026-12-15" />
                           <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
                               const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
@@ -557,11 +557,11 @@ export default function App() {
                               setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-primary/100 text-white rounded">保存</Button>
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
                         <Button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</Button>
+                          className="text-xs text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</Button>
                       )}
 
                       {/* Stage buttons */}
@@ -573,7 +573,7 @@ export default function App() {
                             return (
                               <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
+                                className="text-xs px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
                                 {advancing === key ? '...' : `← ${label}`}
                               </Button>
                             );
@@ -584,7 +584,7 @@ export default function App() {
                             return (
                               <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
+                                className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
                                 {advancing === key ? '...' : label}
                               </Button>
                             );
@@ -595,10 +595,10 @@ export default function App() {
                       {/* Timeline */}
                       {app.timeline?.length > 0 && (
                         <details className="mt-1">
-                          <summary className="text-[10px] text-gray-400 cursor-pointer">时间线</summary>
+                          <summary className="text-xs text-gray-400 cursor-pointer">时间线</summary>
                           <div className="mt-1 space-y-0.5">
                             {app.timeline.map((t, j) => (
-                              <div key={j} className={`text-[10px] flex justify-between ${t.stage === app.stage_id ? 'font-medium text-primary' : 'text-gray-400'}`}>
+                              <div key={j} className={`text-xs flex justify-between ${t.stage === app.stage_id ? 'font-medium text-primary' : 'text-gray-400'}`}>
                                 <span>{t.label}</span>
                                 <span>{t.start} ~ {t.end}</span>
                               </div>
@@ -730,13 +730,13 @@ export default function App() {
         {/* Tab bar */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="border-b border-border bg-card px-4">
           <TabsList className="w-full justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
-            <TabsTrigger value="chat" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+            <TabsTrigger value="chat" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
               <MessageCircle size={15} /> 对话
             </TabsTrigger>
-            <TabsTrigger value="plaza" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+            <TabsTrigger value="plaza" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
               <LayoutGrid size={15} /> 广场
             </TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-2 text-[13px] data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+            <TabsTrigger value="calendar" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
               <Calendar size={15} /> 日历
             </TabsTrigger>
           </TabsList>
@@ -861,13 +861,13 @@ export default function App() {
                   </div>
                   <div className="flex flex-wrap gap-1 mb-2">
                     {s.majors?.map(m => (
-                      <span key={m} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
+                      <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
                     ))}
                   </div>
-                  <div className="text-[10px] text-gray-400 space-y-0.5 mb-2">
+                  <div className="text-xs text-gray-400 space-y-0.5 mb-2">
                     <div>JLPT: {s.jlpt} | 英语: {s.english} | 考试: {s.exam}</div>
                   </div>
-                  <details className="text-[10px]">
+                  <details className="text-xs">
                     <summary className="text-gray-400 cursor-pointer">截止日期</summary>
                     <div className="mt-1 space-y-0.5 text-gray-500">
                       {Object.entries(s.deadlines || {}).map(([k, v]) => (
@@ -875,7 +875,7 @@ export default function App() {
                       ))}
                     </div>
                   </details>
-                  {s.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{s.notes}</div>}
+                  {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
                 </CardContent>
               </Card>
               ));
@@ -929,7 +929,7 @@ export default function App() {
                 <span className="whitespace-pre-wrap line-clamp-2">{(msg.content || '').slice(0, 150)}</span>
               </div>
             ))}
-            <Button onClick={() => setActiveTab('chat')} className="text-[10px] text-indigo-500 hover:underline mt-1">
+            <Button onClick={() => setActiveTab('chat')} className="text-xs text-indigo-500 hover:underline mt-1">
               查看完整对话 →
             </Button>
           </div>
