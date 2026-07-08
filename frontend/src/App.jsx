@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster, toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import CalendarView from '@/components/CalendarView';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -52,11 +61,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  // ── Toast ──
-  const [toast, setToast] = useState(null); // {text, type: 'error'|'success'}
+  // ── Toast uses Sonner (below) ──
   const showToast = (text, type = 'error') => {
-    setToast({ text, type });
-    setTimeout(() => setToast(null), 4000);
+    type === 'success' ? toast.success(text) : toast.error(text);
   };
 
   // ── Chat state ──
@@ -136,10 +143,13 @@ export default function App() {
   const [editDeadlineKey, setEditDeadlineKey] = useState('');
   const [editDeadlineVal, setEditDeadlineVal] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null); // school name to delete
   // ── Plaza state ──
   const [activeTab, setActiveTab] = useState('chat'); // chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [inputOpen, setInputOpen] = useState(true);
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
@@ -184,14 +194,18 @@ export default function App() {
     }
   };
 
-  const removeSchool = async (school) => {
-    if (!confirm(`确认删除「${school}」？`)) return;
+  const removeSchool = async () => {
+    const school = deleteTarget;
+    if (!school) return;
     try {
       await apiCall(`/v1/applications?school=${encodeURIComponent(school)}`, token, { method: 'DELETE' });
       const updated = await apiCall('/v1/stage', token);
       setStage(updated);
+      showToast(`已删除「${school}」`, 'success');
     } catch (err) {
       showToast(`删除失败: ${err.message}`);
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -279,6 +293,14 @@ export default function App() {
       setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
     } finally {
       setLoading(false);
+      // Ensure last assistant message is visible even if stream was empty
+      if (!assistantContent && suggested.length === 0) {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role !== 'assistant' || last.content) return prev;
+          return [...prev.slice(0, -1), { role: 'assistant', content: '抱歉，没有收到回复，请重试。' }];
+        });
+      }
       apiCall('/v1/profile', token).then(setProfile).catch(() => {});
     }
   };
@@ -312,29 +334,25 @@ export default function App() {
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">日本升学顾问</h1>
           <div className="flex gap-2 mb-6">
-            <button
+            <Button
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-            >登录</button>
-            <button
+              variant={authMode === 'login' ? 'default' : 'secondary'}
+              className="flex-1"
+            >登录</Button>
+            <Button
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${authMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-            >注册</button>
+              variant={authMode === 'register' ? 'default' : 'secondary'}
+              className="flex-1"
+            >注册</Button>
           </div>
-          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister}>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="邮箱" required
-              className="w-full p-3 border rounded-lg mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <input
-              type="password" value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="密码" required minLength={6}
-              className="w-full p-3 border rounded-lg mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition">
+          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-3">
+            <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="邮箱" required />
+            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="密码" required minLength={6} />
+            <Button type="submit" className="w-full">
               {authMode === 'login' ? '登录' : '注册'}
-            </button>
+            </Button>
           </form>
         </div>
       </div>
@@ -343,35 +361,28 @@ export default function App() {
 
   // ── Main app ──
   return (
-    <div className="flex h-screen bg-[#FAF9F7]">
-      {/* Toast notification */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
-          <div className={`px-4 py-2 rounded-lg shadow-lg text-sm font-medium ${
-            toast.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'
-          }`}>
-            {toast.text}
-          </div>
-        </div>
-      )}
+    <div className="flex h-screen bg-background">
+      <Toaster position="top-center" richColors closeButton />
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-[#ECEBE8] flex flex-col shrink-0 overflow-hidden">
-        <div className="p-5 border-b border-[#ECEBE8]">
-          <h1 className="text-lg font-bold text-[#1A1A1A] tracking-tight">升学顾问</h1>
-          <p className="text-[11px] text-[#8E8D8A] mt-0.5">{user?.email}</p>
+      <aside className={`bg-card border-r border-border flex flex-col shrink-0 overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-80' : 'w-12'}`}>
+        <div className="p-3 border-b border-border flex justify-center">
+          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? '收起' : '展开'}>
+            <LayoutGrid size={14} />
+          </Button>
         </div>
+        <div className={`flex-1 overflow-hidden ${sidebarOpen ? '' : 'hidden'}`}>
 
         <div className="flex-1 overflow-y-auto">
         {/* Stage + Applications */}
         {stage && (
-          <div className="p-4 border-b border-[#ECEBE8]">
+          <div className="p-4 border-b border-border">
             {/* Single progress bar — only show when no per-school cards */}
             {(!stage.applications || stage.applications.length === 0) && (
               <>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">申请进度</h3>
                 <div className="flex items-center gap-2 mb-2">
                   <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full transition-all"
+                    <div className="h-full bg-primary/100 rounded-full transition-all"
                       style={{ width: `${(stage.progress || 0) * 100}%` }}></div>
                   </div>
                   <span className="text-xs text-gray-400">{Math.round((stage.progress || 0) * 100)}%</span>
@@ -395,17 +406,17 @@ export default function App() {
                 <h4 className="text-xs font-semibold text-gray-400 uppercase">
                   {stage.applications?.length > 0 ? `志愿校 (${stage.applications.length})` : '各校追踪'}
                 </h4>
-                <button onClick={() => setShowAddSchool(!showAddSchool)}
-                  className="text-xs px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium"
-                  title="添加学校">+ 添加</button>
+                <Button onClick={() => setShowAddSchool(!showAddSchool)}
+                  className="text-xs px-2 py-0.5 rounded bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium"
+                  title="添加学校">+ 添加</Button>
               </div>
 
               {showAddSchool && (
-                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-indigo-50/50 space-y-1.5">
-                  <input value={newSchool} onChange={e => setNewSchool(e.target.value)}
+                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-primary/10/50 space-y-1.5">
+                  <Input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
-                  <select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
+                  <Select value={newSchoolStage} onChange={e => setNewSchoolStage(e.target.value)}
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400">
                     <option value="browsing">关注中</option>
                     <option value="preparing">准备阶段</option>
@@ -414,38 +425,39 @@ export default function App() {
                     <option value="exam">考试阶段</option>
                     <option value="waiting">等待结果</option>
                     <option value="decided">确定去向</option>
-                  </select>
+                  </Select>
                   <div className="flex gap-2">
-                    <button type="submit" disabled={!newSchool.trim()}
-                      className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</button>
-                    <button type="button" onClick={() => setShowAddSchool(false)}
-                      className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</button>
+                    <Button type="submit" disabled={!newSchool.trim()}
+                      className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30 transition flex-1">添加</Button>
+                    <Button type="button" onClick={() => setShowAddSchool(false)}
+                      className="text-xs px-3 py-1.5 rounded bg-white text-gray-500 hover:bg-gray-100 transition border">取消</Button>
                   </div>
                 </form>
               )}
 
               {stage.applications?.map((app, i) => {
-                  const stageColors = { browsing: 'bg-[#F3F2F0] text-[#8E8D8A]', preparing: 'bg-[#EDEBE7] text-[#6B6A67]', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
+                  const stageColors = { browsing: 'bg-muted text-muted-foreground', preparing: 'bg-secondary text-foreground/70', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
                     applying: 'bg-[#F0EDF7] text-[#5B4D7D]', exam: 'bg-[#FDF2E6] text-[#8C6D41]',
                     waiting: 'bg-[#F9F1E7] text-[#8C6D41]', decided: 'bg-[#E8F0EC] text-[#2F5233]' };
-                  const profStatusColors = { pending: 'text-[#B0AFAD]', sent: 'text-[#5B6D8A]',
+                  const profStatusColors = { pending: 'text-muted-foreground', sent: 'text-[#5B6D8A]',
                     replied: 'text-[#3D6B52]', rejected: 'text-[#C4655A]', no_reply: 'text-[#D4A853]',
                     interview: 'text-[#4A7C8C]' };
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
                     rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
-                    <div key={i} className="card-float p-3">
+                    <Card key={i} className="card-float">
+<CardContent className="p-3">
                       {/* Header: school + stage + delete */}
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-semibold text-gray-800 truncate max-w-[130px]" title={app.school}>
                           {app.school}
                         </span>
                         <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${stageColors[app.stage_id] || 'bg-gray-100 text-gray-600'}`}>
                             {app.label}
                           </span>
-                          <button onClick={() => removeSchool(app.school)}
-                            className="text-gray-300 hover:text-red-400 text-xs leading-none transition" title="删除">&times;</button>
+                          <Button onClick={() => setDeleteTarget(app.school)} variant="ghost" size="icon"
+                            className="text-muted-foreground hover:text-red-500 h-5 w-5" title="删除">&times;</Button>
                         </div>
                       </div>
 
@@ -457,7 +469,7 @@ export default function App() {
 
                       {/* Professors — click to cycle status */}
                       {app.professors?.length > 0 && (
-                        <div className="text-[10px] text-gray-500 mb-1 flex flex-wrap items-center gap-1">
+                        <div className="text-xs text-gray-500 mb-1 flex flex-wrap items-center gap-1">
                           {app.professors.map((p, j) => {
                             const nextStatus = { pending: 'sent', sent: 'replied', replied: 'interview', interview: 'rejected', rejected: 'no_reply', no_reply: 'pending' };
                             return (
@@ -479,18 +491,29 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Deadlines — clickable to delete */}
+                      {/* Official deadlines — locked, non-deletable */}
+                      {(app.official_deadlines && Object.keys(app.official_deadlines).length > 0) && (
+                        <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
+                          {Object.entries(app.official_deadlines).map(([k, v], j) => (
+                            <span key={j} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border"
+                              title="官方截止日（不可编辑）">
+                              <span className="text-[10px]">🔒</span> {k}: {v}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* User-added deadlines — clickable to delete */}
                       {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
-                        <div className="text-[10px] text-gray-400 mb-1 flex flex-wrap gap-1">
+                        <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
                           {Object.entries(app.deadlines).map(([k, v], j) => (
-                            <span key={j} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-gray-50 border cursor-pointer hover:shadow"
+                            <span key={j} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted border border-border cursor-pointer hover:bg-accent"
                               onClick={() => {
                                 const dl = { ...app.deadlines };
                                 delete dl[k];
                                 updateApplication(app.school, { deadlines: dl });
                               }} title="点击删除">
                               {k}: {v}
-                              <span className="text-gray-300">&times;</span>
+                              <span className="text-muted-foreground/50">&times;</span>
                             </span>
                           ))}
                         </div>
@@ -498,14 +521,14 @@ export default function App() {
                       {/* Notes — click to edit */}
                       {editCard === app.school + '-notes' ? (
                         <div className="flex gap-1 mb-1">
-                          <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="备注..." autoFocus
+                          <Input value={editNotes} onChange={e => setEditNotes(e.target.value)}
+                            className="flex-1 text-xs p-1 border rounded" placeholder="备注..." autoFocus
                             onKeyDown={e => { if (e.key === 'Enter') { updateApplication(app.school, { notes: editNotes }); setEditCard(null); } }} />
-                          <button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                          <Button onClick={() => { updateApplication(app.school, { notes: editNotes }); setEditCard(null); }}
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <div className="text-[10px] text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
+                        <div className="text-xs text-gray-400 italic truncate mb-1 cursor-pointer hover:text-indigo-500"
                           onClick={() => { setEditCard(app.school + '-notes'); setEditNotes(app.notes || ''); }}>
                           {app.notes || '+ 备注'}
                         </div>
@@ -514,50 +537,50 @@ export default function App() {
                       {/* Add professor */}
                       {editCard === app.school + '-prof' ? (
                         <div className="flex gap-1 mb-1 items-center">
-                          <input value={editProfName} onChange={e => setEditProfName(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="教授姓名" autoFocus />
-                          <select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
-                            className="text-[10px] p-1 border rounded w-16">
+                          <Input value={editProfName} onChange={e => setEditProfName(e.target.value)}
+                            className="flex-1 text-xs p-1 border rounded" placeholder="教授姓名" autoFocus />
+                          <Select value={editProfStatus} onChange={e => setEditProfStatus(e.target.value)}
+                            className="text-xs p-1 border rounded w-16">
                             <option value="sent">已发信</option>
                             <option value="pending">待联系</option>
                             <option value="replied">已回复</option>
                             <option value="rejected">婉拒</option>
                             <option value="no_reply">无回复</option>
                             <option value="interview">获面试</option>
-                          </select>
-                          <button onClick={() => {
+                          </Select>
+                          <Button onClick={() => {
                             if (editProfName.trim()) {
                               const profs = [...(app.professors || []), { name: editProfName.trim(), status: editProfStatus, date: new Date().toISOString().slice(0, 10) }];
                               updateApplication(app.school, { professors: profs });
                               setEditCard(null); setEditProfName('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 教授</button>
+                        <Button onClick={() => { setEditCard(app.school + '-prof'); setEditProfName(''); setEditProfStatus('sent'); }}
+                          className="text-xs text-gray-400 hover:text-indigo-500 mb-1">+ 教授</Button>
                       )}
 
                       {/* Add deadline */}
                       {editCard === app.school + '-dl' ? (
                         <div className="flex gap-1 mb-1">
-                          <input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
-                            className="w-20 text-[10px] p-1 border rounded" placeholder="如：出願締切" autoFocus />
-                          <input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
-                            className="flex-1 text-[10px] p-1 border rounded" placeholder="如：2026-12-15" />
-                          <button onClick={() => {
+                          <Input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
+                            className="w-20 text-xs p-1 border rounded" placeholder="如：出願締切" autoFocus />
+                          <Input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
+                            className="flex-1 text-xs p-1 border rounded" placeholder="如：2026-12-15" />
+                          <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
                               const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
                               updateApplication(app.school, { deadlines: dl });
                               setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
                             }
                           }}
-                            className="text-[10px] px-1.5 bg-indigo-500 text-white rounded">保存</button>
+                            className="text-xs px-1.5 bg-primary/100 text-white rounded">保存</Button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
-                          className="text-[10px] text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</button>
+                        <Button onClick={() => { setEditCard(app.school + '-dl'); setEditDeadlineKey(''); setEditDeadlineVal(''); }}
+                          className="text-xs text-gray-400 hover:text-indigo-500 mb-1">+ 截止日</Button>
                       )}
 
                       {/* Stage buttons */}
@@ -567,22 +590,22 @@ export default function App() {
                             const key = 'back-' + s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
                             return (
-                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                              <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
+                                className="text-xs px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30">
                                 {advancing === key ? '...' : `← ${label}`}
-                              </button>
+                              </Button>
                             );
                           })}
                           {app.next_stages?.map(s => {
                             const key = s + app.school;
                             const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                             return (
-                              <button key={s} onClick={() => advanceStage(s, app.school)}
+                              <Button key={s} onClick={() => advanceStage(s, app.school)}
                                 disabled={advancing === key}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
+                                className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30">
                                 {advancing === key ? '...' : label}
-                              </button>
+                              </Button>
                             );
                           })}
                         </div>
@@ -591,10 +614,10 @@ export default function App() {
                       {/* Timeline */}
                       {app.timeline?.length > 0 && (
                         <details className="mt-1">
-                          <summary className="text-[10px] text-gray-400 cursor-pointer">时间线</summary>
+                          <summary className="text-xs text-gray-400 cursor-pointer">时间线</summary>
                           <div className="mt-1 space-y-0.5">
                             {app.timeline.map((t, j) => (
-                              <div key={j} className={`text-[10px] flex justify-between ${t.stage === app.stage_id ? 'font-medium text-indigo-600' : 'text-gray-400'}`}>
+                              <div key={j} className={`text-xs flex justify-between ${t.stage === app.stage_id ? 'font-medium text-primary' : 'text-gray-400'}`}>
                                 <span>{t.label}</span>
                                 <span>{t.start} ~ {t.end}</span>
                               </div>
@@ -602,9 +625,10 @@ export default function App() {
                           </div>
                         </details>
                       )}
-                    </div>
-                  );
-                })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             {/* All reminders (per-school + per-professor) */}
@@ -633,21 +657,21 @@ export default function App() {
                 {stage.prev_stages?.map(s => {
                   const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s === 'preparing' ? '准备' : s;
                   return (
-                    <button key={'back-' + s} onClick={() => advanceStage(s)}
+                    <Button key={'back-' + s} onClick={() => advanceStage(s)}
                       disabled={advancing === s}
                       className="text-xs px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 transition disabled:opacity-30 disabled:cursor-wait">
                       {advancing === s ? '处理中...' : `← 回退「${label}」`}
-                    </button>
+                    </Button>
                   );
                 })}
                 {stage.next_stages?.map(s => {
                   const label = s === 'contacting' ? '套磁' : s === 'applying' ? '出愿' : s === 'exam' ? '考试' : s === 'waiting' ? '等待' : s === 'decided' ? '确定' : s;
                   return (
-                    <button key={s} onClick={() => advanceStage(s)}
+                    <Button key={s} onClick={() => advanceStage(s)}
                       disabled={advancing === s}
                       className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-700 transition disabled:opacity-30 disabled:cursor-wait">
                       {advancing === s ? '处理中...' : `进入「${label}」`}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -656,10 +680,10 @@ export default function App() {
         )}
 
         <div className="p-4 border-b">
-          <button onClick={() => setShowProfile(!showProfile)}
-            className="flex items-center gap-2 text-sm text-gray-600 hover:text-indigo-600 w-full p-2 rounded-lg hover:bg-gray-50">
+          <Button onClick={() => setShowProfile(!showProfile)}
+            className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary w-full p-2 rounded-lg hover:bg-gray-50">
             <Settings size={16} /> 学生背景
-          </button>
+          </Button>
           {profile && (
             <div className="mt-2 text-xs text-gray-500 space-y-1">
               <div>JLPT: {profile.jlpt_level} | 英语: {profile.english_score || '-'}</div>
@@ -668,7 +692,7 @@ export default function App() {
               {profile.research_area && <div>方向: {profile.research_area}</div>}
               {profile.facts && Object.keys(profile.facts).length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-indigo-600">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
+                  <summary className="cursor-pointer text-primary">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
                   {Object.entries(profile.facts).map(([k, v]) => (
                     <div key={k} className="ml-2">{k}: {v}</div>
                   ))}
@@ -682,92 +706,97 @@ export default function App() {
         {showProfile && (
           <div className="p-4 border-b bg-gray-50">
             <form onSubmit={saveProfile} className="space-y-2 text-sm">
-              <select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
+              <Select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
                 className="w-full p-2 border rounded">
                 {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
-              </select>
-              <input name="english_score" defaultValue={profile?.english_score || ''}
+              </Select>
+              <Input name="english_score" defaultValue={profile?.english_score || ''}
                 placeholder="英语: TOEFL 95" className="w-full p-2 border rounded" />
               <div className="flex gap-2">
-                <input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
+                <Input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
                   placeholder="GPA" className="w-1/2 p-2 border rounded" />
-                <select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
+                <Select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
                   className="w-1/2 p-2 border rounded">
                   {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </Select>
               </div>
-              <input name="target_major" defaultValue={profile?.target_major || ''}
+              <Input name="target_major" defaultValue={profile?.target_major || ''}
                 placeholder="目标专业" className="w-full p-2 border rounded" />
-              <input name="research_area" defaultValue={profile?.research_area || ''}
+              <Input name="research_area" defaultValue={profile?.research_area || ''}
                 placeholder="研究方向" className="w-full p-2 border rounded" />
-              <input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
+              <Input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
                 placeholder="本科院校" className="w-full p-2 border rounded" />
-              <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded text-sm">
+              <Button type="submit" className="w-full" size="sm">
                 保存
-              </button>
+              </Button>
             </form>
           </div>
         )}
 
         </div>{/* end scrollable area */}
 
-        <div className="p-4 border-t shrink-0">
-          <button onClick={handleLogout}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-red-500 w-full p-2">
-            <LogOut size={16} /> 退出
-          </button>
+        <div className="p-2 border-t border-border shrink-0 flex justify-center">
+          <Button onClick={handleLogout} variant="ghost" size="icon"
+            className="text-muted-foreground hover:text-red-500" title="退出">
+            <LogOut size={15} />
+          </Button>
+        </div>
         </div>
       </aside>
 
       {/* Main area */}
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
-        <div className="flex border-b border-[#ECEBE8] bg-white px-4 shrink-0">
-          <button onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'chat' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
-            <MessageCircle size={15} /> 对话
-          </button>
-          <button onClick={() => setActiveTab('plaza')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'plaza' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
-            <LayoutGrid size={15} /> 广场
-          </button>
-          <button onClick={() => setActiveTab('calendar')}
-            className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium transition border-b-2 -mb-[1px] ${
-              activeTab === 'calendar' ? 'border-[#1A1A1A] text-[#1A1A1A]' : 'border-transparent text-[#8E8D8A] hover:text-[#4B4A47]'}`}>
-            <Calendar size={15} /> 日历
-          </button>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="border-b border-border bg-card px-4">
+          <TabsList className="w-full justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
+            <TabsTrigger value="chat" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <MessageCircle size={15} /> 对话
+            </TabsTrigger>
+            <TabsTrigger value="plaza" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <LayoutGrid size={15} /> 广场
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <Calendar size={15} /> 日历
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
+        <AnimatePresence mode="wait">
         {activeTab === 'chat' ? (
         <>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+          <AnimatePresence>
           {messages.map((msg, i) => (
-            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+              className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-[#ECEBE8] card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
-                {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-foreground text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
+                {msg.content && <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                  __html: msg.content
+                    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+                    .replace(/### (.+)/g, '<h4 class="font-semibold text-sm mt-2 mb-1">$1</h4>')
+                    .replace(/- (.+)/g, '<span class="block ml-2">· $1</span>')
+                }} />}
                 {msg.navSuggestion && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                  <div className="bg-primary/10 border border-indigo-200 rounded-xl p-3">
                     <p className="text-sm text-gray-700 mb-2">{msg.navSuggestion.prompt || '一起去选校广场看看？'}</p>
                     <div className="flex gap-2">
-                      <button onClick={() => {
+                      <Button onClick={() => {
                         setPlazaFilter(msg.navSuggestion.filter || '');
                         setActiveTab('plaza');
                         setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '已跳转到广场' } : m));
                       }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                        className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                         去看看
-                      </button>
-                      <button onClick={() => {
+                      </Button>
+                      <Button onClick={() => {
                         setMessages(prev => prev.map(m => m.navSuggestion ? { ...m, navSuggestion: null, content: '' } : m));
                       }}
                         className="text-xs px-3 py-1.5 rounded-lg bg-white border text-gray-500 hover:bg-gray-50 transition">
                         不了
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -776,7 +805,7 @@ export default function App() {
                     <p className="text-gray-600 mb-2">要将这些学校加入申请追踪吗？</p>
                     <div className="flex flex-wrap gap-2">
                       {msg.suggestedSchools.map(school => (
-                        <button key={school} onClick={async () => {
+                        <Button key={school} onClick={async () => {
                           try {
                             await apiCall('/v1/applications', token, { method: 'POST', body: { school } });
                             const updated = await apiCall('/v1/stage', token);
@@ -784,16 +813,17 @@ export default function App() {
                             setMessages(prev => prev.map(m => m.suggestedSchools ? { ...m, suggestedSchools: null, content: `已添加「${school}」到追踪列表` } : m));
                           } catch (err) { showToast(`添加失败: ${err.message}`); }
                         }}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium">
+                          className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700 transition font-medium">
                           + {school}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
+          </AnimatePresence>
           {loading && (
             <div className="flex items-center gap-2 text-gray-400 text-sm ml-11">
               <Loader2 size={14} className="animate-spin" /> 思考中...
@@ -808,17 +838,17 @@ export default function App() {
             <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
             <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
             <div className="flex items-center gap-2 mb-4">
-              <input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
+              <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
                 placeholder="筛选专业，如：情报理工、NLP..."
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {plazaFilter && (
-                <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full whitespace-nowrap">
+                <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
                   {catalog.filter(s => {
                     const text = JSON.stringify(s).toLowerCase();
                     const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
                     return words.some(w => text.includes(w.toLowerCase()));
                   }).length} 条结果
-                  <button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</button>
+                  <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
                 </span>
               )}
             </div>
@@ -833,34 +863,35 @@ export default function App() {
                 if (filtered.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>
-                    <p className="text-sm">试试换个说法，或者 <button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</button> 查看全部</p>
+                    <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
                   </div>;
                 }
                 return filtered.map((s, i) => (
-                <div key={i} className="card-float p-5">
+                <Card key={i} className="card-float">
+<CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
-                    <button onClick={async () => {
+                    <Button onClick={async () => {
                       try {
-                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, deadlines: s.deadlines, notes: s.notes } });
+                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, official_deadlines: s.deadlines, notes: s.notes } });
                         const updated = await apiCall('/v1/stage', token);
                         setStage(updated);
                         showToast(`已添加「${s.name}」`, 'success');
                       } catch (err) { showToast(`添加失败: ${err.message}`); }
                     }}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition font-medium shrink-0">
+                      className="text-xs px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium shrink-0">
                       追踪
-                    </button>
+                    </Button>
                   </div>
                   <div className="flex flex-wrap gap-1 mb-2">
                     {s.majors?.map(m => (
-                      <span key={m} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
+                      <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
                     ))}
                   </div>
-                  <div className="text-[10px] text-gray-400 space-y-0.5 mb-2">
+                  <div className="text-xs text-gray-400 space-y-0.5 mb-2">
                     <div>JLPT: {s.jlpt} | 英语: {s.english} | 考试: {s.exam}</div>
                   </div>
-                  <details className="text-[10px]">
+                  <details className="text-xs">
                     <summary className="text-gray-400 cursor-pointer">截止日期</summary>
                     <div className="mt-1 space-y-0.5 text-gray-500">
                       {Object.entries(s.deadlines || {}).map(([k, v]) => (
@@ -868,8 +899,9 @@ export default function App() {
                       ))}
                     </div>
                   </details>
-                  {s.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{s.notes}</div>}
-                </div>
+                  {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
+                </CardContent>
+              </Card>
               ));
               })()}
             </div>
@@ -877,94 +909,41 @@ export default function App() {
         </div>
         ) : (
         /* Calendar view */
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">申请日历</h2>
-            {!stage?.applications?.length ? (
-              <p className="text-sm text-gray-400">还没有追踪的学校，去「广场」添加吧</p>
-            ) : (() => {
-              const now = new Date();
-              const months = [];
-              for (let i = -1; i <= 8; i++) {
-                const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-                months.push(d);
-              }
-              return (
-                <div className="overflow-x-auto">
-                  <div className="flex min-w-[800px]">
-                    <div className="w-36 shrink-0">
-                      <div className="h-8"></div>
-                      {stage.applications.map((app, i) => (
-                        <div key={i} className="h-16 flex items-center text-xs font-medium text-gray-700 border-b border-gray-50 pr-2 truncate">{app.school}</div>
-                      ))}
-                    </div>
-                    <div className="flex-1 flex">
-                      {months.map((m, mi) => {
-                        const isCurrent = m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
-                        const mKey = `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`;
-                        return (
-                          <div key={mi} className={`flex-1 min-w-[55px] border-l ${isCurrent ? 'bg-indigo-50/40' : ''}`}>
-                            <div className={`h-8 text-center text-[10px] pt-2 font-medium ${isCurrent ? 'text-indigo-600' : 'text-gray-400'}`}>
-                              {m.getMonth()+1}月
-                            </div>
-                            {stage.applications.map((app, ai) => {
-                              const dots = [];
-                              if (app.deadlines) {
-                                Object.entries(app.deadlines).forEach(([k, v]) => {
-                                  try {
-                                    const ds = String(v).split(/[~～]/)[0].trim().replace(/[年月]/g,'-').replace(/[日]/g,'');
-                                    const d = new Date(ds);
-                                    if (!isNaN(d.getTime()) && d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()) {
-                                      dots.push({ label: k, date: ds, type: 'deadline' });
-                                    }
-                                  } catch {}
-                                });
-                              }
-                              return (
-                                <div key={ai} className={`h-16 border-b border-gray-50 relative ${isCurrent ? '' : ''}`}>
-                                  {dots.map((dot, di) => (
-                                    <div key={di} className="absolute left-0.5 right-0.5 text-[8px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
-                                      style={{ top: `${2 + di * 16}px` }} title={`${dot.label}: ${dot.date}`}>
-                                      {dot.label}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-400">
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 inline-block"></span> 截止日</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-50 inline-block"></span> 本月</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+        <CalendarView applications={stage?.applications} />
         )}
+
+        </AnimatePresence>
         {/* Always-visible chat input */}
-        <div className="p-3 border-t border-[#ECEBE8] bg-white shrink-0">
+        <div className={`border-t border-border bg-card shrink-0 transition-all duration-200 ${inputOpen ? 'p-3' : 'p-1'}`}>
+          {!inputOpen && (
+            <div className="flex justify-center">
+              <Button variant="ghost" size="icon" onClick={() => setInputOpen(true)} title="展开输入框">
+                <Send size={14} />
+              </Button>
+            </div>
+          )}
+          <div className={inputOpen ? '' : 'hidden'}>
           <div className="max-w-3xl mx-auto flex gap-2">
-            <input value={input} onChange={e => setInput(e.target.value)}
+            <Input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage()} disabled={loading}
               placeholder={activeTab === 'plaza' ? '在广场筛选学校...' : activeTab === 'calendar' ? '问日历相关的问题...' : '输入你的留学疑问...'}
-              className="flex-1 p-2.5 bg-[#F6F5F3] border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-[#B0AFAD]" />
-            <button onClick={sendMessage} disabled={loading || !input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-[#1A1A1A] text-white rounded-xl hover:bg-[#333] disabled:opacity-30 transition shrink-0">
+              className="flex-1 p-2.5 bg-muted border-0 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#B0AFAD] placeholder:text-muted-foreground" />
+            <Button onClick={sendMessage} disabled={loading || !input.trim()}
+              className="w-10 h-10 flex items-center justify-center bg-foreground text-white rounded-xl hover:bg-foreground/80 disabled:opacity-30 transition shrink-0">
               <Send size={15} />
-            </button>
-            <button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
+            </Button>
+            <Button onClick={() => { if (input.trim()) { setPlazaFilter(input.trim()); setActiveTab('plaza'); } }}
               disabled={!input.trim()}
-              className="w-10 h-10 flex items-center justify-center bg-[#F3F2F0] text-[#8E8D8A] rounded-xl hover:bg-[#ECEBE8] hover:text-[#4B4A47] disabled:opacity-30 transition shrink-0"
+              className="w-10 h-10 flex items-center justify-center bg-muted text-muted-foreground rounded-xl hover:bg-[#ECEBE8] hover:text-foreground/70 disabled:opacity-30 transition shrink-0"
               title="在广场搜索学校">
               <Search size={15} />
-            </button>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setInputOpen(false)} title="收起输入框" className="shrink-0">
+              <LayoutGrid size={12} />
+            </Button>
           </div>
         </div>
+        </div>{/* close input hidden wrapper */}
         {/* Mini chat panel in plaza/calendar — shows latest messages */}
         {activeTab !== 'chat' && messages.length > 0 && (
           <div className="border-t bg-white px-4 py-2 max-h-32 overflow-y-auto shrink-0">
@@ -974,12 +953,28 @@ export default function App() {
                 <span className="whitespace-pre-wrap line-clamp-2">{(msg.content || '').slice(0, 150)}</span>
               </div>
             ))}
-            <button onClick={() => setActiveTab('chat')} className="text-[10px] text-indigo-500 hover:underline mt-1">
+            <Button onClick={() => setActiveTab('chat')} className="text-xs text-indigo-500 hover:underline mt-1">
               查看完整对话 →
-            </button>
+            </Button>
           </div>
         )}
       </main>
+
+      {/* Delete confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要移除「{deleteTarget}」吗？该操作不会删除已记录的数据，但会从追踪列表中移除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={removeSchool}>确认删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -38,29 +38,24 @@ class ChatOrchestrator:
         return profile
 
     def classify_intent(self, prompt: str, profile_str: str, chat_model=None) -> str:
-        """Intent classification. LLM-based with keyword fast-path for obvious cases.
+        """Intent classification — pure LLM, no keyword matching.
         Returns: chat / match / report / qa / search_schools"""
-        p = prompt.lower()
-
-        # Obvious fast-path (no LLM needed)
-        if any(k in p for k in ["匹配", "选校", "适合我", "定校"]):
-            return "match"
-        if any(k in p for k in ["报告", "计划书", "研究计划"]):
-            return "report"
-
-        # Everything else: LLM decides
         if not chat_model:
             return "chat"
         try:
             resp = chat_model.invoke(
-                f"""判断意图，只输出一个词：
+                f"""判断意图，只输出一个词（chat/qa/search_schools/match/report）：
+
 用户说："{prompt}"
-search_schools=搜索/筛选学校（如"有没有不要英语的""NLP方向""哪些学校免笔试"等）
-match=匹配我的背景选校
-report=生成规划报告
-qa=申请流程/材料/考试等知识问答
-chat=闲聊/进度更新/套磁/教授
-输出: chat / match / report / qa / search_schools""")
+
+意图规则：
+- search_schools：明确在找/筛选学校（有具体条件如"不要英语""东京""NLP方向""免笔试"等）
+- match：明确说"匹配""帮我选校""根据我的背景推荐"等
+- qa：问具体申请知识（流程/材料/考试/语言要求等）
+- chat：闲聊、陈述、进度更新（如"我想考大学院""在准备出愿""给教授发了邮件"等）
+- report：要生成规划报告
+
+只输出一个词：""")
             text = resp.content.lower() if hasattr(resp, "content") else str(resp).lower()
             for i in ["search_schools", "match", "report", "qa"]:
                 if i in text:

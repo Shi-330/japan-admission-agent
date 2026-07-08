@@ -227,6 +227,18 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     profile_str = profile_mgr.format_for_prompt(profile)
     stage_ctx = _build_stage_context(profile)
 
+    # 0. Lightweight greeting — no LLM needed
+    light_greetings = ["你好", "嗨", "hi", "hello", "hey", "在吗", "在不在", "哈喽", "早", "晚上好", "早上好", "下午好"]
+    if body.query.strip().lower() in [g.lower() for g in light_greetings] or len(body.query.strip()) <= 2:
+        async def greet_generator():
+            yield f"data: {json.dumps({'content': '你好！有什么可以帮你的？', 'is_status': False, 'done': False})}\n\n"
+            yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
+        return StreamingResponse(
+            greet_generator(),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+
     # 1. Intent classification (with cache)
     profile_hash = hashlib.md5(profile_str.encode()).hexdigest()[:8]
     cache_key = _cache_key(user_id, body.query, profile_hash)
@@ -259,14 +271,18 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     undergraduate_school=profile.undergraduate_school,
                 )
                 matches = match_schools(sp)
-                nl = "\n"
-                for m in matches:
-                    line = f"{STATUS_LABELS[m.status]} {m.school_name}{nl}"
-                    yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
+                if not matches:
+                    yield f"data: {json.dumps({'content': '匹配引擎暂无数据，去广场手动筛选吧', 'is_status': False, 'done': False})}\n\n"
+                else:
+                    nl = "\n"
+                    for m in matches:
+                        line = f"{STATUS_LABELS[m.status]} {m.school_name}{nl}"
+                        yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
                 yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
             elif intent == "search_schools":
-                prompt = f"学生说：{body.query}。背景：{profile_str}。简洁推荐匹配的学校，说明为什么适合，最多3所。"
+                # 选校意图：不推荐具体学校，引导学生去广场
+                prompt = f"学生说：{body.query}。学生背景：{profile_str}。学生想在广场上筛选学校。请用1句话回复，引导学生去广场筛选或补充条件（如：要不要英语？什么专业方向？），不要说具体学校名。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -274,6 +290,13 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
                         await asyncio.sleep(0.003)
                 plaza = _detect_nav_suggestion(body.query)
+                if plaza:
+                    tracked = {a.get('school', '') for a in profile.applications}
+                    fw = plaza.get('filter', '').split()
+                    if fw and all(any(w in s for w in fw) for s in tracked):
+                        plaza = None
+                    if plaza:
+                        plaza['prompt'] = '去广场筛选一下？'
                 done_event = {'content': '', 'is_status': False, 'done': True}
                 if plaza:
                     done_event['nav_suggestion'] = plaza
@@ -291,7 +314,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 【学生】{profile_str}
 {stage_ctx}
 【问题】{body.query}
-简洁中文回答，结合学生当前申请状态给出建议。资料为空则说明知识库暂无相关内容。"""
+用2-3句话简洁回答。资料为空则说明暂无相关内容。"""
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -305,7 +328,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 yield f"data: {json.dumps(done_event)}\n\n"
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是一位日本升学顾问。结合学生的申请状态，友好回复并给出针对性建议。如果有教授长时间未回复，提醒学生跟进。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你是日本升学顾问。规则：1. 2-3句简洁回复 2. 学生有考学意愿但没说条件时，主动问要不要帮你筛学校 3. 纯文本不用markdown。"
                 for chunk in chat_model.stream(prompt):
                     c = chunk.content if hasattr(chunk, "content") else str(chunk)
                     if c:
@@ -678,29 +701,26 @@ def _detect_nav_suggestion(query: str, assistant_text: str = "") -> Optional[dic
     for loc in ["东京", "京都", "大阪", "名古屋", "筑波", "北海道", "九州", "东北", "早稻田", "庆应"]:
         if loc in p or loc in query:
             keywords.append(loc)
-    # Default: if no keywords extracted, leave filter empty (show all schools)
+    # No meaningful keywords? Skip — don't spam plaza with junk filters
     if not keywords:
-        # Skip contextual references like "这种", "这样的", "类似的"
-        if any(w in p for w in ["这种", "这样", "类似", "那个", "这个", "还有吗", "还有啥", "其他的"]):
-            return {"action": "filter_plaza", "filter": "", "prompt": "已切换到广场"}
-        keywords.append(query.strip())
+        return None
 
     return {"action": "filter_plaza", "filter": " ".join(keywords),
             "prompt": f"已按「{'、'.join(keywords)}」筛选"}
 
 
 def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
-    """Find university names mentioned in text that aren't yet in applications."""
-    import re
+    """Find school names mentioned in text that exist in catalog but aren't tracked yet."""
     existing = {a.get("school", "") for a in profile.applications}
-    # Match Japanese university names: XX大学, XX大学院, or specific patterns like 北海道大学
-    found = set()
-    for pattern in [r'([一-鿿]{2,6}(?:大学|大学院))', r'(北海道大学|东京大学|京都大学|大阪大学|名古屋大学|九州大学|东北大学|早稻田大学|庆应义塾大学|筑波大学|神户大学|广岛大学|一桥大学|东京工业大学|横滨国立大学)']:
-        for m in re.finditer(pattern, text):
-            name = m.group(0)
-            if name not in existing and name not in [a.split()[0] if ' ' in a else a for a in existing]:
-                found.add(name)
-    return list(found)[:3]  # max 3 suggestions
+    # Only suggest schools that actually exist in our catalog
+    catalog_names = {s["name"] for s in SCHOOL_CATALOG}
+    found = []
+    for name in catalog_names:
+        # Check if the school name or its short form appears in the text
+        short = name.split()[0] if ' ' in name else name  # e.g. "京都大学"
+        if (short in text or name in text) and name not in existing:
+            found.append(name)
+    return found[:3]
 
 
 def _collect_all_reminders(profile: UserProfile) -> list:
