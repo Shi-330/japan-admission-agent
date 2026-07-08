@@ -483,18 +483,29 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Deadlines — clickable to delete */}
+                      {/* Official deadlines — locked, non-deletable */}
+                      {(app.official_deadlines && Object.keys(app.official_deadlines).length > 0) && (
+                        <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
+                          {Object.entries(app.official_deadlines).map(([k, v], j) => (
+                            <span key={j} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border"
+                              title="官方截止日（不可编辑）">
+                              <span className="text-[10px]">🔒</span> {k}: {v}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* User-added deadlines — clickable to delete */}
                       {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
-                        <div className="text-xs text-gray-400 mb-1 flex flex-wrap gap-1">
+                        <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
                           {Object.entries(app.deadlines).map(([k, v], j) => (
-                            <span key={j} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-gray-50 border cursor-pointer hover:shadow"
+                            <span key={j} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted border border-border cursor-pointer hover:bg-accent"
                               onClick={() => {
                                 const dl = { ...app.deadlines };
                                 delete dl[k];
                                 updateApplication(app.school, { deadlines: dl });
                               }} title="点击删除">
                               {k}: {v}
-                              <span className="text-gray-300">&times;</span>
+                              <span className="text-muted-foreground/50">&times;</span>
                             </span>
                           ))}
                         </div>
@@ -849,7 +860,7 @@ export default function App() {
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
                     <Button onClick={async () => {
                       try {
-                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, deadlines: s.deadlines, notes: s.notes } });
+                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, official_deadlines: s.deadlines, notes: s.notes } });
                         const updated = await apiCall('/v1/stage', token);
                         setStage(updated);
                         showToast(`已添加「${s.name}」`, 'success');

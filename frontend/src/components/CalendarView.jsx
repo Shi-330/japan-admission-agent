@@ -38,13 +38,13 @@ export default function CalendarView({ applications }) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <h2 className="text-lg font-bold text-foreground mb-4">申请日历</h2>
-      <div className="overflow-x-auto">
-        <div className="flex min-w-[800px]">
+      <div className="overflow-x-auto -mx-6 px-6">
+        <div className="flex min-w-[900px]">
           {/* School column */}
-          <div className="w-36 shrink-0">
-            <div className="h-8" />
+          <div className="w-40 shrink-0">
+            <div className="h-10" />
             {applications.map((app, i) => (
-              <div key={i} className="h-16 flex items-center text-xs font-medium text-foreground border-b border-border pr-2 truncate">
+              <div key={i} className="h-16 flex items-center text-xs font-medium text-foreground border-b border-border pr-3 truncate">
                 {app.school}
               </div>
             ))}
@@ -56,10 +56,10 @@ export default function CalendarView({ applications }) {
               const showYear = m.getFullYear() !== lastYear
               lastYear = m.getFullYear()
               return (
-                <div key={mi} className={`flex-1 min-w-[55px] border-l border-border ${isCurrent ? 'bg-muted/50' : ''}`}>
-                  <div className={`h-8 text-center pt-1 font-medium tabular-nums ${isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {showYear && <div className="text-[10px] leading-tight">{m.getFullYear()}年</div>}
-                    <div className={showYear ? 'text-[10px]' : 'text-[10px] pt-1'}>{m.getMonth() + 1}月</div>
+                <div key={mi} className={`flex-1 min-w-[64px] border-l border-border ${isCurrent ? 'bg-muted/50' : ''}`}>
+                  <div className={`h-10 text-center pt-1.5 font-medium ${isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {showYear && <div className="text-[10px] leading-tight tabular-nums">{m.getFullYear()}</div>}
+                    <div className="text-xs tabular-nums">{m.getMonth() + 1}月</div>
                   </div>
                   {applications.map((app, ai) => {
                     const dots = getDeadlineDates(app.deadlines).filter(
@@ -69,8 +69,8 @@ export default function CalendarView({ applications }) {
                       <div key={ai} className="h-16 border-b border-border relative">
                         {dots.map((dot, di) => (
                           <div key={di}
-                            className="absolute left-0.5 right-0.5 text-[10px] px-0.5 py-px rounded bg-red-100 text-red-700 truncate"
-                            style={{ top: `${2 + di * 16}px` }}
+                            className="absolute left-0.5 right-0.5 text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 truncate font-medium"
+                            style={{ top: `${3 + di * 18}px` }}
                             title={`${dot.label}: ${dot.ds}`}
                           >
                             {dot.label}
@@ -84,9 +84,10 @@ export default function CalendarView({ applications }) {
             })}
           </div>
         </div>
-        <div className="flex items-center gap-4 mt-3 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100 inline-block" /> 截止日</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted/50 inline-block" /> 本月</span>
+        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-100 inline-block" /> 截止日</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted/50 border border-border inline-block" /> 本月</span>
+          <span className="text-muted-foreground/60">← 左右滑动 →</span>
         </div>
       </div>
     </div>
