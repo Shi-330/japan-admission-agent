@@ -142,9 +142,15 @@ PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取�
 
   重要规则：
   - 只输出学生明确提到的新学校或状态变更，不要编造
-  - 如果学生说"给某某教授发了邮件"，新增该校 application 并添加 professor(status=sent)
-  - 如果学生说"某某教授回了"，更新对应 professor 的 status
+  - 如果学生说"给某某教授发了邮件"，新增该校 application 并添加 professor(status=sent)，同时更新 stage 为 contacting
+  - 如果学生说"某某教授回了"，更新对应 professor 的 status=replied
   - 如果学生说"某某教授两周没回"，更新 status=no_reply
+  - 阶段变更检测（根据学生陈述更新 stage）：
+    * 学生说"开始准备材料""在看出愿""准备出願"等 → stage=applying
+    * 学生说"要去考试""参加笔试""面试通知""准考证"等 → stage=exam
+    * 学生说"等结果""合否""合格発表""等通知"等 → stage=waiting
+    * 学生说"录取了""合格了""确定去""内定"等 → stage=decided
+    * 学生说"出願截止是X月X日"等 → 添加到该校 deadlines
   - 每所学校在 applications 中只出现一次（用 school 字段去重），状态变更时更新已有记录
   - 不要删除已有的 applications，只更新或新增
 

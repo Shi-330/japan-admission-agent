@@ -412,7 +412,7 @@ export default function App() {
               </div>
 
               {showAddSchool && (
-                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-primary/10/50 space-y-1.5">
+                <form onSubmit={addSchool} className="border rounded-lg p-2.5 bg-primary/10 space-y-1.5">
                   <Input value={newSchool} onChange={e => setNewSchool(e.target.value)}
                     placeholder="学校名称，如：京都大学 情报理工"
                     className="w-full text-xs p-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" autoFocus />
@@ -445,7 +445,7 @@ export default function App() {
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
                     rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
-                    <Card key={i} className="card-float">
+                    <Card key={i}>
 <CardContent className="p-3">
                       {/* Header: school + stage + delete */}
                       <div className="flex items-center justify-between mb-1.5">
@@ -772,7 +772,7 @@ export default function App() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-gray-700' : 'bg-indigo-600'}`}>
                 {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
               </div>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-foreground text-white' : msg.suggestedSchools || msg.navSuggestion ? 'bg-white border border-border card-float' : 'bg-white card-float'} p-4 rounded-2xl text-sm leading-relaxed`}>
+              <div className={`max-w-[75%] ${msg.role === 'user' ? 'bg-foreground text-white' : 'bg-white border border-border shadow-sm'} p-4 rounded-2xl text-sm leading-relaxed`}>
                 {msg.content && <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{
                   __html: msg.content
                     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
@@ -867,7 +867,7 @@ export default function App() {
                   </div>;
                 }
                 return filtered.map((s, i) => (
-                <Card key={i} className="card-float">
+                <Card key={i}>
 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>

@@ -17,7 +17,7 @@ import time
 from backend.api.auth import get_user_id
 from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
-from agent.conversation_router import ConversationRouter
+from agent.intent_layer import IntentLayerEngine, is_light_greeting
 from model.factory import chat_model
 from utils.logger_handler import logger
 from fastapi.staticfiles import StaticFiles
@@ -225,13 +225,8 @@ def _build_stage_context(profile: UserProfile) -> str:
 @app.post("/v1/chat")
 async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     """Intent classification → route to match/RAG/chat → SSE streaming response."""
-    profile = profile_mgr.get_profile(user_id)
-    profile_str = profile_mgr.format_for_prompt(profile)
-    stage_ctx = _build_stage_context(profile)
-
-    # 0. Lightweight greeting — no LLM needed
-    light_greetings = ["你好", "嗨", "hi", "hello", "hey", "在吗", "在不在", "哈喽", "早", "晚上好", "早上好", "下午好"]
-    if body.query.strip().lower() in [g.lower() for g in light_greetings] or len(body.query.strip()) <= 2:
+    # 0. Lightweight greeting — no LLM, no DB needed
+    if is_light_greeting(body.query):
         async def greet_generator():
             yield f"data: {json.dumps({'content': '你好！有什么可以帮你的？', 'is_status': False, 'done': False})}\n\n"
             yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
@@ -241,7 +236,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
-    # 1. Intent classification (with cache)
+    profile = profile_mgr.get_profile(user_id)
+    profile_str = profile_mgr.format_for_prompt(profile)
+    stage_ctx = _build_stage_context(profile)
+
+    # 1. Response cache lookup
     profile_hash = hashlib.md5(profile_str.encode()).hexdigest()[:8]
     cache_key = _cache_key(user_id, body.query, profile_hash)
     cached = _cache_get(cache_key)
@@ -258,17 +257,29 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
-    intent = orchestrator.classify_intent(body.query, profile_str, chat_model)
-
-    # Conversation flow routing
-    from agent.conversation_router import router as flow_router
-    history_texts = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in (body.history or [])]
-    flow_ctx = flow_router.route(history_texts, chat_model)
+    # 2. Unified intent + flow + action classification (single LLM call)
+    result = intent_engine.classify(
+        body.query, body.history or [], profile_str, stage_ctx, chat_model
+    )
+    intent = result["intent"]
+    actions = result["actions"]
 
     async def event_generator():
         assistant_text = ""
+        final_event = {'content': '', 'is_status': False, 'done': True}
+
+        async def _stream(prompt: str):
+            """Stream LLM response as SSE content chunks."""
+            nonlocal assistant_text
+            for chunk in chat_model.stream(prompt):
+                c = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if c:
+                    assistant_text += c
+                    yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
+                    await asyncio.sleep(0.003)
+
         try:
-            # 2. Route by intent
+            # 3. Route by intent
             if intent == "match":
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
                 sp = StudentProfile(
@@ -285,29 +296,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     for m in matches:
                         line = f"{STATUS_LABELS[m.status]} {m.school_name}{nl}"
                         yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
-                yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True})}\n\n"
 
             elif intent == "search_schools":
-                # 选校意图：不推荐具体学校，引导学生去广场
-                prompt = f"学生说：{body.query}。学生背景：{profile_str}。学生想在广场上筛选学校。请用1句话回复，引导学生去广场筛选或补充条件（如：要不要英语？什么专业方向？），不要说具体学校名。"
-                for chunk in chat_model.stream(prompt):
-                    c = chunk.content if hasattr(chunk, "content") else str(chunk)
-                    if c:
-                        assistant_text += c
-                        yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.003)
-                plaza = _detect_nav_suggestion(body.query)
-                if plaza:
-                    tracked = {a.get('school', '') for a in profile.applications}
-                    fw = plaza.get('filter', '').split()
-                    if fw and all(any(w in s for w in fw) for s in tracked):
-                        plaza = None
-                    if plaza:
-                        plaza['prompt'] = '去广场筛选一下？'
-                done_event = {'content': '', 'is_status': False, 'done': True}
-                if plaza:
-                    done_event['nav_suggestion'] = plaza
-                yield f"data: {json.dumps(done_event)}\n\n"
+                prompt = f"学生说：{body.query}。学生背景：{profile_str}。{result['prompt'] or '学生想在广场上筛选学校。'} 规则：1句话回复，引导学生去广场筛选或补充条件（如：要不要英语？什么专业方向？），不要说具体学校名。"
+                async for event in _stream(prompt):
+                    yield event
 
             elif intent in ("qa", "report"):
                 from rag.rag_service import RagSummarizeService
@@ -322,41 +315,46 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 {stage_ctx}
 【问题】{body.query}
 用2-3句话简洁回答。资料为空则说明暂无相关内容。"""
-                for chunk in chat_model.stream(prompt):
-                    c = chunk.content if hasattr(chunk, "content") else str(chunk)
-                    if c:
-                        assistant_text += c
-                        yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.003)
-                plaza = _detect_nav_suggestion(body.query, assistant_text)
-                done_event = {'content': '', 'is_status': False, 'done': True}
-                if plaza:
-                    done_event['nav_suggestion'] = plaza
-                yield f"data: {json.dumps(done_event)}\n\n"
+                async for event in _stream(prompt):
+                    yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{flow_ctx.get('flow','general')}场景中(depth={flow_ctx.get('depth',0)})。{flow_ctx.get('prompt','')} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown。"
-                for chunk in chat_model.stream(prompt):
-                    c = chunk.content if hasattr(chunk, "content") else str(chunk)
-                    if c:
-                        assistant_text += c
-                        yield f"data: {json.dumps({'content': c, 'is_status': False, 'done': False})}\n\n"
-                        await asyncio.sleep(0.003)
-                plaza = _detect_nav_suggestion(body.query)
-                done_event = {'content': '', 'is_status': False, 'done': True}
-                if plaza:
-                    done_event['nav_suggestion'] = plaza
-                yield f"data: {json.dumps(done_event)}\n\n"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown。"
+                async for event in _stream(prompt):
+                    yield event
 
-            # 3. Extract new facts + cache response
+            # 4. Post-stream: cache, extract facts, emit final done event
             if assistant_text:
                 _cache_set(cache_key, assistant_text)
-                orchestrator.finish_turn(user_id, profile, body.query, assistant_text, chat_model)
-                # 4. Detect schools mentioned in reply but not yet tracked
-                suggested = _detect_new_schools(profile, assistant_text)
-                if suggested:
-                    yield f"data: {json.dumps({'suggested_schools': suggested, 'done': True})}\n\n"
-                    return
+                orchestrator.finish_turn(
+                    user_id, profile, body.query, assistant_text, chat_model,
+                    history=body.history,
+                )
+
+            # Auto-apply remind_prof actions to profile (batch, save once)
+            remind_applied = False
+            for action in actions:
+                if action.get("type") == "remind_prof":
+                    school = action.get("school", "")
+                    professor = action.get("professor", "")
+                    if school and professor:
+                        try:
+                            profile.add_professor_attempt(
+                                school, professor, status="no_reply"
+                            )
+                            remind_applied = True
+                        except Exception:
+                            pass  # best-effort
+            if remind_applied:
+                try:
+                    profile_mgr.save_profile(user_id, profile)
+                except Exception:
+                    pass
+
+            sse_extra = intent_engine.actions_to_sse_events(actions)
+            if sse_extra:
+                final_event.update(sse_extra)
+            yield f"data: {json.dumps(final_event)}\n\n"
 
         except Exception as e:
             logger.error(f"Chat error: {e}")
@@ -636,6 +634,10 @@ SCHOOL_CATALOG = [
     {"name": "东北大学 情報科学研究科", "majors": ["情報基礎科学", "システム情報科学", "人間社会情報科学", "応用情報科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+口頭試問", "deadlines": {"8月入試出願": "2026年7月", "8月試験": "2026年8月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "4専攻。教授事前連絡推奨。", "tags": ["情報", "筆記", "口頭試問", "英語必要"]},
 ]
 
+# ── Intent layer engine (unified classify_ + flow + action detection) ──
+intent_engine = IntentLayerEngine(SCHOOL_CATALOG)
+
+
 @app.get("/v1/schools")
 async def list_schools(major: str = ""):
     """Browse available schools, optionally filter by major."""
@@ -677,57 +679,6 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     profile.applications = [a for a in profile.applications if a.get("school") != school]
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True, "school": school, "applications": profile.applications}
-
-
-def _detect_nav_suggestion(query: str, assistant_text: str = "") -> Optional[dict]:
-    """Extract filter keywords from a school-search query. Intent is already determined by LLM."""
-    p = query.lower()
-    keywords = []
-
-    # English requirements
-    if any(k in p for k in ["不要英语", "不需要英语", "免英语", "英语不要", "不要toefl", "不要托福", "不考英语"]):
-        keywords.append("英語不要")
-    elif any(k in p for k in ["要英语", "需要英语", "英语必要"]):
-        keywords.append("英語必要")
-    # Exam type
-    if any(k in p for k in ["免笔试", "不要笔试", "免筆試", "没有笔试", "书类", "書類"]):
-        keywords.append("書類選考")
-    elif any(k in p for k in ["笔试", "筆試", "筆記"]):
-        keywords.append("筆記")
-    # JLPT
-    if "n1" in p:
-        keywords.append("N1")
-    elif "n2" in p:
-        keywords.append("N2")
-    # Majors
-    if any(k in p for k in ["情报", "情報", "计算机", "cs", "nlp", "自然语言"]):
-        keywords.append("情報")
-        if any(k in p for k in ["nlp", "自然语言"]):
-            keywords.append("NLP")
-    # Location
-    for loc in ["东京", "京都", "大阪", "名古屋", "筑波", "北海道", "九州", "东北", "早稻田", "庆应"]:
-        if loc in p or loc in query:
-            keywords.append(loc)
-    # No meaningful keywords? Skip — don't spam plaza with junk filters
-    if not keywords:
-        return None
-
-    return {"action": "filter_plaza", "filter": " ".join(keywords),
-            "prompt": f"已按「{'、'.join(keywords)}」筛选"}
-
-
-def _detect_new_schools(profile: UserProfile, text: str) -> list[str]:
-    """Find school names mentioned in text that exist in catalog but aren't tracked yet."""
-    existing = {a.get("school", "") for a in profile.applications}
-    # Only suggest schools that actually exist in our catalog
-    catalog_names = {s["name"] for s in SCHOOL_CATALOG}
-    found = []
-    for name in catalog_names:
-        # Check if the school name or its short form appears in the text
-        short = name.split()[0] if ' ' in name else name  # e.g. "京都大学"
-        if (short in text or name in text) and name not in existing:
-            found.append(name)
-    return found[:3]
 
 
 def _collect_all_reminders(profile: UserProfile) -> list:

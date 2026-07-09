@@ -25,7 +25,7 @@ class RagSummarizeService(object):
         return chain
     
     def retriever_docs(self, query: str) -> list[Document]:
-        return self.vector_store.similarity_search(query)
+        return self.vector_store.hybrid_search(query)
 
     def get_raw_vector_context(self, query: str) -> str:
         """【新增】快通道：只获取格式化后的原始素材，不调用 LLM"""

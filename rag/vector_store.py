@@ -28,46 +28,122 @@ class VectorStoreService:
             length_function=len,
         )
 
-    def similarity_search(self, query: str, k: int = 5) -> list[Document]:
+        self._bm25_index = None  # Lazy-built BM25Index
+        self._bm25_attempted = False  # Only try once
+
+    def similarity_search(
+        self, query: str, k: int = 5, filter_metadata: dict = None
+    ) -> list[Document]:
         """
-        直接通过 Supabase RPC 调用 match_documents，绕过某些导致 'params' 错误的 LangChain 内部逻辑
+        Vector similarity search via Supabase RPC match_documents.
+        Optional metadata filter applied post-retrieval (fine for k=5).
         """
         try:
-            # 1. 生成查询向量
             query_embedding = embed_model.embed_query(query)
-            
-            # 2. 调用 RPC
+            # Fetch extra results if we need to filter, to keep ~k after filtering
+            fetch_k = k * 3 if filter_metadata else k
             res = supabase.rpc(
                 self.vector_store.query_name,
                 {
                     "query_embedding": query_embedding,
-                    "match_threshold": 0.5, # 默认阈值
-                    "match_count": k,
+                    "match_threshold": 0.5,
+                    "match_count": fetch_k,
                 }
             ).execute()
-            
-            # 3. 转换为 Document 对象
+
             documents = []
             for item in res.data:
+                meta = item.get("metadata", {})
+                # Apply metadata filter
+                if filter_metadata:
+                    if not all(meta.get(k) == v for k, v in filter_metadata.items()):
+                        continue
                 documents.append(Document(
                     page_content=item.get("content", ""),
-                    metadata=item.get("metadata", {})
+                    metadata=meta
                 ))
-            return documents
+            return documents[:k]
         except Exception as e:
             logger.error(f"VectorStore RPC search failed: {e}")
             return []
 
+    def hybrid_search(
+        self, query: str, k: int = 5, filter_metadata: dict = None
+    ) -> list[Document]:
+        """
+        Hybrid search: vector + BM25 with Reciprocal Rank Fusion.
+        Falls back to pure vector search if BM25 index is not ready.
+        """
+        # Vector search
+        vector_docs = self.similarity_search(query, k=k * 2, filter_metadata=filter_metadata)
+        if not vector_docs:
+            return []
+
+        # BM25 search
+        self._ensure_bm25()
+        bm25_results = self._bm25_index.search(query, k=k * 2) if self._bm25_index and self._bm25_index.is_ready else []
+
+        if not bm25_results:
+            return vector_docs[:k]
+
+        # Build a unified doc list for RRF
+        all_docs = list(vector_docs)  # copy
+        doc_to_vec_rank = {}
+        for i, doc in enumerate(vector_docs):
+            key = doc.page_content[:100]  # heuristic key — first 100 chars
+            doc_to_vec_rank[key] = i + 1  # 1-indexed rank
+
+        # Add any BM25-only docs not in vector results
+        for idx, _ in bm25_results:
+            doc_text = self._bm25_index._docs[idx]
+            key = doc_text[:100]
+            if key not in doc_to_vec_rank:
+                all_docs.append(Document(page_content=doc_text, metadata={}))
+
+        # Precompute BM25 rank lookup
+        bm25_rank_map = {}
+        for j, (bm_idx, _) in enumerate(bm25_results):
+            bm25_rank_map[self._bm25_index._docs[bm_idx][:100]] = j + 1
+        default_rank = len(all_docs)
+
+        # RRF scoring
+        rrf_scores = {}
+        for i, doc in enumerate(all_docs):
+            key = doc.page_content[:100]
+            vec_rank = doc_to_vec_rank.get(key, default_rank)
+            bm25_rank = bm25_rank_map.get(key, default_rank)
+            rrf_scores[key] = 1.0 / (60 + vec_rank) + 1.0 / (60 + bm25_rank)
+
+        # Sort by RRF score descending
+        sorted_docs = sorted(all_docs, key=lambda d: rrf_scores.get(d.page_content[:100], 0), reverse=True)
+        return [d for d in sorted_docs if d.page_content.strip()][:k]
+
     def get_retriever(self, k: int = None, filter_kwargs: dict = None):
-        # 注意：这里的 retriever 可能仍然在某些环境下报错
-        # 建议在业务代码中直接使用 similarity_search
         if k is None:
             k = chroma_conf.get("k", 5)
         search_kwargs = {"k": k}
         if filter_kwargs:
             search_kwargs["filter"] = filter_kwargs
-            
         return self.vector_store.as_retriever(search_kwargs=search_kwargs)
+
+    def _ensure_bm25(self):
+        """Lazy-build BM25 index from all documents in the vector store."""
+        if self._bm25_index and self._bm25_index.is_ready:
+            return
+        if self._bm25_attempted:
+            return  # already tried and failed; don't retry
+        self._bm25_attempted = True
+        try:
+            from rag.bm25_index import BM25Index
+            # Fetch all document content from Supabase
+            res = supabase.table("documents").select("content").limit(5000).execute()
+            docs = [r["content"] for r in res.data if r.get("content")]
+            if docs:
+                self._bm25_index = BM25Index(docs)
+                logger.info(f"BM25 index built: {self._bm25_index.doc_count} documents")
+        except Exception as e:
+            logger.warning(f"BM25 index build failed, falling back to vector-only: {e}")
+            self._bm25_index = None
     
     def load_documents(self):
         """
