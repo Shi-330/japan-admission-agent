@@ -8,6 +8,7 @@ from rag.rag_service import RagSummarizeService
 from model.factory import chat_model
 from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
+from agent.intent_layer import IntentLayerEngine, is_short_query
 
 
 # ── helpers ──
@@ -160,8 +161,13 @@ def render_simple_agent():
 
         intent = triggered or "chat"
         if not triggered and prompt:
-            orch = _get_orchestrator()
-            intent = orch.classify_intent(prompt, _profile_str(profile_mgr), chat_model)
+            # Short-query fast path: simple questions skip LLM classification
+            if is_short_query(prompt):
+                intent = "chat"
+            else:
+                engine = IntentLayerEngine()  # no catalog needed for intent only
+                result = engine.classify(prompt, [], _profile_str(profile_mgr), "", chat_model)
+                intent = result["intent"]
 
         profile = _get_profile()
 

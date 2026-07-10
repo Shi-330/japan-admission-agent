@@ -21,6 +21,27 @@ def is_light_greeting(query: str) -> bool:
     return q in LIGHT_GREETINGS or len(q) <= 2
 
 
+# Keywords that signal the query likely has application intent
+_SHORT_QUERY_SIGNALS = frozenset([
+    "大学", "学校", "教授", "出願", "出愿", "考试", "考試", "申请", "申請",
+    "推荐", "推薦", "匹配", "选校", "選校", "套磁", "面接", "面试", "面試",
+    "N1", "N2", "N3", "N4", "N5", "TOEFL", "TOEIC", "IELTS",
+    "情报", "情報", "理工", "研究科", "研究生", "修士", "博士", "日语", "日語",
+    "英语", "英語", "东京", "京都", "大阪", "早稻田", "计划书", "报告",
+])
+
+
+def is_short_query(query: str) -> bool:
+    """
+    Short query without application-signaling keywords can skip full LLM classification.
+    Returns True for simple questions that should go straight to 'chat'.
+    """
+    q = query.strip()
+    if len(q) > 10:
+        return False
+    return not any(k in q for k in _SHORT_QUERY_SIGNALS)
+
+
 # ── Unified classification prompt ──
 CLASSIFY_PROMPT = """你是一个日本升学顾问系统的意图分析引擎。分析当前用户问题并结合最近对话，输出结构化JSON。不要markdown代码块，不要解释。
 

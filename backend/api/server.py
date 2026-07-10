@@ -17,7 +17,7 @@ import time
 from backend.api.auth import get_user_id
 from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
-from agent.intent_layer import IntentLayerEngine, is_light_greeting
+from agent.intent_layer import IntentLayerEngine, is_light_greeting, is_short_query
 from model.factory import chat_model
 from utils.logger_handler import logger
 from fastapi.staticfiles import StaticFiles
@@ -257,10 +257,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
-    # 2. Unified intent + flow + action classification (single LLM call)
-    result = intent_engine.classify(
-        body.query, body.history or [], profile_str, stage_ctx, chat_model
-    )
+    # 2. Unified intent + flow + action classification
+    if is_short_query(body.query):
+        # Simple query without application keywords → skip LLM, go straight to chat
+        result = {"intent": "chat", "flow": "general", "depth": 0, "prompt": "", "actions": []}
+    else:
+        result = intent_engine.classify(
+            body.query, body.history or [], profile_str, stage_ctx, chat_model
+        )
     intent = result["intent"]
     actions = result["actions"]
 
