@@ -108,4 +108,9 @@ md5.txt
 !docs/*.md
 *.sql
 prompts/
-*.resolved
+*.resolvednode_modules/
+screenshots/
+__tests__/
+package-lock.json
+package.json
+.claude/scheduled_tasks.lock
