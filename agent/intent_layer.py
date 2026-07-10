@@ -103,7 +103,7 @@ CLASSIFY_PROMPT = """你是一个日本升学顾问系统的意图分析引擎�
 
 ### actions（可选，没有条件则输出空数组[]）
 - nav_plaza：条件=用户表达了学校筛选条件。filter只从{valid_tags}选，prompt自由写（如"去广场筛选一下？"）
-- track_school：条件=明确提到某所学校且存在。name只从{school_names}选
+- track_school：条件=学生提到任何学校名称（即使只说简称如"京大""东大"也要尝试匹配）。name尽量匹配{school_names}中的完整名称，如果只记得简称也可以写简称（系统会自动匹配）
 - remind_prof：条件=用户提到某教授超期未回复
 - suggest_report：条件=用户在做整体规划或问下一步
 
@@ -200,7 +200,9 @@ class IntentLayerEngine:
                 if cleaned:
                     valid.append(cleaned)
             elif atype == "track_school":
-                if action.get("name") in self.valid_school_names:
+                resolved = self._resolve_school_name(action.get("name", ""))
+                if resolved:
+                    action["name"] = resolved  # normalize to full catalog name
                     valid.append(action)
             elif atype == "remind_prof":
                 if action.get("school") and action.get("professor"):
@@ -267,6 +269,19 @@ class IntentLayerEngine:
             "filter": " ".join(valid_tokens),
             "prompt": action.get("prompt", "去广场筛选一下？"),
         }
+
+    def _resolve_school_name(self, name: str) -> Optional[str]:
+        """Match a partial school name to the full catalog name.
+        E.g., '京都大学' → '京都大学 情报学研究科'.
+        Returns None if no match found."""
+        if name in self.valid_school_names:
+            return name
+        # Try prefix match (LLM often outputs just the university name)
+        for full in self.valid_school_names:
+            short = full.split()[0] if ' ' in full else full
+            if name == short or name in full:
+                return full
+        return None
 
     def _collect_tags(self) -> frozenset[str]:
         """Union of all 'tags' arrays across the catalog."""
