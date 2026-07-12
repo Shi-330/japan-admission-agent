@@ -19,6 +19,7 @@ from user.profile_manager import ProfileManager, UserProfile
 from agent.orchestrator import ChatOrchestrator
 from agent.intent_layer import IntentLayerEngine, is_light_greeting, is_short_query
 from model.factory import chat_model
+from utils.supabase_client import supabase
 from utils.logger_handler import logger
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -626,30 +627,66 @@ JSON:"""
     }
 
 
-# ── School Plaza (browse/discover) ──
-# Reference school data with deadlines from 募集要項
-SCHOOL_CATALOG = [
-    {"name": "京都大学 情报学研究科", "majors": ["知能情報学", "社会情報学", "数理工学", "システム科学", "通信情報システム", "データ科学"], "degree": "修士", "jlpt": "N1", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"出願期間": "2026-12-10 ~ 2027-01-09", "試験日": "2027年2月", "合格発表": "2027年2月下旬"}, "notes": "一般入試+国際プログラム。教授内諾不要。", "tags": ["情報", "筆記", "面接", "英語必要", "国際プログラム"]},
-    {"name": "东京科学大学 情報理工学院", "majors": ["情報工学", "数理計算科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記(数学+専門)+面接", "deadlines": {"A日程出願": "2026年6月", "A日程試験": "2026年8月", "B日程出願": "2026年11~12月", "B日程試験": "2027年1~2月"}, "notes": "旧东京工业大学。A/B两轮入试。", "tags": ["情報", "筆記", "面接", "英語必要"]},
-    {"name": "筑波大学 システム情報工学研究群", "majors": ["情報理工", "知能機能システム", "エンパワーメント情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL/IELTS", "exam": "書類+面接(筆記なしの場合も)", "deadlines": {"8月選考出願": "2026-07-09~22", "8月試験": "2026-08-19~21", "1-2月選考出願": "2026-11-30~12-10", "1-2月試験": "2027-01-26~28"}, "notes": "8月+1-2月两轮。英語スコア必須。", "tags": ["情報", "書類選考", "面接", "英語必要", "筆記なし可能"]},
-    {"name": "大阪大学 情報科学研究科", "majors": ["情報数理学", "コンピュータサイエンス", "情報システム工学", "情報ネットワーク学", "マルチメディア工学", "バイオ情報工学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEIC/TOEFL必須", "exam": "口頭試問+書類審査", "deadlines": {"一般出願": "2026-05-21~23", "一般試験": "2026-07-07", "留学生夏出願": "2026-06-23~27", "留学生冬出願": "2026-10-27~31"}, "notes": "6専攻。受入教員の承認印必須。ITSCE英語コース有。", "tags": ["情報", "口頭試問", "書類選考", "英語必要", "英語コース"]},
-    {"name": "名古屋大学 情報学研究科", "majors": ["数理情報学", "複雑系科学", "社会情報学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接(専攻による)", "deadlines": {"第1回出願": "2026-06-26~07-02", "第1回試験": "2026-08-05~06", "第2回出願": "2026-12-17~23", "第2回試験": "2027年2月"}, "notes": "年2回入試。出願前に志望教員に連絡必須。", "tags": ["情報", "筆記", "面接", "英語必要", "事前連絡必須"]},
-    {"name": "早稻田大学 基幹理工学研究科", "majors": ["情報理工", "情報通信"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+面接", "deadlines": {"7月入試出願": "2026年5月", "7月試験": "2026年7月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "情報理工学専攻。年2回入試。", "tags": ["情報", "筆記", "面接", "英語必要"]},
-    {"name": "东北大学 情報科学研究科", "majors": ["情報基礎科学", "システム情報科学", "人間社会情報科学", "応用情報科学"], "degree": "修士", "jlpt": "N2以上", "english": "TOEFL/TOEIC", "exam": "筆記+口頭試問", "deadlines": {"8月入試出願": "2026年7月", "8月試験": "2026年8月", "2月入試出願": "2026年12月", "2月試験": "2027年2月"}, "notes": "4専攻。教授事前連絡推奨。", "tags": ["情報", "筆記", "口頭試問", "英語必要"]},
-]
+# ── School catalog loaded from Supabase at startup ──
+def _parse_deadlines(dl):
+    """Handle deadlines stored as JSON string or native dict."""
+    if isinstance(dl, str):
+        try: return json.loads(dl)
+        except (json.JSONDecodeError, TypeError): return {}
+    return dl or {}
 
-# ── Intent layer engine (unified classify_ + flow + action detection) ──
+def _load_school_catalog() -> list[dict]:
+    """Load school catalog from Supabase. Returns empty list on failure."""
+    try:
+        res = supabase.table("schools").select("*").order("id").execute()
+        catalog = []
+        for row in res.data:
+            catalog.append({
+                "name": row["name"],
+                "majors": row.get("majors", []),
+                "degree": row.get("degree", "修士"),
+                "jlpt": row.get("jlpt", ""),
+                "english": row.get("english", ""),
+                "exam": row.get("exam", ""),
+                "deadlines": _parse_deadlines(row.get("deadlines", {})),
+                "notes": row.get("notes", ""),
+                "tags": row.get("tags", []),
+                "website": row.get("website", ""),
+                "source": row.get("source", ""),
+                "updated_at": row.get("updated_at", ""),
+            })
+        return catalog
+    except Exception as e:
+        logger.warning(f"Failed to load school catalog from Supabase: {e}")
+        return []
+
+SCHOOL_CATALOG = _load_school_catalog()
+
+# ── Intent layer engine ──
 intent_engine = IntentLayerEngine(SCHOOL_CATALOG)
 
 
 @app.get("/v1/schools")
 async def list_schools(major: str = ""):
-    """Browse available schools, optionally filter by major."""
+    """Browse available schools. Filter uses LLM to normalize CN→JP search terms."""
     results = SCHOOL_CATALOG
     if major:
-        results = [s for s in results if any(major in m for m in s.get("majors", []))]
-    return {"schools": results, "total": len(results)}
+        # Use LLM to expand Chinese search terms to Japanese equivalents
+        try:
+            prompt = f"将以下中文搜索词转换为日语汉字（用于搜索日本大学专业）。返回2-3个最可能的日语写法，以逗号分隔。只返回转换结果，不要解释。\n\n中文：{major}"
+            jp_text = chat_model.invoke(prompt).content.strip()
+            terms = [t.strip() for t in jp_text.split(",") if t.strip()]
+            terms.append(major)  # also try original
+        except Exception:
+            terms = [major]  # fallback to raw input
 
+        results = [s for s in results if any(
+            t in s.get("name", "") or
+            any(t in m for m in s.get("majors", [])) or
+            any(t in tag for tag in s.get("tags", []))
+            for t in terms
+        )]
+    return {"schools": results, "total": len(results)}
 
 # ── Application CRUD (V2.2: manual school management) ──
 class ApplicationUpsert(BaseModel):

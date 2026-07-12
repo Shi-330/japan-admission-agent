@@ -110,7 +110,14 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
 - **URL**: https://agent.shi330.xyz
 - **Server**: 阿里云轻量香港 (Ubuntu 22.04, 2 vCPU/2GB, IP: 8.217.152.173)
 - **Deploy runbook**: `../llm-wiki/wiki/works/personal-website-deploy.md`
-- **Update flow**: `git push` → SSH 上去 `git pull && cd frontend && npm run build && sudo systemctl restart jp-agent`
+- **Update flow**: `git push` → SSH 上去 `git pull && cd frontend && npm run build && sudo cp -r dist/* /var/www/agent/dist/`
+- **Add new schools**:
+  1. Edit `seed_schools_to_db.py` → add entry to `SCHOOLS` array (inline data, single source of truth)
+  2. Run `venv/Scripts/python.exe seed_schools_to_db.py` to sync to Supabase
+  3. Restart server: `sudo systemctl restart jp-agent`
+  4. Commit + deploy as above
+- **CN→JP search**: `/v1/schools?major=情报` auto-normalizes via LLM (chat_model.invoke) before filtering. No frontend hardcoding.
+- **Sprint workflow**: Plan (`specs/sprint-plan.md`) → Spec (`specs/feature-{n}.md`) → Build → Playwright Eval (`critiques/eval_sprint{n}.js`). Run eval before every deploy.
 
 ## V2 Remaining Tasks
 

@@ -62,7 +62,8 @@ export default function CalendarView({ applications }) {
                     <div className="text-xs tabular-nums">{m.getMonth() + 1}月</div>
                   </div>
                   {applications.map((app, ai) => {
-                    const dots = getDeadlineDates(app.deadlines).filter(
+                    const allDl = { ...(app.official_deadlines || {}), ...(app.deadlines || {}) };
+                    const dots = getDeadlineDates(allDl).filter(
                       d => d.date.getMonth() === m.getMonth() && d.date.getFullYear() === m.getFullYear()
                     )
                     return (

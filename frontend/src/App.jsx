@@ -997,6 +997,18 @@ export default function App() {
                     </div>
                   </details>
                   {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
+                  <div className="text-[10px] text-gray-400 mt-2 flex items-center justify-between">
+                    {s.website ? (
+                      <a href={s.website} target="_blank" rel="noopener noreferrer"
+                        className="text-indigo-500 hover:underline truncate max-w-[180px]"
+                        onClick={e => e.stopPropagation()}>
+                        官网 →
+                      </a>
+                    ) : <span />}
+                    {s.updated_at && (
+                      <span className="tabular-nums">更新: {s.updated_at.slice(0, 10)}</span>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
               ));

@@ -103,7 +103,6 @@ large_data/
 #
 md5.txt
 *.md
-!CLAUDE.md
 !TODO.md
 !docs/*.md
 *.sql
