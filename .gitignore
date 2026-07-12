@@ -113,4 +113,6 @@ screenshots/
 __tests__/
 package-lock.json
 package.json
+node_modules/
+test-results/
 .claude/scheduled_tasks.lock

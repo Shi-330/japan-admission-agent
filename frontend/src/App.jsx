@@ -35,11 +35,28 @@ async function registerSupabase(email, password) {
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
     body: JSON.stringify({ email, password }),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // Supabase returns 200 with identities:[] when email confirmation is required — that's success
+    if (data.identities && data.identities.length === 0 && !data.msg) {
+      return data; // silently success, user needs to confirm email
+    }
+    const msg = data.msg || data.error_description || 'Registration failed';
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function resetPasswordSupabase(email) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+    body: JSON.stringify({ email }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.msg || 'Registration failed');
+    throw new Error(err.msg || 'Password reset failed');
   }
-  return res.json();
 }
 
 // ── API helpers ──
@@ -61,6 +78,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [forgotPwd, setForgotPwd] = useState(false);
   // ── Toast uses Sonner (below) ──
   const showToast = (text, type = 'error') => {
     type === 'success' ? toast.success(text) : toast.error(text);
@@ -105,24 +124,88 @@ export default function App() {
   // ── Auth handlers ──
   const handleLogin = async (e) => {
     e.preventDefault();
+    setAuthLoading(true);
     try {
       const r = await loginSupabase(email, password);
       setToken(r.token);
       setUser(r.user || { email });
       await loadGreeting(r.token);
     } catch (err) {
-      alert(`登录失败: ${err.message}`);
+      const raw = err.message;
+      const msg = raw === 'Failed to fetch'
+        ? '无法连接服务器，请检查网络'
+        : raw.includes('Invalid login')
+        ? '邮箱或密码错误'
+        : raw.includes('Email not confirmed')
+        ? '邮箱未验证，请先点击确认邮件中的链接'
+        : raw.includes('security purposes')
+        ? '操作太频繁，稍等片刻再试'
+        : `登录失败: ${raw}`;
+      toast.error(msg);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    setAuthLoading(true);
     try {
       await registerSupabase(email, password);
-      alert('注册成功，请查收确认邮件后登录。');
+      toast.success('注册成功，请查收确认邮件后登录。');
       setAuthMode('login');
     } catch (err) {
-      alert(`注册失败: ${err.message}`);
+      const raw = err.message;
+      const msg = raw === 'Failed to fetch'
+        ? '无法连接服务器，请检查网络'
+        : raw.includes('already registered') || raw.includes('already exists')
+        ? '该邮箱已注册，请直接登录'
+        : raw.includes('security purposes')
+        ? '操作太频繁，稍等片刻再试'
+        : raw.includes('password')
+        ? '密码长度至少 6 位'
+        : `注册失败: ${raw}`;
+      toast.error(msg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // 跟踪密码重置尝试，5 分钟内多次触发提醒检查邮箱
+  const resetAttempts = useRef([]);
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!email) { toast.error('请输入邮箱地址'); return; }
+
+    const now = Date.now();
+    resetAttempts.current = resetAttempts.current.filter(t => now - t < 300000);
+    resetAttempts.current.push(now);
+
+    setAuthLoading(true);
+    try {
+      await resetPasswordSupabase(email);
+      toast.success('重置邮件已发送，请查收邮箱');
+      if (resetAttempts.current.length >= 2) {
+        setTimeout(() => {
+          toast('多次未收到邮件？请检查邮箱地址是否输入正确', { duration: 6000 });
+        }, 2000);
+      }
+      setForgotPwd(false);
+    } catch (err) {
+      const raw = err.message;
+      const msg = raw === 'Failed to fetch'
+        ? '无法连接服务器，请检查网络'
+        : raw.includes('security purposes')
+        ? '操作太频繁，请 60 秒后再试'
+        : raw.includes('User not found') || raw.includes('user not found')
+        ? '该邮箱未注册'
+        : raw.includes('rate limit') || raw.includes('too many')
+        ? '请求太频繁，请稍后再试'
+        : `发送失败: ${raw}`;
+      toast.error(msg);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -330,32 +413,46 @@ export default function App() {
   // ── Login screen ──
   if (!token) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <>
+        <Toaster position="top-center" richColors closeButton />
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">日本升学顾问</h1>
           <div className="flex gap-2 mb-6">
             <Button
-              onClick={() => setAuthMode('login')}
-              variant={authMode === 'login' ? 'default' : 'secondary'}
+              onClick={() => { setAuthMode('login'); setForgotPwd(false); }}
+              variant={authMode === 'login' && !forgotPwd ? 'default' : 'secondary'}
               className="flex-1"
             >登录</Button>
             <Button
-              onClick={() => setAuthMode('register')}
+              onClick={() => { setAuthMode('register'); setForgotPwd(false); }}
               variant={authMode === 'register' ? 'default' : 'secondary'}
               className="flex-1"
             >注册</Button>
           </div>
-          <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-3">
+          <form onSubmit={
+            forgotPwd ? handleForgotPassword :
+            authMode === 'login' ? handleLogin : handleRegister
+          } className="space-y-3">
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="邮箱" required />
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="密码" required minLength={6} />
-            <Button type="submit" className="w-full">
-              {authMode === 'login' ? '登录' : '注册'}
+            {!forgotPwd && (
+              <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                placeholder="密码" required minLength={6} />
+            )}
+            <Button type="submit" className="w-full" disabled={authLoading}>
+              {authLoading ? '处理中...' : forgotPwd ? '发送重置邮件' : (authMode === 'login' ? '登录' : '注册')}
             </Button>
+            {authMode === 'login' && (
+              <button type="button" onClick={() => setForgotPwd(!forgotPwd)}
+                className="w-full text-xs text-gray-400 hover:text-indigo-500 mt-1">
+                {forgotPwd ? '返回登录' : '忘记密码？'}
+              </button>
+            )}
           </form>
         </div>
       </div>
+      </>
     );
   }
 

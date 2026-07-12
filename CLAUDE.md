@@ -105,18 +105,29 @@ contact status. 2-week no-reply → switch professor or school.
 
 State machine definitions in `agent/state_machine.py` (STAGES dict).
 
+## Production
+
+- **URL**: https://agent.shi330.xyz
+- **Server**: 阿里云轻量香港 (Ubuntu 22.04, 2 vCPU/2GB, IP: 8.217.152.173)
+- **Deploy runbook**: `../llm-wiki/wiki/works/personal-website-deploy.md`
+- **Update flow**: `git push` → SSH 上去 `git pull && cd frontend && npm run build && sudo systemctl restart jp-agent`
+
 ## V2 Remaining Tasks
 
 | Task | Status | What |
 |------|--------|------|
 | V2.1 Profile 2.0 | done | facts, events, field_sources, gpa_scale, extraction |
-| V2.2 State Machine | WIP | per-school tracks + professor attempts done. TODO: extraction prompt, React cards, reminder logic |
+| V2.2 State Machine | done | per-school tracks, professor attempts, React cards, inline editing |
 | V2.3 Private DB | todo | real senpai cases, structured import |
 | V2.4 Hybrid Search | todo | metadata filter + vector + BM25 |
 | V2.5 Frontend Dashboard | todo | stage cards UI in React |
 | V2.6 Email Automation | todo | OAuth + draft + confirm + track |
 | FastAPI + Auth | done | 8 endpoints, JWT middleware |
-| React Frontend | done | login/chat/profile/stage progress |
+| React Frontend | done | login/chat/profile/stage, shadcn/ui, dark mode |
+| Deployment | done | ECS systemd + nginx + certbot, agent.shi330.xyz |
+| Sprint 1: Core E2E | done | Playwright 83/100, alert→toast fixed |
+| Sprint 2: RAG Q&A | todo | pip install sentence-transformers + 补知识库内容 |
+| Sprint 3: School Data | todo | 补 15-20 所学校数据到 Supabase |
 
 ## Configuration
 
