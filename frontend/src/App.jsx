@@ -310,11 +310,14 @@ export default function App() {
     setMessages(prev => [...prev, userMsg]);
     setInput(''); setLoading(true);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
     try {
       const res = await fetch(`${API}/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ query: input, history: messages.slice(-6) }),
+        signal: controller.signal,
       });
 
       const reader = res.body.getReader();
@@ -327,9 +330,9 @@ export default function App() {
         if (done) break;
         const lines = decoder.decode(value, { stream: true }).split('\n');
         for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
+          if (!line.startsWith('data:')) continue;
           try {
-            const parsed = JSON.parse(line.slice(6));
+            const parsed = JSON.parse(line.startsWith('data: ') ? line.slice(6) : line.slice(5));
             if (parsed.nav_suggestion) {
               suggested = [{ type: 'nav', ...parsed.nav_suggestion }];
               break;
@@ -351,7 +354,7 @@ export default function App() {
                 return [...prev, { role: 'assistant', content: assistantContent }];
               });
             }
-          } catch {}
+          } catch (e) { console.warn('SSE parse:', e, line.slice(0, 80)); }
         }
       }
 
@@ -373,15 +376,22 @@ export default function App() {
         }
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `[错误] 连接失败: ${err.message}` }]);
+      const msg = err.name === 'AbortError' ? '回复超时，请重试' : `连接失败: ${err.message}`;
+      setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${msg}` }]);
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
       // Ensure last assistant message is visible even if stream was empty
       if (!assistantContent && suggested.length === 0) {
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role !== 'assistant' || last.content) return prev;
-          return [...prev.slice(0, -1), { role: 'assistant', content: '抱歉，没有收到回复，请重试。' }];
+          if (last?.role === 'assistant' && !last.content) {
+            return [...prev.slice(0, -1), { role: 'assistant', content: '抱歉，没有收到回复，请重试。' }];
+          }
+          if (last?.role !== 'assistant') {
+            return [...prev, { role: 'assistant', content: '抱歉，没有收到回复，请重试。' }];
+          }
+          return prev;
         });
       }
       apiCall('/v1/profile', token).then(setProfile).catch(() => {});

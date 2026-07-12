@@ -311,7 +311,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 from rag.rag_service import RagSummarizeService
                 try:
                     rag = RagSummarizeService()
-                    ctx = rag.get_raw_vector_context(body.query)
+                    ctx = rag.search_with_fallback(body.query)
                 except Exception:
                     ctx = ""
                 prompt = f"""你是日本升学顾问。

@@ -38,13 +38,35 @@ class RagSummarizeService(object):
         
         return context if context else "未找到相关参考资料。"
     
+    def _web_search(self, query: str, max_results: int = 3) -> str:
+        """Fallback: DuckDuckGo web search. Returns formatted context or empty string."""
+        try:
+            from langchain_community.tools import DuckDuckGoSearchResults
+            from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+            wrapper = DuckDuckGoSearchAPIWrapper(max_results=max_results)
+            search = DuckDuckGoSearchResults(api_wrapper=wrapper)
+            results = search.invoke(query)
+            if results:
+                return f"【网络搜索】{results}"
+        except Exception:
+            pass
+        return ""
+
+    def search_with_fallback(self, query: str) -> str:
+        """RAG first, web search fallback. Returns formatted context for LLM prompt."""
+        ctx = self.get_raw_vector_context(query)
+        if ctx and "未找到" not in ctx:
+            return ctx
+        web_ctx = self._web_search(query)
+        return web_ctx or ctx  # web or original "未找到" message
+
     def rag_summarize(self, query: str, profile: str) -> str:
         # 直接复用逻辑，减少重复代码
         context = self.get_raw_vector_context(query)
         return self.chain.invoke({
-            "input": query, 
+            "input": query,
             "context": context,
-            "profile": profile 
+            "profile": profile
         })
     
 if __name__ == "__main__":
