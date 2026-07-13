@@ -62,9 +62,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
+        "http://localhost:8000",
         "http://localhost:8501",
         "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175",
+        "http://127.0.0.1:8000",
         "http://127.0.0.1:8501",
+        "https://agent.shi330.xyz",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -666,19 +669,40 @@ SCHOOL_CATALOG = _load_school_catalog()
 intent_engine = IntentLayerEngine(SCHOOL_CATALOG)
 
 
+# ── CN→JP synonym map for instant search (no LLM needed for common terms) ──
+CN_JP_SYNONYMS = {
+    "计算机": ["情報工学", "コンピュータ科学", "情報理工"],
+    "人工智能": ["知能情報学", "人工知能", "AI"],
+    "电子": ["電気電子", "電子情報学"],
+    "机械": ["機械工学", "機械創造工学"],
+    "数学": ["数理工学", "数理情報学", "数学"],
+    "通信": ["情報通信", "通信情報システム"],
+    "网络": ["情報ネットワーク", "メディアネットワーク"],
+    "生命": ["生命人間情報科学", "バイオ情報工学"],
+    "数据": ["データ科学", "データサイエンス"],
+    "金融": ["社会情報学", "システム情報学"],
+    "信息": ["情報理工", "情報工学", "情報科学"],
+    "情报": ["情報理工", "情報工学", "情報科学"],
+}
+
 @app.get("/v1/schools")
 async def list_schools(major: str = ""):
-    """Browse available schools. Filter uses LLM to normalize CN→JP search terms."""
+    """Browse available schools. Static CN→JP synonym map + LLM fallback."""
     results = SCHOOL_CATALOG
     if major:
-        # Use LLM to expand Chinese search terms to Japanese equivalents
-        try:
-            prompt = f"将以下中文搜索词转换为日语汉字（用于搜索日本大学专业）。返回2-3个最可能的日语写法，以逗号分隔。只返回转换结果，不要解释。\n\n中文：{major}"
-            jp_text = chat_model.invoke(prompt).content.strip()
-            terms = [t.strip() for t in jp_text.split(",") if t.strip()]
-            terms.append(major)  # also try original
-        except Exception:
-            terms = [major]  # fallback to raw input
+        terms = [major]
+        # 1. Try static synonym map first (instant)
+        for cn, jp_list in CN_JP_SYNONYMS.items():
+            if cn in major:
+                terms.extend(jp_list)
+        # 2. If no synonym match, fall back to LLM
+        if len(terms) == 1:
+            try:
+                prompt = f"将以下中文搜索词转换为日语汉字（用于搜索日本大学专业）。返回2-3个最可能的日语写法，以逗号分隔。只返回转换结果，不要解释。\n\n中文：{major}"
+                jp_text = chat_model.invoke(prompt).content.strip()
+                terms.extend([t.strip() for t in jp_text.split(",") if t.strip()])
+            except Exception:
+                pass
 
         results = [s for s in results if any(
             t in s.get("name", "") or

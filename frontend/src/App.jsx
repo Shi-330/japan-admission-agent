@@ -907,11 +907,15 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                {msg.suggestedSchools && (
+                {msg.suggestedSchools && (() => {
+                  const trackedNames = (stage?.applications || []).map(a => a.school);
+                  const filtered = msg.suggestedSchools.filter(s => !trackedNames.includes(s));
+                  if (filtered.length === 0) return null;
+                  return (
                   <div>
                     <p className="text-gray-600 mb-2">要将这些学校加入申请追踪吗？</p>
                     <div className="flex flex-wrap gap-2">
-                      {msg.suggestedSchools.map(school => (
+                      {filtered.map(school => (
                         <Button key={school} onClick={async () => {
                           try {
                             await apiCall('/v1/applications', token, { method: 'POST', body: { school } });
@@ -926,7 +930,8 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             </motion.div>
           ))}
@@ -961,11 +966,16 @@ export default function App() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
+                const cn2jp = { '计算机':['情報工学','コンピュータ科学','情報理工'], '人工智能':['知能情報学','人工知能','AI'], '电子':['電気電子','電子情報学'], '机械':['機械工学','機械創造工学'], '数学':['数理工学','数理情報学'], '通信':['情報通信','通信情報システム'], '网络':['情報ネットワーク','メディアネットワーク'], '生命':['生命人間情報科学','バイオ情報工学'], '数据':['データ科学','データサイエンス'], '金融':['社会情報学','システム情報学'], '信息':['情報理工','情報工学','情報科学'], '情报':['情報理工','情報工学','情報科学'] };
                 const filtered = catalog.filter(s => {
                   if (!plazaFilter) return true;
                   const text = JSON.stringify(s).toLowerCase();
                   const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
-                  return words.some(w => text.includes(w.toLowerCase()));
+                  return words.some(w => {
+                    if (text.includes(w.toLowerCase())) return true;
+                    const aliases = cn2jp[w.toLowerCase()];
+                    return aliases ? aliases.some(a => text.includes(a.toLowerCase())) : false;
+                  });
                 });
                 if (filtered.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
@@ -984,7 +994,7 @@ export default function App() {
                     <Button onClick={async () => {
                       if (alreadyTracked) return;
                       try {
-                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, official_deadlines: s.deadlines, notes: s.notes } });
+                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, major: s.majors?.[0] || '', official_deadlines: s.deadlines, notes: s.notes } });
                         const updated = await apiCall('/v1/stage', token);
                         setStage(updated);
                         showToast(`已添加「${s.name}」`, 'success');
