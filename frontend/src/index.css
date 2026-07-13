@@ -69,3 +69,6 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(240 5% 84%); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: hsl(240 5% 65%); }
+
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.animate-slide-in { animation: slideIn 0.2s ease-out; }

@@ -101,6 +101,10 @@ class MatchRequest(BaseModel):
 class RagRequest(BaseModel):
     query: str
 
+class OutreachRequest(BaseModel):
+    school: str
+    professor_name: str
+
 
 # ── Profile endpoints ──
 @app.get("/v1/profile")
@@ -306,7 +310,22 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
 
             elif intent == "search_schools":
-                prompt = f"学生说：{body.query}。学生背景：{profile_str}。{result['prompt'] or '学生想在广场上筛选学校。'} 规则：1句话回复，引导学生去广场筛选或补充条件（如：要不要英语？什么专业方向？），不要说具体学校名。"
+                # Use matching engine to find schools, then render as actionable cards
+                from demo.matching_engine import StudentProfile, match_schools
+                sp = StudentProfile(
+                    jlpt_level=profile.jlpt_level, eju_score=int(profile.eju_score),
+                    gpa=float(profile.gpa), target_major=profile.target_major,
+                    english_score=profile.english_score,
+                    undergraduate_school=profile.undergraduate_school,
+                )
+                matches = match_schools(sp)
+                if matches:
+                    top3 = [m.school_name for m in matches[:3]]
+                    # Push school recommendations as suggested_schools actions
+                    actions.append({"type": "suggested_schools", "schools": top3})
+                    prompt = f"学生想找学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}、{profile.target_major or '未设定专业'}方向），推荐了{len(top3)}所匹配学校。1句话告诉学生已推荐，引导去首页看板看详情。"
+                else:
+                    prompt = f"匹配引擎暂无数据。学生背景：{profile_str}。1句话建议学生补充画像或去广场手动筛选。"
                 async for event in _stream(prompt):
                     yield event
 
@@ -472,12 +491,15 @@ async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(ge
 
 @app.get("/v1/greeting")
 async def get_greeting(user_id: str = Depends(get_user_id)):
-    """Generate a proactive greeting/reminder based on current application state."""
+    """Proactive greeting with structured dashboard data."""
     profile = profile_mgr.get_profile(user_id)
     parts = []
-
-    # 1. Check per-school professor reminders
     prof_reminders = []
+    deadline_warnings = []
+    today = datetime.now().date()
+
+    # 1. Professor reminders
+    overdue_profs = 0
     for app in profile.applications:
         school = app.get("school", "")
         for prof in app.get("professors", []):
@@ -487,16 +509,15 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                 try:
                     elapsed = (datetime.now() - datetime.fromisoformat(date_str)).days
                     if elapsed >= 14:
-                        prof_reminders.append(f"{prof['name']}({school}) 已 {elapsed} 天未回复，建议发跟进邮件或换教授")
+                        prof_reminders.append(f"{prof['name']}({school}) 已 {elapsed} 天未回复")
+                        overdue_profs += 1
                 except (ValueError, TypeError):
                     pass
-
     if prof_reminders:
         parts.append("提醒：" + "；".join(prof_reminders))
 
-    # 2. Check upcoming deadlines
-    deadline_warnings = []
-    today = datetime.now().date()
+    # 2. Deadline warnings
+    upcoming_dl = 0
     for app in profile.applications:
         school = app.get("school", "")
         for name, date_str in app.get("deadlines", {}).items():
@@ -504,48 +525,263 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                 dl = datetime.fromisoformat(date_str).date()
                 days_left = (dl - today).days
                 if 0 <= days_left <= 14:
-                    deadline_warnings.append(f"{school}「{name}」还剩 {days_left} 天 ({date_str})")
+                    deadline_warnings.append(f"{school}「{name}」还剩 {days_left} 天")
+                    upcoming_dl += 1
                 elif days_left < 0:
-                    deadline_warnings.append(f"{school}「{name}」已过期 {abs(days_left)} 天 ({date_str})")
+                    deadline_warnings.append(f"{school}「{name}」已过期 {abs(days_left)} 天")
             except (ValueError, TypeError):
                 pass
-
     if deadline_warnings:
-        parts.append("截止日期提醒：" + "；".join(deadline_warnings))
+        parts.append("截止：" + "；".join(deadline_warnings))
 
-    # 3. Stage-based nudges
+    # 3. Stage nudge
     stage = profile.application_stage or "preparing"
-    from agent.state_machine import get_current_stage_info
-    info = get_current_stage_info(stage)
-
     if stage == "preparing":
         if not profile.research_area:
-            parts.append("你还没有设定研究方向，要不要聊聊你想研究什么？")
-        elif not profile.target_professors and not profile.applications:
-            parts.append("研究计划准备得怎么样了？可以跟我说说你想申请的学校和方向。")
-
+            parts.append("还没有设定研究方向，聊聊你想研究什么？")
+        elif not profile.applications:
+            parts.append("研究计划准备中，可以跟我说说你想申请的学校。")
     elif stage == "contacting":
         active = sum(1 for a in profile.applications if a.get("stage") == "contacting")
         if active == 0:
-            parts.append("准备好联系教授了吗？告诉我你想联系哪位教授，我帮你跟进。")
-
+            parts.append("准备好联系教授了吗？告诉我你想联系哪位教授。")
     elif stage == "applying":
-        parts.append("出愿材料准备中？确认一下各校的截止日期，别错过了。")
-
+        parts.append("出愿材料准备中，确认各校截止日期。")
     elif stage == "exam":
-        parts.append("临近考试，别忘复习专业课+练面试陈述。需要模拟面试吗？")
-
+        parts.append("临近考试，别忘复习专业课。需要模拟面试吗？")
     elif stage == "waiting":
-        parts.append("结果等待中。也可以准备备选方案，有需要随时聊。")
+        parts.append("结果等待中，也可以准备备选方案。")
 
-    # 4. No data at all? Welcome
-    if not profile.applications and stage == "preparing" and not profile.research_area:
-        parts.insert(0, "欢迎回来！我是你的日本升学顾问。告诉我你的研究方向，我帮你匹配学校和教授。")
+    if not profile.applications and not profile.research_area:
+        parts.insert(0, "欢迎！我是你的日本升学顾问。告诉我你的研究方向，帮你匹配学校。")
+
+    # 4. Profile completeness
+    fields = {
+        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
+        "english": bool(profile.english_score and profile.english_score.strip()),
+        "gpa": profile.gpa_score > 0,
+        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
+        "major": profile.target_major and profile.target_major != "未设定",
+        "research": bool(profile.research_area and profile.research_area.strip()),
+    }
+    filled = sum(1 for v in fields.values() if v)
+    total = len(fields)
+
+    # 5. Next actions
+    actions = []
+    if not fields["research"]:
+        actions.append({"label": "设定研究方向", "tab": "chat", "reason": "研究方向未设定", "priority": "high"})
+    if not profile.applications:
+        actions.append({"label": "去广场浏览学校", "tab": "plaza", "reason": "还没有关注的学校", "priority": "high"})
+    elif upcoming_dl > 0:
+        actions.append({"label": f"查看 {upcoming_dl} 个临近截止日", "tab": "calendar", "reason": "截止日临近", "priority": "high"})
+    if overdue_profs > 0:
+        actions.append({"label": f"{overdue_profs} 位教授超期未回", "tab": "chat", "reason": "教授未回复建议跟进", "priority": "high"})
+    if not fields["jlpt"]:
+        actions.append({"label": "填写日语成绩", "tab": "chat", "reason": "日语成绩未填", "priority": "normal"})
+    if not fields["english"]:
+        actions.append({"label": "填写英语成绩", "tab": "chat", "reason": "英语成绩未填", "priority": "normal"})
+
+    # ── 6. when: per-school verdicts ──
+    when_list = []
+    for app in profile.applications:
+        school = app.get("school", "")
+        major = app.get("major", "") or ""
+        deadlines = app.get("deadlines", {})
+        professors = app.get("professors", [])
+
+        shutsugan_str = deadlines.get("出願") or deadlines.get("出愿")
+        shutsugan_date = None
+        if shutsugan_str:
+            try:
+                shutsugan_date = datetime.fromisoformat(shutsugan_str).date()
+            except (ValueError, TypeError):
+                pass
+
+        exam_str = deadlines.get("校内考") or deadlines.get("考试")
+        exam_date = None
+        if exam_str:
+            try:
+                exam_date = datetime.fromisoformat(exam_str).date()
+            except (ValueError, TypeError):
+                pass
+
+        verdict = ""
+        reason = ""
+        days = 0
+
+        if shutsugan_date and exam_date:
+            if today < shutsugan_date - timedelta(days=30):
+                days = (shutsugan_date - today).days
+                if not professors:
+                    verdict = "该套磁"
+                    reason = f"出願还剩 {days} 天，你一个教授都没联系"
+                else:
+                    verdict = "套磁中"
+                    reason = f"已联系 {len(professors)} 位教授"
+            elif today <= shutsugan_date:
+                days = (shutsugan_date - today).days
+                verdict = "收尾出愿"
+                reason = f"出願剩 {days} 天，确认材料"
+            elif today < exam_date:
+                days = (exam_date - today).days
+                weeks = max(days // 7, 1)
+                verdict = "该复习"
+                reason = f"考试剩 {weeks} 周，过去问刷起来"
+            else:
+                days = (exam_date - today).days
+                verdict = "已考完/等待"
+                reason = ""
+        elif shutsugan_date:
+            if today < shutsugan_date - timedelta(days=30):
+                days = (shutsugan_date - today).days
+                if not professors:
+                    verdict = "该套磁"
+                    reason = f"出願还剩 {days} 天，你一个教授都没联系"
+                else:
+                    verdict = "套磁中"
+                    reason = f"已联系 {len(professors)} 位教授"
+            elif today <= shutsugan_date:
+                days = (shutsugan_date - today).days
+                verdict = "收尾出愿"
+                reason = f"出願剩 {days} 天，确认材料"
+            else:
+                days = (shutsugan_date - today).days
+                verdict = "已考完/等待"
+                reason = ""
+        elif exam_date:
+            if today < exam_date:
+                days = (exam_date - today).days
+                weeks = max(days // 7, 1)
+                verdict = "该复习"
+                reason = f"考试剩 {weeks} 周，过去问刷起来"
+            else:
+                days = (exam_date - today).days
+                verdict = "已考完/等待"
+                reason = ""
+        else:
+            verdict = "还早"
+            reason = "补一下出願/考试日期，我才能告诉你节奏"
+            days = 0
+
+        when_list.append({
+            "school": school,
+            "major": major,
+            "verdict": verdict,
+            "reason": reason,
+            "days": days,
+        })
+
+    # ── 7. structural_risk ──
+    structural_risk = None
+    if profile.applications:
+        advanced = any(a.get("stage") in ("applying", "exam", "waiting", "decided") for a in profile.applications)
+        all_stuck = True
+        for a in profile.applications:
+            for p in a.get("professors", []):
+                if p.get("status") == "replied":
+                    all_stuck = False
+                    break
+            if not all_stuck:
+                break
+        if not advanced and all_stuck:
+            structural_risk = {
+                "level": "warn",
+                "message": f"你追踪了 {len(profile.applications)} 所，但没有一条线推进到出願——缺一条在走的线。"
+            }
+
+    # ── 8. gates: unmet hard requirements ──
+    gates = []
+    try:
+        from demo.matching_engine import _schools_from_db, _jlpt_met, _english_met
+        school_records = _schools_from_db()
+        for app in profile.applications:
+            school_name = app.get("school", "")
+            matched = None
+            for s in school_records:
+                if school_name in s["name"] or s["name"] in school_name:
+                    matched = s
+                    break
+            if not matched:
+                continue
+            if not _jlpt_met(matched["jlpt_min"], profile.jlpt_level):
+                gates.append({
+                    "school": school_name,
+                    "field": "JLPT",
+                    "required": matched["jlpt_min"],
+                    "current": profile.jlpt_level or "无",
+                })
+            if not _english_met(matched["english_note"], profile.english_score or "无"):
+                gates.append({
+                    "school": school_name,
+                    "field": "英语",
+                    "required": matched["english_note"],
+                    "current": profile.english_score or "未提供",
+                })
+    except Exception:
+        pass
 
     return {
-        "message": "\n\n".join(parts) if parts else "欢迎回来！当前一切顺利。有什么需要帮助的？",
+        "message": "\n\n".join(parts) if parts else "欢迎回来！当前一切顺利。",
         "has_reminders": bool(prof_reminders or deadline_warnings),
+        "profile_completeness": {"filled": filled, "total": total, "percentage": round(filled / total * 100)},
+        "next_actions": actions[:5],
+        "counts": {"total_apps": len(profile.applications), "overdue_profs": overdue_profs, "upcoming_deadlines": upcoming_dl},
+        "when": when_list,
+        "structural_risk": structural_risk,
+        "gates": gates,
     }
+
+
+# ── Outreach draft endpoint ──
+@app.post("/v1/draft/outreach")
+async def draft_outreach(body: OutreachRequest, user_id: str = Depends(get_user_id)):
+    """Generate a professor outreach email draft with placeholders (no professor facts)."""
+    profile = profile_mgr.get_profile(user_id)
+    profile_str = profile_mgr.format_for_prompt(profile)
+
+    prompt = f"""你是日本留学套磁信写作助手。根据学生画像生成套磁信草稿。
+
+【学生画像】
+{profile_str}
+
+【目标学校】{body.school}
+【教授姓名】{body.professor_name} — 仅用于抬头称谓（如「{body.professor_name}先生」），不得用于事实断言。
+
+请输出以下 JSON 格式，不要解释：
+
+{{
+  "subject": "邮件主题行（日文，可含大学名等）",
+  "body_ja": "套磁信正文（日文，用[xxx]占位符代替任何教授相关信息）",
+  "body_zh": "正文的中文翻译（同样用[xxx]占位符）",
+  "placeholders": [
+    {{"id": "kyouju_kenkyuu", "hint_ja": "教授の研究分野", "hint_zh": "教授的研究方向"}}
+  ]
+}}
+
+硬性规则：
+1. 正文只允许出现学生自报事实（画像中的信息）和通用日语套磁敬语。
+2. 禁止输出任何具体教授事实（论文标题、研究成果、观点、获奖等），即使有数据也不碰。
+3. 教授相关信息（研究方向、论文、业绩等）一律用带方括号的占位符替代，如[教授の研究分野]。
+4. 正文必须包含基本套磁结构：自我介绍、志望动机、研究兴趣、请求指导。
+5. placeholders 的 id 只用字母和_，不加括号。hint_ja 和 hint_zh 是给用户的填空提示。
+6. professor_name 仅用于抬头称呼，不要将它填入任何占位符。
+
+JSON:"""
+
+    resp = chat_model.invoke(prompt)
+    raw = resp.content if hasattr(resp, "content") else str(resp)
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+
+    try:
+        result = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        raise HTTPException(500, "LLM 返回格式异常")
+
+    return result
 
 
 # ── Doc fetch + LLM extraction ──

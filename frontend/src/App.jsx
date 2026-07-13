@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search } from 'lucide-react';
+import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import { Select } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import CalendarView from '@/components/CalendarView';
+import DashboardView from '@/components/DashboardView';
+import OutreachDraft from '@/components/OutreachDraft';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -113,11 +115,17 @@ export default function App() {
 
   // ── Greeting helper ──
   const loadGreeting = async (t) => {
+    setGreetingLoading(true);
     try {
       const g = await apiCall('/v1/greeting', t);
+      setGreeting(g);
       setMessages([{ role: 'assistant', content: g.message }]);
     } catch {
-      setMessages([{ role: 'assistant', content: '欢迎回来！我是你的日本升学顾问，请告诉我你的目标。' }]);
+      const fallback = { message: '欢迎回来！我是你的日本升学顾问，请告诉我你的目标。', profile_completeness: { filled: 0, total: 6, percentage: 0 }, next_actions: [], counts: { total_apps: 0, overdue_profs: 0, upcoming_deadlines: 0 } };
+      setGreeting(fallback);
+      setMessages([{ role: 'assistant', content: fallback.message }]);
+    } finally {
+      setGreetingLoading(false);
     }
   };
 
@@ -228,9 +236,12 @@ export default function App() {
   const [editNotes, setEditNotes] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null); // school name to delete
   // ── Plaza state ──
-  const [activeTab, setActiveTab] = useState('chat'); // chat | plaza | calendar
+  const [greeting, setGreeting] = useState(null);
+  const [greetingLoading, setGreetingLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('home'); // home | chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
+  const [selectedProf, setSelectedProf] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inputOpen, setInputOpen] = useState(true);
   useEffect(() => {
@@ -587,6 +598,12 @@ export default function App() {
                                 }}
                                 title="点击切换状态">
                                 {p.name}({profStatusLabel[p.status] || p.status})
+                                <button onClick={e => {
+                                  e.stopPropagation();
+                                  setSelectedProf({ school: app.school, professorName: p.name });
+                                }} className="ml-0.5 text-gray-300 hover:text-indigo-500 align-middle" title="生成套磁邮件草稿">
+                                  <FileText size={10} />
+                                </button>
                                 <span className="text-gray-300 hover:text-red-400 ml-0.5" onClick={e => {
                                   e.stopPropagation();
                                   const profs = app.professors.filter((_, xi) => xi !== j);
@@ -787,7 +804,7 @@ export default function App() {
         )}
 
         <div className="p-4 border-b">
-          <Button onClick={() => setShowProfile(!showProfile)}
+          <Button onClick={() => setShowProfile(true)}
             className="flex items-center gap-2 text-sm text-gray-600 hover:text-primary w-full p-2 rounded-lg hover:bg-gray-50">
             <Settings size={16} /> 学生背景
           </Button>
@@ -797,48 +814,9 @@ export default function App() {
               {profile.gpa_score > 0 && <div>GPA: {profile.gpa_score}/{profile.gpa_scale}</div>}
               <div>专业: {profile.target_major || '未设定'}</div>
               {profile.research_area && <div>方向: {profile.research_area}</div>}
-              {profile.facts && Object.keys(profile.facts).length > 0 && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-primary">AI 已记录 ({Object.keys(profile.facts).length}条)</summary>
-                  {Object.entries(profile.facts).map(([k, v]) => (
-                    <div key={k} className="ml-2">{k}: {v}</div>
-                  ))}
-                </details>
-              )}
             </div>
           )}
         </div>
-
-        {/* Profile edit form */}
-        {showProfile && (
-          <div className="p-4 border-b bg-gray-50">
-            <form onSubmit={saveProfile} className="space-y-2 text-sm">
-              <Select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
-                className="w-full p-2 border rounded">
-                {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
-              </Select>
-              <Input name="english_score" defaultValue={profile?.english_score || ''}
-                placeholder="英语: TOEFL 95" className="w-full p-2 border rounded" />
-              <div className="flex gap-2">
-                <Input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
-                  placeholder="GPA" className="w-1/2 p-2 border rounded" />
-                <Select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
-                  className="w-1/2 p-2 border rounded">
-                  {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
-                </Select>
-              </div>
-              <Input name="target_major" defaultValue={profile?.target_major || ''}
-                placeholder="目标专业" className="w-full p-2 border rounded" />
-              <Input name="research_area" defaultValue={profile?.research_area || ''}
-                placeholder="研究方向" className="w-full p-2 border rounded" />
-              <Input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
-                placeholder="本科院校" className="w-full p-2 border rounded" />
-              <Button type="submit" className="w-full" size="sm">
-                保存
-              </Button>
-            </form>
-          </div>
-        )}
 
         </div>{/* end scrollable area */}
 
@@ -856,6 +834,9 @@ export default function App() {
         {/* Tab bar */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="border-b border-border bg-card px-4">
           <TabsList className="w-full justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
+            <TabsTrigger value="home" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+              <LayoutGrid size={15} /> 首页
+            </TabsTrigger>
             <TabsTrigger value="chat" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
               <MessageCircle size={15} /> 对话
             </TabsTrigger>
@@ -869,7 +850,19 @@ export default function App() {
         </Tabs>
 
         <AnimatePresence mode="wait">
-        {activeTab === 'chat' ? (
+        {activeTab === 'home' ? (
+          <DashboardView
+            greeting={greeting}
+            applications={stage?.applications}
+            profile={profile}
+            loading={greetingLoading}
+            onNavigate={(tab, params) => {
+              if (params?.filter) setPlazaFilter(params.filter);
+              setActiveTab(tab);
+            }}
+            onEditProfile={() => setShowProfile(true)}
+          />
+        ) : activeTab === 'chat' ? (
         <>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
           <AnimatePresence>
@@ -1094,6 +1087,51 @@ export default function App() {
         )}
       </main>
 
+      {/* Profile slide-out panel */}
+      {showProfile && <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setShowProfile(false)}>
+        <div className="absolute inset-0 bg-black/30" />
+        <div className="relative w-full max-w-md bg-background h-full overflow-y-auto shadow-xl animate-slide-in" onClick={e => e.stopPropagation()}>
+          <div className="p-4 border-b flex items-center justify-between sticky top-0 bg-background z-10">
+            <h2 className="text-lg font-semibold">学生背景</h2>
+            <Button variant="ghost" size="icon" onClick={() => setShowProfile(false)}>&times;</Button>
+          </div>
+          <form onSubmit={saveProfile} className="p-4 space-y-3 text-sm">
+            <label className="block text-xs text-muted-foreground">日语等级</label>
+            <Select name="jlpt_level" defaultValue={profile?.jlpt_level || '无'}
+              className="w-full p-2 border rounded">
+              {['无','N5','N4','N3','N2','N1'].map(l => <option key={l}>{l}</option>)}
+            </Select>
+            <label className="block text-xs text-muted-foreground">英语成绩</label>
+            <Input name="english_score" defaultValue={profile?.english_score || ''}
+              placeholder="TOEFL 95 / TOEIC 750" className="w-full p-2 border rounded" />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-xs text-muted-foreground">GPA</label>
+                <Input name="gpa_score" type="number" step="0.1" defaultValue={profile?.gpa_score || ''}
+                  placeholder="3.5" className="w-full p-2 border rounded" />
+              </div>
+              <div className="w-20">
+                <label className="block text-xs text-muted-foreground">满分</label>
+                <Select name="gpa_scale" defaultValue={profile?.gpa_scale || 4.0}
+                  className="w-full p-2 border rounded">
+                  {[4.0, 4.3, 5.0, 100].map(s => <option key={s} value={s}>{s}</option>)}
+                </Select>
+              </div>
+            </div>
+            <label className="block text-xs text-muted-foreground">目标专业</label>
+            <Input name="target_major" defaultValue={profile?.target_major || ''}
+              placeholder="如：情报理工" className="w-full p-2 border rounded" />
+            <label className="block text-xs text-muted-foreground">研究方向</label>
+            <Input name="research_area" defaultValue={profile?.research_area || ''}
+              placeholder="如：自然语言处理" className="w-full p-2 border rounded" />
+            <label className="block text-xs text-muted-foreground">本科院校</label>
+            <Input name="undergraduate_school" defaultValue={profile?.undergraduate_school || ''}
+              placeholder="如：深圳大学" className="w-full p-2 border rounded" />
+            <Button type="submit" className="w-full" size="sm">保存</Button>
+          </form>
+        </div>
+      </div>}
+
       {/* Delete confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">
@@ -1109,6 +1147,14 @@ export default function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OutreachDraft
+        open={!!selectedProf}
+        onClose={() => setSelectedProf(null)}
+        school={selectedProf?.school || ''}
+        professorName={selectedProf?.professorName || ''}
+        token={token}
+      />
     </div>
   );
 }

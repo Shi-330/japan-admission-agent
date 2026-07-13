@@ -20,7 +20,7 @@ const results = [];
 
   // === AC4: CN search ===
   console.log('\n--- AC4: CN Search ---');
-  await page.locator('button:has-text("广场")').click();
+  await page.getByRole('tab', { name: '广场' }).click();
   await page.waitForTimeout(1500);
   await page.fill('input[placeholder*="筛选专业"]', '计算机');
   await page.waitForTimeout(600);
@@ -51,7 +51,7 @@ const results = [];
 
   // === AC3: Date picker ===
   console.log('\n--- AC3: Date picker ---');
-  await page.locator('button:has-text("对话")').first().click();
+  await page.getByRole('tab', { name: '对话' }).click();
   await page.waitForTimeout(500);
   const addDl = page.locator('button:has-text("+ 截止日")').first();
   if (await addDl.isVisible().catch(() => false)) {
