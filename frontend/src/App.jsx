@@ -674,8 +674,8 @@ export default function App() {
                         <div className="flex gap-1 mb-1">
                           <Input value={editDeadlineKey} onChange={e => setEditDeadlineKey(e.target.value)}
                             className="w-20 text-xs p-1 border rounded" placeholder="如：出願締切" autoFocus />
-                          <Input value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
-                            className="flex-1 text-xs p-1 border rounded" placeholder="如：2026-12-15" />
+                          <input type="date" value={editDeadlineVal} onChange={e => setEditDeadlineVal(e.target.value)}
+                            className="flex-1 text-xs p-1 border rounded" />
                           <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
                               const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
@@ -973,12 +973,16 @@ export default function App() {
                     <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
                   </div>;
                 }
-                return filtered.map((s, i) => (
+                return filtered.map((s, i) => {
+                  const trackedSchools = (stage?.applications || []).map(a => a.school);
+                  const alreadyTracked = trackedSchools.includes(s.name);
+                  return (
                 <Card key={i}>
 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
                     <Button onClick={async () => {
+                      if (alreadyTracked) return;
                       try {
                         await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, official_deadlines: s.deadlines, notes: s.notes } });
                         const updated = await apiCall('/v1/stage', token);
@@ -986,8 +990,9 @@ export default function App() {
                         showToast(`已添加「${s.name}」`, 'success');
                       } catch (err) { showToast(`添加失败: ${err.message}`); }
                     }}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-indigo-100 text-primary transition font-medium shrink-0">
-                      追踪
+                      disabled={alreadyTracked}
+                      className={`text-xs px-2.5 py-1 rounded-lg transition font-medium shrink-0 ${alreadyTracked ? 'bg-gray-100 text-gray-400' : 'bg-primary/10 hover:bg-indigo-100 text-primary'}`}>
+                      {alreadyTracked ? '已追踪' : '追踪'}
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-1 mb-2">
@@ -1021,7 +1026,7 @@ export default function App() {
                   </div>
                 </CardContent>
               </Card>
-              ));
+              )});
               })()}
             </div>
           </div>

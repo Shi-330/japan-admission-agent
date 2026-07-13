@@ -691,6 +691,7 @@ async def list_schools(major: str = ""):
 # ── Application CRUD (V2.2: manual school management) ──
 class ApplicationUpsert(BaseModel):
     school: str
+    major: str = ""
     stage: str = "preparing"
     needs_contact: bool = False
     professors: List[Dict[str, Any]] = []
@@ -702,7 +703,7 @@ async def upsert_application(body: ApplicationUpsert, user_id: str = Depends(get
     """Add or update a school application entry."""
     profile = profile_mgr.get_profile(user_id)
     profile.upsert_application(
-        body.school,
+        body.school, body.major,
         stage=body.stage,
         needs_contact=body.needs_contact,
         professors=body.professors,

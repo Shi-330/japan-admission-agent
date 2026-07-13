@@ -77,13 +77,16 @@ class UserProfile(BaseModel):
             self.events.append({"date": date, "event": event, "source": source})
             self.events.sort(key=lambda e: e["date"])
 
-    def upsert_application(self, school: str, **kwargs):
-        """添加或更新一所志愿校的追踪记录"""
+    def upsert_application(self, school: str, major: str = "", **kwargs):
+        """添加或更新一所志愿校的追踪记录。school+major 联合去重。"""
+        key = f"{school}|{major}" if major else school
         for app in self.applications:
-            if app["school"] == school:
+            app_key = f"{app['school']}|{app.get('major', '')}" if app.get('major') else app['school']
+            if app_key == key:
                 app.update(kwargs)
                 return app
-        app = {"school": school, "stage": "preparing", "needs_contact": False,
+        app = {"school": school, "major": major,
+               "stage": "preparing", "needs_contact": False,
                "professors": [], "deadlines": {}, "notes": ""}
         app.update(kwargs)
         self.applications.append(app)
@@ -91,7 +94,7 @@ class UserProfile(BaseModel):
 
     def add_professor_attempt(self, school: str, professor: str, status: str = "pending", date: str = ""):
         """记录一位教授的套磁尝试。如已有则更新状态。"""
-        app = self.upsert_application(school, needs_contact=True, stage="contacting")
+        app = self.upsert_application(school, "", needs_contact=True, stage="contacting")
         for p in app.setdefault("professors", []):
             if p["name"] == professor:
                 p["status"] = status
