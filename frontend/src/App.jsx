@@ -511,7 +511,7 @@ export default function App() {
             <LayoutGrid size={14} />
           </Button>
         </div>
-        <div className={`flex-1 overflow-hidden ${sidebarOpen ? '' : 'hidden'}`}>
+        <div className={`flex-1 overflow-hidden flex flex-col ${sidebarOpen ? '' : 'hidden'}`}>
 
         <div className="flex-1 overflow-y-auto">
         {/* Stage + Applications */}
