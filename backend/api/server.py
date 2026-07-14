@@ -951,25 +951,25 @@ async def list_schools(major: str = ""):
 # ── Application CRUD (V2.2: manual school management) ──
 class ApplicationUpsert(BaseModel):
     school: str
-    major: str = ""
-    stage: str = "preparing"
-    needs_contact: bool = False
-    professors: List[Dict[str, Any]] = []
-    deadlines: Dict[str, str] = {}
-    notes: str = ""
+    # None = 未提供 → 部分更新时不覆盖已有字段
+    major: Optional[str] = None
+    stage: Optional[str] = None
+    needs_contact: Optional[bool] = None
+    professors: Optional[List[Dict[str, Any]]] = None
+    deadlines: Optional[Dict[str, str]] = None
+    notes: Optional[str] = None
 
 @app.post("/v1/applications")
 async def upsert_application(body: ApplicationUpsert, user_id: str = Depends(get_user_id)):
-    """Add or update a school application entry."""
+    """Add or update a school application entry. Partial update: only provided fields change."""
     profile = profile_mgr.get_profile(user_id)
-    profile.upsert_application(
-        body.school, body.major,
-        stage=body.stage,
-        needs_contact=body.needs_contact,
-        professors=body.professors,
-        deadlines=body.deadlines,
-        notes=body.notes,
-    )
+    kwargs = {}
+    if body.stage is not None: kwargs["stage"] = body.stage
+    if body.needs_contact is not None: kwargs["needs_contact"] = body.needs_contact
+    if body.professors is not None: kwargs["professors"] = body.professors
+    if body.deadlines is not None: kwargs["deadlines"] = body.deadlines
+    if body.notes is not None: kwargs["notes"] = body.notes
+    profile.upsert_application(body.school, body.major or "", **kwargs)
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True, "school": body.school, "applications": profile.applications}
 

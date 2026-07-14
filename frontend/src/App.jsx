@@ -88,7 +88,7 @@ async function apiCall(path, token, { method = 'GET', body } = {}) {
 
 export default function App() {
   // ── Auth state ──
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem('jwt'));
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
@@ -120,6 +120,12 @@ export default function App() {
     }
   }, [token]);
 
+  // ── Persist session token across refreshes ──
+  useEffect(() => {
+    if (token) localStorage.setItem('jwt', token);
+    else localStorage.removeItem('jwt');
+  }, [token]);
+
   // ── Scroll to bottom ──
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -127,20 +133,23 @@ export default function App() {
   }, [messages]);
 
   // ── Greeting helper ──
-  const loadGreeting = async (t) => {
+  const loadGreeting = async (t, { resetMessages = true } = {}) => {
     setGreetingLoading(true);
     try {
       const g = await apiCall('/v1/greeting', t);
       setGreeting(g);
-      setMessages([{ role: 'assistant', content: g.message }]);
+      if (resetMessages) setMessages([{ role: 'assistant', content: g.message }]);
     } catch {
       const fallback = { message: '欢迎回来！我是你的日本升学顾问，请告诉我你的目标。', profile_completeness: { filled: 0, total: 6, percentage: 0 }, next_actions: [], counts: { total_apps: 0, overdue_profs: 0, upcoming_deadlines: 0 } };
       setGreeting(fallback);
-      setMessages([{ role: 'assistant', content: fallback.message }]);
+      if (resetMessages) setMessages([{ role: 'assistant', content: fallback.message }]);
     } finally {
       setGreetingLoading(false);
     }
   };
+
+  // ── Restore session on refresh: hydrate dashboard greeting, keep persisted chat ──
+  useEffect(() => { if (token) loadGreeting(token, { resetMessages: false }); }, []);
 
   // ── Auth handlers ──
   const handleLogin = async (e) => {
@@ -321,6 +330,7 @@ export default function App() {
       await apiCall('/v1/applications', token, { method: 'POST', body: { school, ...updates } });
       const updated = await apiCall('/v1/stage', token);
       setStage(updated);
+      await loadGreeting(token, { resetMessages: false }); // refresh dashboard (when/counts/deadlines)
       showToast('已更新', 'success');
     } catch (err) {
       showToast(`更新失败: ${err.message}`);

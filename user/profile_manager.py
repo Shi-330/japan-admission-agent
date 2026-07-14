@@ -78,11 +78,9 @@ class UserProfile(BaseModel):
             self.events.sort(key=lambda e: e["date"])
 
     def upsert_application(self, school: str, major: str = "", **kwargs):
-        """添加或更新一所志愿校的追踪记录。school+major 联合去重。"""
-        key = f"{school}|{major}" if major else school
+        """添加或更新一所志愿校的追踪记录。school+major 联合去重；major 为空时按 school 匹配（部分更新只带 school）。"""
         for app in self.applications:
-            app_key = f"{app['school']}|{app.get('major', '')}" if app.get('major') else app['school']
-            if app_key == key:
+            if app["school"] == school and (not major or app.get("major", "") == major):
                 app.update(kwargs)
                 return app
         app = {"school": school, "major": major,
