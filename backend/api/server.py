@@ -513,9 +513,6 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                         overdue_profs += 1
                 except (ValueError, TypeError):
                     pass
-    if prof_reminders:
-        parts.append("提醒：" + "；".join(prof_reminders))
-
     # 2. Deadline warnings
     upcoming_dl = 0
     for app in profile.applications:
@@ -531,9 +528,6 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                     deadline_warnings.append(f"{school}「{name}」已过期 {abs(days_left)} 天")
             except (ValueError, TypeError):
                 pass
-    if deadline_warnings:
-        parts.append("截止：" + "；".join(deadline_warnings))
-
     # 3. Stage nudge
     stage = profile.application_stage or "preparing"
     if stage == "preparing":
@@ -573,8 +567,8 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         actions.append({"label": "设定研究方向", "tab": "chat", "reason": "研究方向未设定", "priority": "high"})
     if not profile.applications:
         actions.append({"label": "去广场浏览学校", "tab": "plaza", "reason": "还没有关注的学校", "priority": "high"})
-    elif upcoming_dl > 0:
-        actions.append({"label": f"查看 {upcoming_dl} 个临近截止日", "tab": "calendar", "reason": "截止日临近", "priority": "high"})
+    elif upcoming_dl > 1:
+        actions.append({"label": f"查看 {upcoming_dl} 个临近截止日", "tab": "calendar", "reason": "多个截止日临近", "priority": "high"})
     if overdue_profs > 0:
         actions.append({"label": f"{overdue_profs} 位教授超期未回", "tab": "chat", "reason": "教授未回复建议跟进", "priority": "high"})
     if not fields["jlpt"]:
@@ -722,7 +716,7 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         pass
 
     return {
-        "message": "\n\n".join(parts) if parts else "欢迎回来！当前一切顺利。",
+        "message": "\n\n".join(parts) if parts else ("有几项待办需要关注，见下方卡片。" if (prof_reminders or deadline_warnings) else "欢迎回来！当前一切顺利。"),
         "has_reminders": bool(prof_reminders or deadline_warnings),
         "profile_completeness": {"filled": filled, "total": total, "percentage": round(filled / total * 100)},
         "next_actions": actions[:5],
