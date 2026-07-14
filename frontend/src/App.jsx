@@ -16,6 +16,19 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
+// ── Plaza CN→JP school matching (shared by count badge + grid so they never disagree) ──
+const CN2JP = { '计算机':['情報工学','コンピュータ科学','情報理工'], '人工智能':['知能情報学','人工知能','AI'], '电子':['電気電子','電子情報学'], '机械':['機械工学','機械創造工学'], '数学':['数理工学','数理情報学'], '通信':['情報通信','通信情報システム'], '网络':['情報ネットワーク','メディアネットワーク'], '生命':['生命人間情報科学','バイオ情報工学'], '数据':['データ科学','データサイエンス'], '金融':['社会情報学','システム情報学'], '信息':['情報理工','情報工学','情報科学'], '情报':['情報理工','情報工学','情報科学'] };
+function schoolMatches(s, filter) {
+  if (!filter) return true;
+  const text = JSON.stringify(s).toLowerCase();
+  return filter.split(/\s+/).filter(w => w.length > 0).some(w => {
+    const lw = w.toLowerCase();
+    if (text.includes(lw)) return true;
+    const aliases = CN2JP[lw];
+    return aliases ? aliases.some(a => text.includes(a.toLowerCase())) : false;
+  });
+}
+
 // ── Auth helpers (Supabase REST API, no SDK needed) ──
 async function loginSupabase(email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
@@ -103,7 +116,7 @@ export default function App() {
   useEffect(() => {
     if (token) {
       apiCall('/v1/profile', token).then(setProfile).catch(() => {});
-      apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(() => {});
+      apiCall('/v1/schools', token).then(r => setCatalog(r.schools)).catch(e => console.error('school catalog load failed:', e.message));
     }
   }, [token]);
 
@@ -948,28 +961,14 @@ export default function App() {
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {plazaFilter && (
                 <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
-                  {catalog.filter(s => {
-                    const text = JSON.stringify(s).toLowerCase();
-                    const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
-                    return words.some(w => text.includes(w.toLowerCase()));
-                  }).length} 条结果
+                  {catalog.filter(s => schoolMatches(s, plazaFilter)).length} 条结果
                   <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
                 </span>
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
-                const cn2jp = { '计算机':['情報工学','コンピュータ科学','情報理工'], '人工智能':['知能情報学','人工知能','AI'], '电子':['電気電子','電子情報学'], '机械':['機械工学','機械創造工学'], '数学':['数理工学','数理情報学'], '通信':['情報通信','通信情報システム'], '网络':['情報ネットワーク','メディアネットワーク'], '生命':['生命人間情報科学','バイオ情報工学'], '数据':['データ科学','データサイエンス'], '金融':['社会情報学','システム情報学'], '信息':['情報理工','情報工学','情報科学'], '情报':['情報理工','情報工学','情報科学'] };
-                const filtered = catalog.filter(s => {
-                  if (!plazaFilter) return true;
-                  const text = JSON.stringify(s).toLowerCase();
-                  const words = plazaFilter.split(/\s+/).filter(w => w.length > 0);
-                  return words.some(w => {
-                    if (text.includes(w.toLowerCase())) return true;
-                    const aliases = cn2jp[w.toLowerCase()];
-                    return aliases ? aliases.some(a => text.includes(a.toLowerCase())) : false;
-                  });
-                });
+                const filtered = catalog.filter(s => schoolMatches(s, plazaFilter));
                 if (filtered.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>
