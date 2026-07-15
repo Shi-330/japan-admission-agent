@@ -494,12 +494,13 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
     """Proactive greeting with structured dashboard data."""
     profile = profile_mgr.get_profile(user_id)
     parts = []
-    prof_reminders = []
-    deadline_warnings = []
     today = datetime.now().date()
 
-    # 1. Professor reminders
+    # 1. Professor reminders + deadline scan (single pass over applications)
     overdue_profs = 0
+    upcoming_dl = 0
+    has_prof_reminders = False
+    has_dl_warnings = False
     for app in profile.applications:
         school = app.get("school", "")
         for prof in app.get("professors", []):
@@ -509,23 +510,19 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                 try:
                     elapsed = (datetime.now() - datetime.fromisoformat(date_str)).days
                     if elapsed >= 14:
-                        prof_reminders.append(f"{prof['name']}({school}) 已 {elapsed} 天未回复")
+                        has_prof_reminders = True
                         overdue_profs += 1
                 except (ValueError, TypeError):
                     pass
-    # 2. Deadline warnings
-    upcoming_dl = 0
-    for app in profile.applications:
-        school = app.get("school", "")
         for name, date_str in app.get("deadlines", {}).items():
             try:
                 dl = datetime.fromisoformat(date_str).date()
                 days_left = (dl - today).days
                 if 0 <= days_left <= 14:
-                    deadline_warnings.append(f"{school}「{name}」还剩 {days_left} 天")
+                    has_dl_warnings = True
                     upcoming_dl += 1
                 elif days_left < 0:
-                    deadline_warnings.append(f"{school}「{name}」已过期 {abs(days_left)} 天")
+                    has_dl_warnings = True
             except (ValueError, TypeError):
                 pass
     # 3. Stage nudge
@@ -716,8 +713,8 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         pass
 
     return {
-        "message": "\n\n".join(parts) if parts else ("有几项待办需要关注，见下方卡片。" if (prof_reminders or deadline_warnings) else "欢迎回来！当前一切顺利。"),
-        "has_reminders": bool(prof_reminders or deadline_warnings),
+        "message": "\n\n".join(parts) if parts else ("有几项待办需要关注，见下方卡片。" if (has_prof_reminders or has_dl_warnings) else "欢迎回来！当前一切顺利。"),
+        "has_reminders": has_prof_reminders or has_dl_warnings,
         "profile_completeness": {"filled": filled, "total": total, "percentage": round(filled / total * 100)},
         "next_actions": actions[:5],
         "counts": {"total_apps": len(profile.applications), "overdue_profs": overdue_profs, "upcoming_deadlines": upcoming_dl},
@@ -957,12 +954,7 @@ class ApplicationUpsert(BaseModel):
 async def upsert_application(body: ApplicationUpsert, user_id: str = Depends(get_user_id)):
     """Add or update a school application entry. Partial update: only provided fields change."""
     profile = profile_mgr.get_profile(user_id)
-    kwargs = {}
-    if body.stage is not None: kwargs["stage"] = body.stage
-    if body.needs_contact is not None: kwargs["needs_contact"] = body.needs_contact
-    if body.professors is not None: kwargs["professors"] = body.professors
-    if body.deadlines is not None: kwargs["deadlines"] = body.deadlines
-    if body.notes is not None: kwargs["notes"] = body.notes
+    kwargs = body.model_dump(exclude={"school", "major"}, exclude_none=True)
     profile.upsert_application(body.school, body.major or "", **kwargs)
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True, "school": body.school, "applications": profile.applications}

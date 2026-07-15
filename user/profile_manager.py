@@ -77,12 +77,19 @@ class UserProfile(BaseModel):
             self.events.append({"date": date, "event": event, "source": source})
             self.events.sort(key=lambda e: e["date"])
 
-    def upsert_application(self, school: str, major: str = "", **kwargs):
-        """添加或更新一所志愿校的追踪记录。school+major 联合去重；major 为空时按 school 匹配（部分更新只带 school）。"""
+    def find_application(self, school: str, major: Optional[str] = None):
+        """按 school 查找已追踪的志愿校。major 为空时仅按 school 匹配。"""
         for app in self.applications:
             if app["school"] == school and (not major or app.get("major", "") == major):
-                app.update(kwargs)
                 return app
+        return None
+
+    def upsert_application(self, school: str, major: str = "", **kwargs):
+        """添加或更新一所志愿校的追踪记录。school+major 联合去重；major 为空时按 school 匹配（部分更新只带 school）。"""
+        app = self.find_application(school, major or None)
+        if app:
+            app.update(kwargs)
+            return app
         app = {"school": school, "major": major,
                "stage": "preparing", "needs_contact": False,
                "professors": [], "deadlines": {}, "notes": ""}
