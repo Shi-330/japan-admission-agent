@@ -73,11 +73,42 @@ async function resetPasswordSupabase(email) {
   }
 }
 
+// ── Token refresh (Supabase access tokens expire after ~1h; without this every expiry forces a re-login) ──
+let refreshPromise = null;
+async function refreshSupabaseToken() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const rt = localStorage.getItem('refresh_token');
+      if (!rt) throw new Error('no refresh token');
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) {
+        localStorage.removeItem('refresh_token');
+        throw new Error('refresh failed');
+      }
+      const data = await res.json();
+      localStorage.setItem('jwt', data.access_token);
+      if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+      // Sync React token state (apiCall lives outside the component tree)
+      window.dispatchEvent(new CustomEvent('jwt-refreshed', { detail: data.access_token }));
+      return data.access_token;
+    })().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
 // ── API helpers ──
-async function apiCall(path, token, { method = 'GET', body } = {}) {
+async function apiCall(path, token, { method = 'GET', body } = {}, _retried = false) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401 && !_retried && localStorage.getItem('refresh_token')) {
+    const newToken = await refreshSupabaseToken().catch(() => null);
+    if (newToken) return apiCall(path, newToken, { method, body }, true);
+  }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `${res.status} ${res.statusText}`);
@@ -150,6 +181,13 @@ export default function App() {
   // ── Restore session on refresh: hydrate dashboard greeting, keep persisted chat ──
   useEffect(() => { if (token) loadGreeting(token, { resetMessages: false }); }, []);
 
+  // ── Keep React token in sync when apiCall transparently refreshes an expired JWT ──
+  useEffect(() => {
+    const sync = (e) => setToken(e.detail);
+    window.addEventListener('jwt-refreshed', sync);
+    return () => window.removeEventListener('jwt-refreshed', sync);
+  }, []);
+
   // ── Auth handlers ──
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -157,6 +195,7 @@ export default function App() {
     try {
       const r = await loginSupabase(email, password);
       setToken(r.token);
+      if (r.refresh) localStorage.setItem('refresh_token', r.refresh);
       setUser(r.user || { email });
       await loadGreeting(r.token);
     } catch (err) {
@@ -239,6 +278,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('refresh_token');
     setToken(null); setUser(null); setProfile(null); setStage(null); setMessages([]);
   };
 
@@ -345,12 +385,18 @@ export default function App() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
-      const res = await fetch(`${API}/v1/chat`, {
+      const chatBody = JSON.stringify({ query: input, history: messages.slice(-6) });
+      const doFetch = (t) => fetch(`${API}/v1/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ query: input, history: messages.slice(-6) }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: chatBody,
         signal: controller.signal,
       });
+      let res = await doFetch(token);
+      if (res.status === 401 && localStorage.getItem('refresh_token')) {
+        const newToken = await refreshSupabaseToken().catch(() => null);
+        if (newToken) res = await doFetch(newToken);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
