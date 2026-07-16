@@ -13,19 +13,9 @@ if not SUPABASE_SERVICE_KEY:
 
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Ensure unique constraint on name column exists (best-effort via RPC, non-blocking)
-try:
-    supabase_admin.rpc("exec_sql", {
-        "query": "ALTER TABLE schools ADD CONSTRAINT IF NOT EXISTS schools_name_key UNIQUE (name);"
-    }).execute()
-    print("Unique constraint on name confirmed/created.")
-except Exception:
-    # RPC may not exist; upsert will work if constraint already exists
-    print("Note: Could not create constraint via RPC (may already exist).")
-
 # Inline defaults — single source of truth
 SCHOOLS = [
-    # ── Existing 15 (with 2025 dates fixed per Component 3) ──
+    # -- Existing 15 (with 2025 dates fixed per Component 3) --
     {"name":"京都大学 情报学研究科","majors":["知能情報学","社会情報学","数理工学","システム科学","通信情報システム","データ科学"],"degree":"修士","jlpt":"N1","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"出願期間":"2026-12-10 ~ 2027-01-09","試験日":"2027年2月","合格発表":"2027年2月下旬"},"notes":"一般入試+国際プログラム。教授内諾不要。","tags":["情報","筆記","面接","英語必要","国際プログラム"]},
     {"name":"东京科学大学 情報理工学院","majors":["情報工学","数理計算科学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記(数学+専門)+面接","deadlines":{"A日程出願":"2026年6月","A日程試験":"2026年8月","B日程出願":"2026年11~12月","B日程試験":"2027年1~2月"},"notes":"旧东京工业大学。A/B两轮入试。","tags":["情報","筆記","面接","英語必要"]},
     {"name":"筑波大学 システム情報工学研究群","majors":["情報理工","知能機能システム","エンパワーメント情報学"],"degree":"修士","jlpt":"N2以上","english":"TOEIC/TOEFL/IELTS","exam":"書類+面接(筆記なしの場合も)","deadlines":{"8月選考出願":"2026-07-09~22","8月試験":"2026-08-19~21","1-2月選考出願":"2026-11-30~12-10","1-2月試験":"2027-01-26~28"},"notes":"8月+1-2月两轮。英語スコア必須。","tags":["情報","書類選考","面接","英語必要","筆記なし可能"]},
@@ -42,7 +32,7 @@ SCHOOLS = [
     {"name":"中央大学 理工学研究科","majors":["情報工学","電気電子情報通信工学","数学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記(数学+専門)+面接","deadlines":{"夏季出願":"2026年7月","夏季試験":"2026年9月","冬季出願":"2027年1月","冬季試験":"2027年2月"},"notes":"2026年学部再編。後楽園キャンパス。","tags":["情報","筆記","面接","英語必要"]},
     {"name":"法政大学 情報科学研究科","majors":["情報科学","システム工学","応用情報技術"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"書類+面接","deadlines":{"秋季出願":"2026年8月","秋季試験":"2026年9~10月","春季出願":"2027年1月","春季試験":"2027年2月"},"notes":"小金井キャンパス。独立研究科。産学連携盛ん。面接重視の選抜有。","tags":["情報","書類選考","面接","産学連携"]},
 
-    # ── New 18 schools (Component 2) ──
+    # -- New 18 schools (Component 2) --
     {"name":"庆应义塾大学 理工学研究科","majors":["情報工学","電子工学","機械工学","物理情報工学","応用化学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC必須","exam":"筆記+面接","deadlines":{"一般出願":"2026年8月","一般試験":"2026年10月","冬出願":"2026年12月","冬試験":"2027年2月"},"notes":"日吉/矢上キャンパス。情報工学専攻含む5専攻。事前連絡推奨。","tags":["情報","電子","機械","筆記","面接","英語必要","私立"]},
     {"name":"东京理科大学 理工学研究科","majors":["情報科学","電気工学","機械工学","建築学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"A方式出願":"2026年8月","A方式試験":"2026年9月","B方式出願":"2026年12月","B方式試験":"2027年2月"},"notes":"野田キャンパス。A方式(推薦)とB方式(一般)の2回。","tags":["情報","電気","機械","筆記","面接","英語必要","私立"]},
     {"name":"电气通信大学 情报理工学研究科","majors":["情報学","通信工学","電子工学","情報システム学","知能機械工学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"夏季出願":"2026年6月","夏季試験":"2026年7~8月","冬季出願":"2026年11月","冬季試験":"2027年1~2月"},"notes":"調布。情報理工学研究科。国立。情報・通信分野に特化。","tags":["情報","通信","電子","筆記","面接","英語必要","国立"]},
@@ -58,21 +48,31 @@ SCHOOLS = [
     {"name":"奈良先端科学技术大学院大学 情报科学研究科","majors":["情報科学","人工智能","データサイエンス","ロボティクス"],"degree":"修士","jlpt":"N2以上(日本語コース)","english":"TOEFL/TOEIC(英語コース)","exam":"書類+面接","deadlines":{"出願":"2026年6月","試験":"2026年7月","追加出願":"2026年11月","追加試験":"2026年12月"},"notes":"奈良先端大。英語のみのコース有。研究重視。教授内諾必須。","tags":["情報","AI","データ","ロボティクス","書類選考","面接","英語必要","国立","教授内諾必須"]},
     {"name":"立命馆大学 情报理工学研究科","majors":["情報理工","電子工学","知能情報学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"I期出願":"2026年6月","I期試験":"2026年7月","II期出願":"2026年11月","II期試験":"2026年12月"},"notes":"びわこ・くさつキャンパス。情報理工学研究科。年2回入試。","tags":["情報","電子","AI","筆記","面接","英語必要","私立"]},
     {"name":"同志社大学 理工学研究科","majors":["情報工学","機械工学","電気電子工学","化学工学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"A日程出願":"2026年8月","A日程試験":"2026年10月","B日程出願":"2027年1月","B日程試験":"2027年2月"},"notes":"京田辺キャンパス。情報工学専攻。事前連絡推奨。","tags":["情報","機械","電気","筆記","面接","英語必要","私立"]},
-    {"name":"熊本大学 自然科学研究科","majors":["情報工学","機械工学","電気電子工学","数理科学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"前期出願":"2026年6月","前期試験":"2026年8月","後期出願":"2026年11月","後期試験":"2027年1月"},"notes":"黒髪南キャンパス。自然科学研究科。情報電気電子工学専攻。","tags":["情報","機械","電気","筆記","面接","英語必要","国立"]},
+    {"name":"熊本大学 自然科学研究科","majors":["情報工学","機械工学","電気電子工学","数理科学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"前期出願":"2026年6月","前期試験":"2026年8月","後期出願":"2026年11月","後期試験":"2027年1月"},"notes":"黑髪南キャンパス。自然科学研究科。情報電気電子工学専攻。","tags":["情報","機械","電気","筆記","面接","英語必要","国立"]},
     {"name":"新泻大学 自然科学研究科","majors":["情報工学","電子電気工学","機械工学","応用化学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"前期出願":"2026年6月","前期試験":"2026年8月","後期出願":"2026年12月","後期試験":"2027年2月"},"notes":"五十嵐キャンパス。自然科学研究科。情報工学専攻。","tags":["情報","電子","機械","筆記","面接","英語必要","国立"]},
     {"name":"长崎大学 工学研究科","majors":["情報工学","電子工学","機械工学","電気システム工学"],"degree":"修士","jlpt":"N2以上","english":"TOEFL/TOEIC","exam":"筆記+面接","deadlines":{"前期出願":"2026年6月","前期試験":"2026年8月","後期出願":"2026年12月","後期試験":"2027年2月"},"notes":"文教キャンパス。工学研究科。情報・電子・機械の3専攻。","tags":["情報","電子","機械","筆記","面接","英語必要","国立"]},
 ]
 
-print(f"Seeding {len(SCHOOLS)} schools...")
+table = supabase_admin.table("schools")
+
+print(f"Processing {len(SCHOOLS)} schools...")
+inserted, updated = 0, 0
 for s in SCHOOLS:
     try:
         row = {"name":s["name"],"majors":s.get("majors",[]),"degree":s.get("degree","修士"),
                "jlpt":s.get("jlpt",""),"english":s.get("english",""),"exam":s.get("exam",""),
                "deadlines":s.get("deadlines",{}),"notes":s.get("notes",""),"tags":s.get("tags",[])}
-        supabase_admin.table("schools").upsert(row, on_conflict="name").execute()
+        # Check if school already exists by name (avoids needing UNIQUE constraint)
+        existing = table.select("id").eq("name", s["name"]).execute()
+        if existing.data and len(existing.data) > 0:
+            table.update(row).eq("name", s["name"]).execute()
+            updated += 1
+        else:
+            table.insert(row).execute()
+            inserted += 1
         print(f"  OK: {s['name']}")
     except Exception as e:
         print(f"  FAIL: {s['name']} - {e}")
 
-res = supabase_admin.table("schools").select("count", count="exact").execute()
-print(f"\nDone. {res.count} schools in DB.")
+res = table.select("count", count="exact").execute()
+print(f"\nDone. {res.count} schools in DB. (inserted={inserted}, updated={updated})")

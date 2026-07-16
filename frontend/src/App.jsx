@@ -987,10 +987,10 @@ export default function App() {
                   const trackedSchools = (stage?.applications || []).map(a => a.school);
                   const alreadyTracked = trackedSchools.includes(s.name);
                   return (
-                <Card key={i}>
+                <Card key={i} data-testid="school-card">
 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-800">{s.name}</h3>
+                    <h3 className="text-sm font-semibold text-gray-800 school-name">{s.name}</h3>
                     <Button onClick={async () => {
                       if (alreadyTracked) return;
                       try {
@@ -1005,9 +1005,14 @@ export default function App() {
                       {alreadyTracked ? '已追踪' : '追踪'}
                     </Button>
                   </div>
-                  <div className="flex flex-wrap gap-1 mb-2">
+                  <div className="flex flex-wrap gap-1 mb-2 school-majors">
                     {s.majors?.map(m => (
                       <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2 school-tags">
+                    {s.tags?.map(t => (
+                      <span key={t} className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">{t}</span>
                     ))}
                   </div>
                   <div className="text-xs text-gray-400 space-y-0.5 mb-2">
