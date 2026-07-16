@@ -12,7 +12,9 @@ import CalendarView from '@/components/CalendarView';
 import DashboardView from '@/components/DashboardView';
 import OutreachDraft from '@/components/OutreachDraft';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Same-origin by default: FastAPI (local) and nginx (prod) both serve the SPA and /v1 API
+// on one domain. VITE_API_URL is only for running the SPA on a different host (e.g. vite dev :5173).
+const API = import.meta.env.VITE_API_URL || '';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 

@@ -12,7 +12,9 @@ export default function DashboardView({ greeting, applications, profile, loading
     );
   }
 
-  const { message, has_reminders, profile_completeness, next_actions, counts, when: whenArr, structural_risk, gates } = greeting;
+  const { message, has_reminders, profile_completeness, next_actions, when: whenArr, structural_risk, gates } = greeting;
+  // Defensive: an older backend build may omit counts — never let the whole app white-screen over it
+  const counts = greeting.counts || { total_apps: 0, overdue_profs: 0, upcoming_deadlines: 0 };
   const pc = profile_completeness || { filled: 0, total: 6, percentage: 0 };
 
   // Empty profile — guide card
