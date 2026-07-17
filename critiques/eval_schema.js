@@ -111,7 +111,7 @@ function result(criterion, pass, actual) {
                 fs.toLowerCase().includes('toefl') || fs.toLowerCase().includes('toeic')) hasEnglishGap = true;
           }
         }
-        if (r.level === 'warning' || r.level === 'reject' || r.verdict === 'warning' || r.verdict === 'reject') hasWarning = true;
+        if (r.status === 'warning' || r.status === 'reject' || r.level === 'warning' || r.level === 'reject' || r.verdict === 'warning' || r.verdict === 'reject') hasWarning = true;
       }
     }
     result('C2: English gaps shown for English-requiring schools', hasEnglishGap, hasEnglishGap ? 'found' : 'none');

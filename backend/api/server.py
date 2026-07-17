@@ -632,42 +632,21 @@ JSON:"""
 
 
 # ── School catalog loaded from Supabase at startup ──
-def _parse_deadlines(dl):
-    """Handle deadlines stored as JSON string, native dict (old), or array (new)."""
-    if isinstance(dl, str):
-        try:
-            parsed = json.loads(dl)
-        except (json.JSONDecodeError, TypeError):
-            return {}
-        return parsed if isinstance(parsed, list) else parsed
-    if isinstance(dl, list):
-        return dl
-    return dl or {}
-
 def _load_school_catalog() -> list[dict]:
-    """Load school catalog from Supabase. Returns empty list on failure."""
+    """Load school catalog from Supabase via _row_to_school for consistent V2 field handling."""
     try:
+        from demo.school_database import _row_to_school
         res = supabase.table("schools").select("*").order("id").execute()
         catalog = []
         for row in res.data:
-            catalog.append({
-                "name": row["name"],
-                "majors": row.get("majors", []),
-                "degree": row.get("degree", "修士"),
-                "jlpt": row.get("jlpt", ""),
-                "jlpt_min": row.get("jlpt_min", ""),
-                "english": row.get("english", ""),
-                "english_req": row.get("english_req", {"required": False}),
-                "gpa_min": row.get("gpa_min", 0.0),
-                "exam": row.get("exam", ""),
-                "deadlines": _parse_deadlines(row.get("deadlines", {})),
-                "notes": row.get("notes", ""),
-                "tags": row.get("tags", []),
-                "website": row.get("website", ""),
-                "source": row.get("source", ""),
-                "verified": row.get("verified", False),
-                "updated_at": row.get("updated_at", ""),
-            })
+            school_obj = _row_to_school(row)
+            if school_obj:
+                d = school_obj.model_dump()
+                # Preserve extra fields not in School model but useful for frontend
+                for extra in ("website", "jlpt", "english"):
+                    if extra in row:
+                        d[extra] = row.get(extra, "")
+                catalog.append(d)
         return catalog
     except Exception as e:
         logger.warning(f"Failed to load school catalog from Supabase: {e}")

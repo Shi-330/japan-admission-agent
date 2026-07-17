@@ -3,6 +3,7 @@
 School 改为 Pydantic BaseModel，字段与 schools 表新 schema 一一对应。
 """
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field
@@ -33,6 +34,23 @@ class School(BaseModel):
     source: str = "manual"                       # official / manual / crawled / imported
     verified: bool = False
     updated_at: str = ""
+
+
+def _to_iso_date(s: str) -> str | None:
+    """Convert date string to YYYY-MM-DD. Returns None on failure."""
+    if not s:
+        return None
+    s = s.strip().replace("年", "-").replace("月", "-").replace("日", "").replace("/", "-").replace(".", "-")
+    if s.count("-") < 1:
+        return None
+    parts = s.split("-")
+    try:
+        y = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 and parts[1] else 1
+        d = int(parts[2]) if len(parts) > 2 and parts[2] else 1
+        return f"{y:04d}-{m:02d}-{d:02d}"
+    except (ValueError, IndexError):
+        return None
 
 
 def _row_to_school(row: dict) -> Optional[School]:
@@ -82,18 +100,85 @@ def _row_to_school(row: dict) -> Optional[School]:
 
         # Handle old-format deadlines dict -> structured array
         # e.g. {"出願期間":"2026-12-10 ~ 2027-01-09","試験日":"2027年2月"}
-        # -> [{"name":"出願期間","raw":"2026-12-10 ~ 2027-01-09"}, ...]
+        # -> [{"name":"出願期間","start":"2026-12-10","end":"2027-01-09"}, ...]
         if isinstance(filtered.get("deadlines"), dict):
-            filtered["deadlines"] = [
-                {"name": k, "raw": v} for k, v in filtered["deadlines"].items()
-                if isinstance(v, str)
-            ]
+            new_dls = []
+            for k, v in filtered["deadlines"].items():
+                if not isinstance(v, str) or not v.strip():
+                    continue
+                v = v.strip()
+                entry = {"name": k}
+                # Detect range: YYYY-MM-DD ~ YYYY-MM-DD
+                range_m = re.match(
+                    r'(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})?\s*[~～]\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})',
+                    v
+                )
+                if range_m:
+                    start_raw = range_m.group(1) or range_m.group(2)
+                    end_raw = range_m.group(2)
+                    start_iso = _to_iso_date(start_raw)
+                    end_iso = _to_iso_date(end_raw)
+                    if start_iso and end_iso:
+                        entry["start"] = start_iso
+                        entry["end"] = end_iso
+                        new_dls.append(entry)
+                        continue
+                # Detect single date: YYYY-MM-DD or YYYY年M月D日
+                single_m = re.match(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', v)
+                if single_m:
+                    entry["date"] = f"{int(single_m.group(1)):04d}-{int(single_m.group(2)):02d}-{int(single_m.group(3)):02d}"
+                    new_dls.append(entry)
+                    continue
+                # Fallback: keep raw
+                entry["raw"] = v
+                new_dls.append(entry)
+            filtered["deadlines"] = new_dls
 
         if isinstance(filtered.get("english_req"), str):
             try:
                 filtered["english_req"] = json.loads(filtered["english_req"])
             except (json.JSONDecodeError, TypeError):
                 filtered["english_req"] = {"required": False}
+
+        # ── Old -> new field fallback (when DB has not been migrated) ──
+        # jlpt (text) -> jlpt_min
+        if not filtered.get("jlpt_min"):
+            raw_jlpt = row.get("jlpt", "") or ""
+            m = re.search(r'N[1-5]', str(raw_jlpt))
+            if m:
+                filtered["jlpt_min"] = m.group(0)
+
+        # english (text) -> english_req
+        if not filtered.get("english_req", {}).get("required"):
+            raw_english = row.get("english", "") or ""
+            if raw_english:
+                text = str(raw_english).strip()
+                optional_keywords = ["推奨", "不强制", "不強制", "任意", "不要", "建议"]
+                if not any(kw in text for kw in optional_keywords):
+                    exam_types = {"TOEFL": r'TOEFL|托福', "TOEIC": r'TOEIC|托业|托業', "IELTS": r'IELTS|雅思'}
+                    found = []
+                    for ex_name, ex_pat in exam_types.items():
+                        if re.search(ex_pat, text, re.IGNORECASE):
+                            num_m = re.search(
+                                r'(?:' + ex_pat + r')[\s\S]{0,10}?(\d{2,3})', text, re.IGNORECASE
+                            )
+                            found.append((ex_name, int(num_m.group(1)) if num_m else 0))
+                    if found:
+                        best = max(found, key=lambda x: x[1])
+                        req = {"type": best[0], "required": True}
+                        if best[1] > 0:
+                            req["min"] = best[1]
+                        filtered["english_req"] = req
+                    elif re.search(r'TOEFL|TOEIC|IELTS|英語', text, re.IGNORECASE):
+                        filtered["english_req"] = {"type": "any", "required": True}
+
+        # gpa (numeric) -> gpa_min
+        row_gpa = row.get("gpa")
+        if filtered.get("gpa_min", 0.0) == 0.0 and row_gpa:
+            try:
+                filtered["gpa_min"] = float(row_gpa)
+            except (ValueError, TypeError):
+                pass
 
         # Warn about missing required fields
         if not filtered.get("name"):
