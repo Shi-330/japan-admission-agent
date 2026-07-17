@@ -21,6 +21,7 @@ from agent.intent_layer import IntentLayerEngine, is_light_greeting, is_short_qu
 from model.factory import chat_model
 from utils.supabase_client import supabase
 from utils.logger_handler import logger
+from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
@@ -131,13 +132,14 @@ async def match_schools_endpoint(body: MatchRequest, user_id: str = Depends(get_
     target = body.target_major or profile.target_major
     sp = StudentProfile(
         jlpt_level=profile.jlpt_level,
-        eju_score=int(profile.eju_score),
         gpa=float(profile.gpa),
         target_major=target,
         english_score=profile.english_score,
         undergraduate_school=profile.undergraduate_school,
     )
     matches = match_schools(sp)
+    if not matches:
+        raise HTTPException(status_code=503, detail="学校数据加载失败，无法执行匹配")
     # Run extraction after match
     orchestrator.finish_turn(
         user_id, profile,
@@ -155,7 +157,6 @@ async def match_schools_endpoint(body: MatchRequest, user_id: str = Depends(get_
                 "deadlines": m.deadlines,
                 "exam_info": m.exam_info,
                 "notes": m.notes,
-                "capacity": m.capacity,
             }
             for m in matches
         ]
@@ -295,14 +296,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             if intent == "match":
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
                 sp = StudentProfile(
-                    jlpt_level=profile.jlpt_level, eju_score=int(profile.eju_score),
+                    jlpt_level=profile.jlpt_level,
                     gpa=float(profile.gpa), target_major=profile.target_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
                 )
                 matches = match_schools(sp)
                 if not matches:
-                    yield f"data: {json.dumps({'content': '匹配引擎暂无数据，去广场手动筛选吧', 'is_status': False, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'content': '学校数据加载失败，无法执行匹配。去广场手动筛选吧。', 'is_status': False, 'done': False})}\n\n"
                 else:
                     nl = "\n"
                     for m in matches:
@@ -858,33 +859,21 @@ JSON:"""
 
 
 # ── School catalog loaded from Supabase at startup ──
-def _parse_deadlines(dl):
-    """Handle deadlines stored as JSON string or native dict."""
-    if isinstance(dl, str):
-        try: return json.loads(dl)
-        except (json.JSONDecodeError, TypeError): return {}
-    return dl or {}
-
 def _load_school_catalog() -> list[dict]:
-    """Load school catalog from Supabase. Returns empty list on failure."""
+    """Load school catalog from Supabase via _row_to_school for consistent V2 field handling."""
     try:
+        from demo.school_database import _row_to_school
         res = supabase.table("schools").select("*").order("id").execute()
         catalog = []
         for row in res.data:
-            catalog.append({
-                "name": row["name"],
-                "majors": row.get("majors", []),
-                "degree": row.get("degree", "修士"),
-                "jlpt": row.get("jlpt", ""),
-                "english": row.get("english", ""),
-                "exam": row.get("exam", ""),
-                "deadlines": _parse_deadlines(row.get("deadlines", {})),
-                "notes": row.get("notes", ""),
-                "tags": row.get("tags", []),
-                "website": row.get("website", ""),
-                "source": row.get("source", ""),
-                "updated_at": row.get("updated_at", ""),
-            })
+            school_obj = _row_to_school(row)
+            if school_obj:
+                d = school_obj.model_dump()
+                # Preserve extra fields not in School model but useful for frontend
+                for extra in ("website", "jlpt", "english"):
+                    if extra in row:
+                        d[extra] = row.get(extra, "")
+                catalog.append(d)
         return catalog
     except Exception as e:
         logger.warning(f"Failed to load school catalog from Supabase: {e}")
@@ -896,41 +885,12 @@ SCHOOL_CATALOG = _load_school_catalog()
 intent_engine = IntentLayerEngine(SCHOOL_CATALOG)
 
 
-# ── CN→JP synonym map for instant search (no LLM needed for common terms) ──
-CN_JP_SYNONYMS = {
-    "计算机": ["情報工学", "コンピュータ科学", "情報理工"],
-    "人工智能": ["知能情報学", "人工知能", "AI"],
-    "电子": ["電気電子", "電子情報学"],
-    "机械": ["機械工学", "機械創造工学"],
-    "数学": ["数理工学", "数理情報学", "数学"],
-    "通信": ["情報通信", "通信情報システム"],
-    "网络": ["情報ネットワーク", "メディアネットワーク"],
-    "生命": ["生命人間情報科学", "バイオ情報工学"],
-    "数据": ["データ科学", "データサイエンス"],
-    "金融": ["社会情報学", "システム情報学"],
-    "信息": ["情報理工", "情報工学", "情報科学"],
-    "情报": ["情報理工", "情報工学", "情報科学"],
-}
-
 @app.get("/v1/schools")
 async def list_schools(major: str = ""):
-    """Browse available schools. Static CN→JP synonym map + LLM fallback."""
+    """Browse available schools. Uses cn2jp normalization (static map + LLM fallback)."""
     results = SCHOOL_CATALOG
     if major:
-        terms = [major]
-        # 1. Try static synonym map first (instant)
-        for cn, jp_list in CN_JP_SYNONYMS.items():
-            if cn in major:
-                terms.extend(jp_list)
-        # 2. If no synonym match, fall back to LLM
-        if len(terms) == 1:
-            try:
-                prompt = f"将以下中文搜索词转换为日语汉字（用于搜索日本大学专业）。返回2-3个最可能的日语写法，以逗号分隔。只返回转换结果，不要解释。\n\n中文：{major}"
-                jp_text = chat_model.invoke(prompt).content.strip()
-                terms.extend([t.strip() for t in jp_text.split(",") if t.strip()])
-            except Exception:
-                pass
-
+        terms = cn2jp_normalize(major, chat_model=chat_model)
         results = [s for s in results if any(
             t in s.get("name", "") or
             any(t in m for m in s.get("majors", [])) or
@@ -947,13 +907,15 @@ class ApplicationUpsert(BaseModel):
     stage: Optional[str] = None
     needs_contact: Optional[bool] = None
     professors: Optional[List[Dict[str, Any]]] = None
-    deadlines: Optional[Dict[str, str]] = None
+    deadlines: Optional[Any] = None     # Dict[str, str] (old) or list[dict] (new)
+    official_deadlines: Optional[Any] = None  # School deadlines passed from plaza
     notes: Optional[str] = None
 
 @app.post("/v1/applications")
 async def upsert_application(body: ApplicationUpsert, user_id: str = Depends(get_user_id)):
     """Add or update a school application entry. Partial update: only provided fields change."""
     profile = profile_mgr.get_profile(user_id)
+    # 部分更新：exclude_none 保证未提供的字段不覆盖已有值（official_deadlines 提供时随 model_dump 透传）
     kwargs = body.model_dump(exclude={"school", "major"}, exclude_none=True)
     profile.upsert_application(body.school, body.major or "", **kwargs)
     profile_mgr.save_profile(user_id, profile)

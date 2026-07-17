@@ -1,9 +1,9 @@
 """
 三层升学顾问 Demo
 
-1. 匹配引擎（确定性规则）→ 筛出可报/差多少/不能报
-2. RAG 检索（语义搜索）→ 从私塾知识库找内部经验
-3. LLM 合成（流式输出）→ 把结果编成人话
+1. 匹配引擎（确定性规则）-> 筛出可报/差多少/不能报
+2. RAG 检索（语义搜索）-> 从私塾知识库找内部经验
+3. LLM 合成（流式输出）-> 把结果编成人话
 
 运行：python -m demo.run_demo
 """
@@ -27,10 +27,10 @@ def run(profile: StudentProfile, rag_query: str = None):
     print("[ 日本升学顾问 Demo")
     print("=" * 60)
 
-    # ── 第一层：匹配引擎 ──
+    # First layer: matching engine
     print(f"\n{'─' * 40}")
-    print(f"[ 学生画像")
-    print(f"   JLPT: {profile.jlpt_level}  |  EJU: {profile.eju_score}  |  GPA: {profile.gpa}")
+    print("[ 学生画像")
+    print(f"   JLPT: {profile.jlpt_level}  |  GPA: {profile.gpa}")
     print(f"   目标: {profile.target_major}  |  英语: {profile.english_score or '无'}")
     print(f"   出身校: {profile.undergraduate_school or '未知'}")
 
@@ -40,18 +40,17 @@ def run(profile: StudentProfile, rag_query: str = None):
     matches = match_schools(profile)
 
     if not matches:
-        print("  未找到匹配的院校。请检查目标专业。")
+        print("  未找到匹配的院校。请检查目标专业或学校数据。")
         return
 
     for m in matches:
         print(f"\n  {STATUS_LABELS[m.status]}  {m.school_name}")
         for g in m.gaps:
             icon = "[O]" if g.met else "[X]"
-            print(f"     {icon} {g.field}: 要求 {g.required} → 你 {g.current}")
+            print(f"     {icon} {g.field}: 要求 {g.required} -> 你 {g.current}")
         print(f"     - 考试: {m.exam_info}")
         print(f"     [ 截止: {m.deadlines}")
         print(f"     > 内部: {m.notes}")
-        print(f"     - 定员: {m.capacity}")
 
     print(f"\n{'─' * 40}")
     print("[ 时间线")
@@ -59,7 +58,7 @@ def run(profile: StudentProfile, rag_query: str = None):
     for event in generate_timeline(matches):
         print(f"  {event}")
 
-    # ── 第二层：RAG ──
+    # Second layer: RAG
     ctx = ""
     if rag_query:
         print(f"\n{'─' * 40}")
@@ -74,14 +73,14 @@ def run(profile: StudentProfile, rag_query: str = None):
             ctx = ""
             print(f"  RAG 不可用，跳过: {e}")
 
-        # ── 第三层：LLM 合成 ──
+        # Third layer: LLM synthesis
         print(f"\n{'─' * 40}")
         print("[ 第三层：LLM 合成回答")
         print(f"{'─' * 40}")
         prompt = f"""你是一位日本升学顾问。请根据以下信息，给这位学生一个简洁的建议。
 
 【学生条件】
-JLPT {profile.jlpt_level}, EJU {profile.eju_score}, GPA {profile.gpa}
+JLPT {profile.jlpt_level}, GPA {profile.gpa}
 目标：{profile.target_major}
 英语：{profile.english_score or "无"}
 
@@ -101,19 +100,18 @@ JLPT {profile.jlpt_level}, EJU {profile.eju_score}, GPA {profile.gpa}
             print(f"(LLM 不可用: {e})")
 
     print(f"\n{'=' * 60}")
-    print("Demo 结束。三层分工：匹配引擎筛学校 → RAG 找经验 → LLM 说人话")
+    print("Demo 结束。三层分工：匹配引擎筛学校 -> RAG 找经验 -> LLM 说人话")
     print("=" * 60)
 
 
 if __name__ == "__main__":
-    # 示例学生：中上水平，目标经济学
+    # 示例学生：中上水平，目标 情报理工
     student = StudentProfile(
         jlpt_level="N2",
-        eju_score=280,
         gpa=3.2,
-        target_major="经济学",
+        target_major="情報理工",
         english_score="TOEFL 80",
         undergraduate_school="上海外国语大学",
     )
 
-    run(student, rag_query="早稻田大学 经济学研究科 面试 经验 研究计划书")
+    run(student, rag_query="早稻田大学 情报理工 面试 经验 研究计划书")

@@ -685,30 +685,53 @@ export default function App() {
                       )}
 
                       {/* Official deadlines — locked, non-deletable */}
-                      {(app.official_deadlines && Object.keys(app.official_deadlines).length > 0) && (
+                      {(app.official_deadlines && (Array.isArray(app.official_deadlines) ? app.official_deadlines.length > 0 : Object.keys(app.official_deadlines).length > 0)) && (
                         <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
-                          {Object.entries(app.official_deadlines).map(([k, v], j) => (
-                            <span key={j} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border"
-                              title="官方截止日（不可编辑）">
-                              <span className="text-[10px]">🔒</span> {k}: {v}
-                            </span>
-                          ))}
+                          {Array.isArray(app.official_deadlines) ? (
+                            app.official_deadlines.map((item, j) => (
+                              <span key={j} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border"
+                                title="官方截止日（不可编辑）">
+                                <span className="text-[10px]">[锁]</span> {item.name}: {item.date || (item.start ? `${item.start.slice(0,10)}~${item.end ? item.end.slice(0,10) : ''}` : item.raw || '')}
+                              </span>
+                            ))
+                          ) : (
+                            Object.entries(app.official_deadlines).map(([k, v], j) => (
+                              <span key={j} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border"
+                                title="官方截止日（不可编辑）">
+                                <span className="text-[10px]">[锁]</span> {k}: {v}
+                              </span>
+                            ))
+                          )}
                         </div>
                       )}
                       {/* User-added deadlines — clickable to delete */}
-                      {(app.deadlines && Object.keys(app.deadlines).length > 0) && (
+                      {(app.deadlines && (Array.isArray(app.deadlines) ? app.deadlines.length > 0 : Object.keys(app.deadlines).length > 0)) && (
                         <div className="text-xs text-muted-foreground mb-1 flex flex-wrap gap-1">
-                          {Object.entries(app.deadlines).map(([k, v], j) => (
-                            <span key={j} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted border border-border cursor-pointer hover:bg-accent"
-                              onClick={() => {
-                                const dl = { ...app.deadlines };
-                                delete dl[k];
-                                updateApplication(app.school, { deadlines: dl });
-                              }} title="点击删除">
-                              {k}: {v}
-                              <span className="text-muted-foreground/50">&times;</span>
-                            </span>
-                          ))}
+                          {Array.isArray(app.deadlines) ? (
+                            app.deadlines.map((item, j) => (
+                              <span key={j} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted border border-border cursor-pointer hover:bg-accent"
+                                onClick={() => {
+                                  const dl = [...app.deadlines];
+                                  dl.splice(j, 1);
+                                  updateApplication(app.school, { deadlines: dl });
+                                }} title="点击删除">
+                                {item.name}: {item.date || (item.start ? `${item.start.slice(0,10)}~${item.end ? item.end.slice(0,10) : ''}` : item.raw || '')}
+                                <span className="text-muted-foreground/50">&times;</span>
+                              </span>
+                            ))
+                          ) : (
+                            Object.entries(app.deadlines).map(([k, v], j) => (
+                              <span key={j} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted border border-border cursor-pointer hover:bg-accent"
+                                onClick={() => {
+                                  const dl = { ...app.deadlines };
+                                  delete dl[k];
+                                  updateApplication(app.school, { deadlines: dl });
+                                }} title="点击删除">
+                                {k}: {v}
+                                <span className="text-muted-foreground/50">&times;</span>
+                              </span>
+                            ))
+                          )}
                         </div>
                       )}
                       {/* Notes — click to edit */}
@@ -1064,14 +1087,23 @@ export default function App() {
                     ))}
                   </div>
                   <div className="text-xs text-gray-400 space-y-0.5 mb-2">
-                    <div>JLPT: {s.jlpt} | 英语: {s.english} | 考试: {s.exam}</div>
+                    <div>JLPT: {s.jlpt_min || s.jlpt || '不要求'} | 英语: {s.english_req ? (s.english_req.required ? (s.english_req.min ? s.english_req.type+' '+s.english_req.min : s.english_req.type || '必要') : '不要求') : s.english || '-'} | 考试: {s.exam}</div>
                   </div>
                   <details className="text-xs">
                     <summary className="text-gray-400 cursor-pointer">截止日期</summary>
                     <div className="mt-1 space-y-0.5 text-gray-500">
-                      {Object.entries(s.deadlines || {}).map(([k, v]) => (
-                        <div key={k} className="flex justify-between"><span>{k}</span><span>{v}</span></div>
-                      ))}
+                      {Array.isArray(s.deadlines) ? (
+                        s.deadlines.map((item, idx) => (
+                          <div key={idx} className="flex justify-between">
+                            <span>{item.name}</span>
+                            <span>{item.date || (item.start && item.end ? `${item.start.slice(0,10)} ~ ${item.end.slice(0,10)}` : item.raw || '')}</span>
+                          </div>
+                        ))
+                      ) : (
+                        Object.entries(s.deadlines || {}).map(([k, v]) => (
+                          <div key={k} className="flex justify-between"><span>{k}</span><span>{v}</span></div>
+                        ))
+                      )}
                     </div>
                   </details>
                   {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
