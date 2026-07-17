@@ -62,6 +62,11 @@ def _row_to_school(row: dict) -> Optional[School]:
     也需要反序列化。
     """
     try:
+        # 生产兼容：结构化 deadlines 存在 deadlines_v2 新列（老列保留 dict 供生产老代码用）。
+        # 新代码优先读 deadlines_v2，缺失时回退老列（老文本格式由下方 fallback 解析）。
+        if row.get("deadlines_v2"):
+            row = {**row, "deadlines": row["deadlines_v2"]}
+
         # Filter to only known model fields, fill missing with defaults
         known_fields = set(School.model_fields.keys())
         filtered = {k: v for k, v in row.items() if k in known_fields}

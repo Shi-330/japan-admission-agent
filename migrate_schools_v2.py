@@ -22,9 +22,16 @@ load_dotenv()
 # ── Ensure we can import sibling modules ──
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utils.supabase_client import supabase
 from utils.logger_handler import logger
 from demo.school_database import School, TABLE
+
+# 写库必须用 service key：anon key 会被 RLS 静默拦截（update 0 行且不报错）
+from supabase.client import create_client
+_service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+if not _service_key:
+    print("ERROR: SUPABASE_SERVICE_KEY not found — 迁移需要写权限")
+    sys.exit(1)
+supabase = create_client(os.environ.get("SUPABASE_URL"), _service_key)
 
 # ── Helpers ──
 
@@ -201,17 +208,17 @@ def migrate():
     for row in rows:
         name = row.get("name", "?")
         try:
-            deadlines_raw = row.get("deadlines", {})
-
-            # 如果 deadlines 已经是数组，跳过转换（幂等）
-            if isinstance(deadlines_raw, list):
+            # 生产兼容：结构化数组写入 deadlines_v2 新列，老 deadlines dict 列原样保留
+            # （生产老代码继续读老列；新代码优先读 deadlines_v2）
+            if row.get("deadlines_v2"):
                 stats["skipped_already"] += 1
-                # 但仍需要校验通过 School Pydantic
                 try:
                     School(**row)
                 except Exception as ve:
                     logger.warning(f"校验失败 {name}: {ve}")
                 continue
+
+            deadlines_raw = row.get("deadlines", {})
 
             # 转换 deadline 格式
             new_deadlines = _parse_deadlines_dict_to_list(deadlines_raw)
@@ -233,29 +240,33 @@ def migrate():
             # 转换 english
             english_req = _extract_english_req(row.get("english", ""))
 
-            # 构造更新数据
+            # 构造更新数据 —— 注意：不碰老 deadlines 列，结构化数组进 deadlines_v2
             updated = {
                 "name": name,
-                "deadlines": new_deadlines,
+                "deadlines_v2": new_deadlines,
                 "jlpt_min": jlpt_min,
                 "gpa_min": row.get("gpa_min", row.get("gpa", 0.0)) or 0.0,
                 "english_req": english_req,
-                "source": row.get("source", row.get("source", "imported")),
-                "verified": row.get("verified", row.get("verified", False)),
+                "source": row.get("source") or "imported",
+                "verified": row.get("verified") or False,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
-            # 校验
+            # 校验（School 模型按 deadlines 字段校验，这里用转换结果代入）
             try:
-                School(**updated)
+                School(**{**row, **updated, "deadlines": new_deadlines})
             except Exception as ve:
                 logger.warning(f"校验失败后跳过 {name}: {ve}")
                 stats["errors"] += 1
                 stats["skipped_rows"].append(name)
                 continue
 
-            # 更新到 DB
-            supabase.table(TABLE).upsert(updated, on_conflict="name").execute()
+            # 更新到 DB —— schools.name 无 UNIQUE 约束，upsert(on_conflict) 会 42P10，
+            # 这里按主键 id 精确 update（行已存在，纯字段更新）
+            updated.pop("name", None)
+            upd_res = supabase.table(TABLE).update(updated).eq("id", row["id"]).execute()
+            if not upd_res.data:
+                raise RuntimeError("update 影响 0 行（检查 RLS / service key）")
             stats["converted"] += 1
             logger.info(f"已转换: {name}")
 

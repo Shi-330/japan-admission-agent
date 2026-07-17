@@ -11,3 +11,5 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS english_req jsonb DEFAULT '{"requir
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS source text DEFAULT 'manual';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS verified bool DEFAULT false;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+-- 结构化 deadlines 走新列：老 deadlines dict 列原样保留，生产老代码不受影响
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS deadlines_v2 jsonb DEFAULT NULL;
