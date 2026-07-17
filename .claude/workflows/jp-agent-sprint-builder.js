@@ -110,15 +110,15 @@ for (const sprint of sprints) {
     // ── Evaluate: serve the WORKTREE code, never the long-running :8000 server ──
     phase('Evaluate');
     const evalResult = await agent(
-      `You are evaluating the build in the worktree at ${worktree}. Steps:
-      1. Start the app FROM THE WORKTREE (this is critical — :8000 runs old code and must not be tested):
-         Set-Location ${worktree}; then start in background and record the PID. Start it in a VISIBLE console window (default Start-Process behavior, do NOT use -WindowStyle Hidden) — the user wants to see the eval server running:
-         Start-Process -FilePath "${VENV_PY}" -ArgumentList "-m","uvicorn","backend.api.server:app","--port","${EVAL_PORT}" -PassThru
-         Poll ${EVAL_URL}/health until it returns healthy (max 30s). If it never comes up, report score 0 with the startup error as the failure.
-      2. Read ${SPEC} for acceptance criteria.
-      3. Follow .claude/workflows/evaluator.md — use ONLY Playwright/Browser against ${EVAL_URL}, NEVER read code.
-      4. Write ${REPO}/${critiquePath} with pass/fail for each criterion and a numerical score. Score format: "Score: X/100".
-      5. ALWAYS Stop-Process the uvicorn you started before finishing, even on failure.
+      `You are evaluating the build in the worktree at ${worktree}. Follow .claude/workflows/evaluator.md EXACTLY — its HARD RULES section exists because violations broke two previous sprints. Steps:
+      1. Port check: if anything listens on ${EVAL_PORT} (Get-NetTCPConnection -LocalPort ${EVAL_PORT} -State Listen), it is a stale leftover — Stop-Process it before starting.
+      2. Start the app FROM THE WORKTREE in a VISIBLE window (never -WindowStyle Hidden, never a background shell — the user watches this window):
+         Start-Process -FilePath "${VENV_PY}" -ArgumentList "-m","uvicorn","backend.api.server:app","--port","${EVAL_PORT}" -WorkingDirectory "${worktree}" -PassThru
+         Record the PID. Poll ${EVAL_URL}/health until healthy (max 45s; startup loads the school catalog). If it never comes up, report score 0 with the startup error and still do step 6.
+      3. Read ${SPEC} for acceptance criteria.
+      4. Write ONE consolidated eval script and RUN IT FROM THE MAIN REPO (node_modules lives there; the worktree has NONE — require('playwright') fails there): Set-Location ${REPO}; node critiques/<eval-script>.cjs — targeting ${EVAL_URL}. Login ONLY via require('./critiques/eval_helpers.cjs').getAuthedPage('${EVAL_URL}') — never hand-roll a login flow.
+      5. Write ${REPO}/${critiquePath} with pass/fail for each criterion and a numerical score. Score format: "Score: X/100".
+      6. ALWAYS (even on failure): Stop-Process the uvicorn PID, then VERIFY the port is free — Get-NetTCPConnection -LocalPort ${EVAL_PORT} -State Listen must return NOTHING; if a listener remains, kill that owning PID too. Report "port ${EVAL_PORT} freed" in your final summary.
       ${SAFETY}`,
       { label: `eval-r${retry}`, schema: {
         type: 'object',
