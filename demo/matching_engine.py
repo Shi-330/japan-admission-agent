@@ -1,32 +1,34 @@
 """
-确定性院校匹配引擎。
+确定性院校匹配引擎 V2.
 
-输入：学生画像（JLPT、EJU、GPA、目标专业、英语成绩）
+输入：学生画像（JLPT、GPA、目标专业、英语成绩）
 输出：每所学校的三档分类（可报考 / 条件不足 / 差距较大）+ 差距详情
 
 不使用 LLM。所有判断基于结构化规则。
+不使用 EJU（修士匹配不适用）。
 """
-
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import List, Optional
-from .school_data import SCHOOLS, JLPT_RANK
+from utils.logger_handler import logger
+
+# JLPT rank ordering for comparison
+JLPT_RANK = {"N5": 1, "N4": 2, "N3": 3, "N2": 4, "N1": 5}
 
 
 @dataclass
 class StudentProfile:
-    jlpt_level: str      # "N1" / "N2" / "N3" / ...
-    eju_score: int        # 留考总分
-    gpa: float            # 4.0 制
-    target_major: str     # "经济学" / "社会学" / ...
-    english_score: str = ""      # "TOEFL 80" / "TOEIC 750" / ...
+    jlpt_level: str           # "N1" / "N2" / "N3" / "无"
+    gpa: float                 # 4.0 制（0=未填写）
+    target_major: str          # "情报理工" / "计算机" / ...
+    english_score: str = ""    # "TOEFL 80" / "TOEIC 750" / ...
     undergraduate_school: str = ""
 
 
 @dataclass
 class GapDetail:
-    field: str            # "JLPT" / "EJU" / "GPA" / "英语"
+    field: str                 # "JLPT" / "GPA" / "英语"
     required: str
     current: str
     met: bool
@@ -37,118 +39,184 @@ STATUS_LABELS = {"match": "[可报考]", "warning": "[条件不足]", "reject": 
 @dataclass
 class MatchResult:
     school_name: str
-    status: str           # "match" / "warning" / "reject" (label = STATUS_LABELS[status])
+    status: str                # "match" / "warning" / "reject"
     gaps: List[GapDetail] = field(default_factory=list)
-    deadlines: dict = field(default_factory=dict)
+    deadlines: list = field(default_factory=list)   # structured deadline array
     exam_info: str = ""
     notes: str = ""
-    capacity: str = ""
 
 
-def _jlpt_met(required: str, actual: str) -> bool:
-    """N1 > N2 > N3, 高级别覆盖低级别"""
-    req_rank = JLPT_RANK.get(required, 0)
-    act_rank = JLPT_RANK.get(actual, 0)
-    return act_rank >= req_rank
+def _jlpt_rank(level: str) -> int:
+    """Convert JLPT level string to numeric rank. Unknown = 0."""
+    return JLPT_RANK.get(level.strip().upper(), 0)
 
 
-def _english_met(required_note: str, actual: str) -> bool:
-    """简单解析英语成绩。粗匹配，可扩展。"""
-    # 学校不强制要求 → 直接通过
-    if "不强制" in required_note or "建议" in required_note:
-        return True
-    # 学校要求英语但学生没成绩
-    if not actual or actual == "无":
-        return False
-    # 尝试提取分数做数值比较
-    req_match = re.search(r'(\d+)', required_note)
-    act_match = re.search(r'(\d+)', actual)
-    if req_match and act_match:
-        return int(act_match.group(1)) >= int(req_match.group(1))
-    return True  # 无法解析时不阻断
+def _jlpt_met(required: str, actual: str) -> tuple[bool, int]:
+    """Check JLPT requirement. Returns (met, gap_levels).
+    N1 > N2 > N3, higher rank covers lower.
+    If required is empty, requirement is waived.
+    """
+    if not required:
+        return True, 0
+    req_rank = _jlpt_rank(required)
+    act_rank = _jlpt_rank(actual)
+    return act_rank >= req_rank, req_rank - act_rank
+
+
+def _parse_english_score(raw: str) -> dict:
+    """Parse student's english_score string into {type, score}.
+    Returns {} if unparseable.
+    """
+    if not raw or raw in ("无", "未参加", "未提供"):
+        return {}
+    raw = raw.strip().upper()
+    for exam in ("TOEFL", "TOEIC", "IELTS", "托福", "托业", "雅思"):
+        if exam in raw:
+            nums = re.findall(r'\d+', raw)
+            return {"type": exam, "score": int(nums[0]) if nums else 0}
+    return {}
+
+
+def _english_met(english_req: dict, actual: str) -> tuple[bool, str]:
+    """Check English requirement against student's actual score.
+
+    english_req: {"required": false} → always pass
+                 {"type": "any", "required": true} → pass if student has any score
+                 {"type": "TOEFL", "min": 80, "required": true} → numeric comparison
+    Returns (met, detail_string)
+    """
+    if not english_req or not english_req.get("required", False):
+        return True, "不要求"
+
+    # Student has no score
+    student = _parse_english_score(actual)
+    if not student:
+        return False, "无英语成绩"
+
+    req_type = english_req.get("type", "")
+
+    # "any" means any English test score is acceptable
+    if req_type == "any" or not req_type:
+        return True, f"有成绩: {actual}"
+
+    # Specific exam type with optional minimum
+    req_min = english_req.get("min", 0)
+    student_score = student.get("score", 0)
+
+    if req_min > 0 and student_score > 0:
+        return student_score >= req_min, f"{actual} (要求 {req_type} {req_min})"
+
+    # Has required exam type, no minimum specified
+    if student.get("type") and req_type in ("TOEFL", "TOEIC", "IELTS", "托福", "托业", "雅思"):
+        return True, f"有成绩: {actual}"
+
+    return False, f"缺少 {req_type}"
 
 
 def _schools_from_db() -> list[dict]:
-    """Try loading schools from Supabase, fall back to hardcoded."""
+    """Load schools from Supabase. Returns empty list on failure (no fallback)."""
     try:
-        from .school_database import get_all_schools, School
+        from .school_database import get_all_schools
         db_schools = get_all_schools()
         if db_schools:
-            return [
-                {"name": s.name, "jlpt_min": s.jlpt_min, "eju_min": s.eju_min,
-                 "eju_subjects": s.eju_subjects.split(",") if s.eju_subjects else [],
-                 "gpa_min": s.gpa_min, "english_note": s.english_note,
-                 "deadlines": {"4月入学": s.deadline_april, "9月入学": s.deadline_september},
-                 "exam": s.exam, "capacity": s.capacity, "notes": s.notes}
-                for s in db_schools
-            ]
-    except Exception:
-        pass
-    return SCHOOLS  # fallback to hardcoded
+            return [s.model_dump() for s in db_schools]
+    except Exception as e:
+        logger.warning(f"从数据库加载学校失败: {e}")
+    return []
 
 
 def match_schools(profile: StudentProfile) -> List[MatchResult]:
-    """对全部学校做匹配，优先读 Supabase 数据库，fallback 到硬编码。"""
+    """对全部学校做匹配。读 Supabase 数据库，无 fallback。"""
     results = []
     schools = _schools_from_db()
+
+    if not schools:
+        logger.warning("学校数据加载失败，无法执行匹配")
+        return results  # empty — caller should handle with error message
+
+    # Use cn2jp for major normalization
+    target_terms = [profile.target_major] if profile.target_major else []
+    if profile.target_major:
+        try:
+            from utils.cn2jp import normalize
+            target_terms = normalize(profile.target_major)
+        except Exception:
+            pass
+
     for school in schools:
-        if profile.target_major not in school["name"]:
-            continue  # 专业不匹配，跳过
+        # Professional filter: term must hit majors, name, or tags
+        if profile.target_major and target_terms:
+            haystack = " ".join([
+                school.get("name", ""),
+                " ".join(school.get("majors", [])),
+                " ".join(school.get("tags", [])),
+            ]).lower()
+            if not any(t.lower() in haystack for t in target_terms):
+                continue
 
         gaps = []
 
-        # JLPT 检查
-        jlpt_ok = _jlpt_met(school["jlpt_min"], profile.jlpt_level)
-        gaps.append(GapDetail("JLPT", school["jlpt_min"],
+        # ── JLPT check ──
+        jlpt_ok, jlpt_gap = _jlpt_met(school.get("jlpt_min", ""), profile.jlpt_level)
+        gaps.append(GapDetail("JLPT", school.get("jlpt_min", "无要求"),
                               profile.jlpt_level, jlpt_ok))
 
-        # EJU 检查
-        eju_ok = profile.eju_score >= school["eju_min"]
-        gaps.append(GapDetail("EJU", str(school["eju_min"]),
-                              str(profile.eju_score), eju_ok))
+        # ── GPA check ──
+        gpa_min = school.get("gpa_min", 0.0) or 0.0
+        if gpa_min == 0.0:
+            gpa_ok = True
+        elif profile.gpa == 0.0:
+            # Student GPA not filled — pass with warning note
+            gpa_ok = True
+        else:
+            gpa_ok = profile.gpa >= gpa_min
+        gaps.append(GapDetail("GPA", f"{gpa_min:.1f}" if gpa_min > 0 else "无要求",
+                              f"{profile.gpa:.2f}" if profile.gpa > 0 else "未填写", gpa_ok))
 
-        # GPA 检查
-        gpa_ok = profile.gpa >= school["gpa_min"]
-        gaps.append(GapDetail("GPA", str(school["gpa_min"]),
-                              str(profile.gpa), gpa_ok))
+        # ── English check ──
+        eng_ok, eng_detail = _english_met(school.get("english_req", {}), profile.english_score)
+        gaps.append(GapDetail("英语", eng_detail, profile.english_score or "无", eng_ok))
 
-        # 英语检查
-        eng_ok = _english_met(school["english_note"], profile.english_score)
-        gaps.append(GapDetail("英语", school["english_note"],
-                              profile.english_score or "无", eng_ok))
+        # ── Status determination ──
+        fails = [g for g in gaps if not g.met]
+        fail_count = len(fails)
 
-        # 综合判定
-        all_ok = all(g.met for g in gaps)
-        hard_fails = [g for g in gaps if not g.met and g.field in ("JLPT", "EJU")]
-        if all_ok:
+        if fail_count == 0:
             status = "match"
-        elif len(hard_fails) >= 2 or abs(profile.eju_score - school["eju_min"]) > 60:
+        elif fail_count >= 2:
             status = "reject"
         else:
-            status = "warning"
+            # Exactly 1 fail — check if it's JLPT with >=2 level gap
+            jlpt_fail = next((g for g in fails if g.field == "JLPT"), None)
+            if jlpt_fail:
+                _, gap_levels = _jlpt_met(school.get("jlpt_min", ""), profile.jlpt_level)
+                if gap_levels >= 2:
+                    status = "reject"
+                else:
+                    status = "warning"
+            else:
+                status = "warning"
 
         results.append(MatchResult(
             school_name=school["name"],
             status=status,
             gaps=gaps,
-            deadlines=school.get("deadlines", {}),
+            deadlines=school.get("deadlines", []),
             exam_info=school.get("exam", ""),
             notes=school.get("notes", ""),
-            capacity=school.get("capacity", ""),
         ))
 
-    # 排序：match > warning > reject
+    # Sort: match > warning > reject
     order = {"match": 0, "warning": 1, "reject": 2}
     results.sort(key=lambda r: order[r.status])
     return results
 
 
 def generate_timeline(matches: List[MatchResult]) -> List[str]:
-    """根据匹配结果生成倒推时间线"""
+    """根据匹配结果生成倒推时间线（消费结构化 deadlines 中有 date/start 的条目）。"""
     now = datetime.now()
     events = []
 
-    # 通用节点
     events.append(f"{now.strftime('%Y-%m')} | 现在：开始准备")
     events.append(f"{(now + timedelta(days=30)).strftime('%Y-%m')} | 确定目标院校（{len([m for m in matches if m.status != 'reject'])}所）")
     events.append(f"{(now + timedelta(days=60)).strftime('%Y-%m')} | 完成研究计划书初稿")
@@ -157,9 +225,16 @@ def generate_timeline(matches: List[MatchResult]) -> List[str]:
     for m in matches:
         if m.status == "reject":
             continue
-        # 从最早截止日倒推
-        for intake, deadline_str in m.deadlines.items():
-            events.append(f"{deadline_str} | {m.school_name} {intake} 出愿截止")
+        for dl in m.deadlines:
+            if not isinstance(dl, dict):
+                continue
+            dl_name = dl.get("name", "")
+            # Only use entries with date or start (parsable)
+            date_str = dl.get("date") or dl.get("start")
+            if date_str:
+                events.append(f"{date_str[:10]} | {m.school_name} {dl_name}")
+            elif dl.get("raw"):
+                events.append(f"{dl['raw']} | {m.school_name} {dl_name}")
 
     events.append("考前2个月 | 集中复习校内考科目")
     events.append("考前1周 | 确认出愿材料完整性")

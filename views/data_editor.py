@@ -1,13 +1,15 @@
 """
 学校数据管理页面：录入、编辑、验证真实院校数据。
-访问方式：在 app.py 中切换到此页面，或直接访问 /data_editor
+V2 schema: School Pydantic 模型，对应 schools 表新列。
 """
+import json
 import streamlit as st
 from demo.school_database import School, get_all_schools, upsert_school, get_schools_by_major
+from utils.logger_handler import logger
 
 
 def render_data_editor():
-    st.title("学校数据库管理")
+    st.title("学校数据库管理 V2")
     st.caption("这里的数据应该是真实的——手工录入或从官网采集，不是 LLM 编的。")
 
     tab1, tab2 = st.tabs(["录入/编辑", "浏览/搜索"])
@@ -28,67 +30,80 @@ def render_data_editor():
 
         with st.form("school_form"):
             name = st.text_input("学校+研究科全称 *", selected.name if selected else "",
-                                 placeholder="早稻田大学 经济学研究科")
+                                 placeholder="大阪大学 情報科学研究科")
             col1, col2 = st.columns(2)
             with col1:
                 degree = st.selectbox("学位", ["修士", "学部", "博士"],
                                       index=["修士","学部","博士"].index(selected.degree) if selected else 0)
-                jlpt_min = st.selectbox("JLPT最低要求", ["N1","N2","N3","N4","N5"],
-                                        index=["N1","N2","N3","N4","N5"].index(selected.jlpt_min) if selected else 1)
-                eju_min = st.number_input("EJU最低分", 0, 800,
-                                          selected.eju_min if selected else 0)
-                gpa_min = st.number_input("GPA最低要求", 0.0, 4.0,
+                jlpt_min = st.selectbox("JLPT最低要求", ["", "N1","N2","N3","N4","N5"],
+                                        index=["","N1","N2","N3","N4","N5"].index(selected.jlpt_min) if selected and selected.jlpt_min in ["","N1","N2","N3","N4","N5"] else 0)
+                gpa_min = st.number_input("GPA最低要求 (4.0制, 0=不设线)", 0.0, 4.0,
                                           selected.gpa_min if selected else 0.0, 0.1)
             with col2:
-                eju_subjects = st.text_input("EJU科目 (逗号分隔)",
-                                             selected.eju_subjects if selected else "",
-                                             placeholder="日语,数学1")
-                english_note = st.text_input("英语要求",
-                                             selected.english_note if selected else "",
-                                             placeholder="TOEFL iBT 80+")
-                target_major = st.text_input("专业关键词",
-                                             selected.target_major if selected else "",
-                                             placeholder="经济学/计算机/社会学")
+                # English requirement as JSON text
+                default_eng = json.dumps(selected.english_req, ensure_ascii=False) if selected else '{"required": false}'
+                eng_req_text = st.text_input("英语要求 (JSON)",
+                                             default_eng,
+                                             placeholder='{"type":"TOEFL","min":80,"required":true}')
+                majors_text = st.text_input("专业 (逗号分隔)",
+                                            ", ".join(selected.majors) if selected else "",
+                                            placeholder="情報工学, コンピュータ科学")
+                tags_text = st.text_input("标签 (逗号分隔)",
+                                          ", ".join(selected.tags) if selected else "",
+                                          placeholder="情報, 英語必要")
 
             st.divider()
             st.caption("出愿 & 考试信息")
-            col3, col4 = st.columns(2)
-            with col3:
-                deadline_april = st.text_input("4月入学 出愿截止",
-                                               selected.deadline_april if selected else "",
-                                               placeholder="前年10月")
-                deadline_september = st.text_input("9月入学 出愿截止",
-                                                   selected.deadline_september if selected else "",
-                                                   placeholder="当年4月")
-            with col4:
-                exam = st.text_area("考试形式",
-                                    selected.exam if selected else "",
-                                    placeholder="笔试（经济学基础）+ 面试")
-                capacity = st.text_input("外国人定员",
-                                         selected.capacity if selected else "",
-                                         placeholder="约15人/年")
 
-            notes = st.text_area("内部备注（私塾经验）",
+            # Deadlines as JSON text
+            default_dl = json.dumps(selected.deadlines, ensure_ascii=False) if selected else '[]'
+            deadlines_text = st.text_area("截止日期 (JSON数组)",
+                                           default_dl,
+                                           placeholder='[{"name":"出願","start":"2026-12-10","end":"2027-01-09"}]')
+            exam = st.text_area("考试形式",
+                                selected.exam if selected else "",
+                                placeholder="口頭試問+書類審査")
+
+            notes = st.text_area("内部备注",
                                  selected.notes if selected else "",
-                                 placeholder="重视研究计划书质量。田中教授偏好定量方向。")
+                                 placeholder="6専攻。受入教員の承認印必須。")
             source = st.selectbox("数据来源", ["manual", "official", "crawled", "imported"],
-                                  index=["manual","official","crawled","imported"].index(selected.source) if selected else 0)
+                                  index=["manual","official","crawled","imported"].index(selected.source) if selected and selected.source in ["manual","official","crawled","imported"] else 0)
             verified = st.checkbox("已验证", selected.verified if selected else False)
 
             if st.form_submit_button("保存到数据库"):
                 if not name.strip():
                     st.error("学校名称不能为空")
                 else:
-                    s = School(
-                        name=name, degree=degree, jlpt_min=jlpt_min, eju_min=eju_min,
-                        eju_subjects=eju_subjects, gpa_min=gpa_min,
-                        english_note=english_note,
-                        deadline_april=deadline_april,
-                        deadline_september=deadline_september,
-                        exam=exam, capacity=capacity, notes=notes,
-                        source=source, target_major=target_major, verified=verified,
-                    )
                     try:
+                        # Parse JSON fields
+                        try:
+                            english_req = json.loads(eng_req_text.strip()) if eng_req_text.strip() else {"required": False}
+                        except json.JSONDecodeError:
+                            st.error("英语要求 JSON 格式错误")
+                            return
+
+                        try:
+                            deadlines = json.loads(deadlines_text.strip()) if deadlines_text.strip() else []
+                            if not isinstance(deadlines, list):
+                                st.error("截止日期必须是 JSON 数组")
+                                return
+                        except json.JSONDecodeError:
+                            st.error("截止日期 JSON 格式错误")
+                            return
+
+                        majors = [m.strip() for m in majors_text.split(",") if m.strip()]
+                        tags = [t.strip() for t in tags_text.split(",") if t.strip()]
+
+                        s = School(
+                            name=name, degree=degree,
+                            majors=majors, tags=tags,
+                            exam=exam, notes=notes,
+                            jlpt_min=jlpt_min, gpa_min=gpa_min,
+                            english_req=english_req,
+                            deadlines=deadlines,
+                            source=source, verified=verified,
+                        )
                         upsert_school(s)
                         st.success(f"已保存: {name}")
                         st.rerun()
@@ -106,11 +121,21 @@ def render_data_editor():
         st.metric("总计", f"{len(schools)} 所学校")
 
         for s in schools:
-            with st.expander(f"{s.name}  [已验证] [{s.source}]" if s.verified else f"{s.name}  [未验证] [{s.source}]"):
-                st.write(f"学位: {s.degree} | JLPT: {s.jlpt_min} | EJU: {s.eju_min} | GPA: {s.gpa_min}")
-                st.write(f"英语: {s.english_note}")
-                st.write(f"4月截止: {s.deadline_april} | 9月截止: {s.deadline_september}")
-                st.write(f"考试: {s.exam} | 定员: {s.capacity}")
-                st.write(f"专业: {s.target_major}")
+            verified_badge = "[已验证]" if s.verified else "[未验证]"
+            with st.expander(f"{s.name}  {verified_badge} [{s.source}]"):
+                st.write(f"学位: {s.degree} | JLPT: {s.jlpt_min or '不要求'} | GPA: {s.gpa_min or '不设线'}")
+                eng = s.english_req or {}
+                st.write(f"英语: {eng.get('type', '不要求')}{' ' + str(eng.get('min', '')) if eng.get('min') else ''}{' (必需)' if eng.get('required') else ' (不强制)'}")
+                st.write(f"考试: {s.exam}")
+                if s.majors:
+                    st.write(f"专业: {', '.join(s.majors)}")
+                if s.tags:
+                    st.write(f"标签: {', '.join(s.tags)}")
+                if s.deadlines:
+                    st.write("截止日期:")
+                    for dl in s.deadlines:
+                        date_str = dl.get("date", "") or (f"{dl.get('start','')} ~ {dl.get('end','')}" if dl.get("start") else "")
+                        raw_str = dl.get("raw", "")
+                        st.write(f"  - {dl.get('name','')}: {date_str or raw_str}")
                 if s.notes:
                     st.info(s.notes)

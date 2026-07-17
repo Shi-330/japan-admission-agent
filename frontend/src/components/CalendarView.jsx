@@ -1,3 +1,11 @@
+/**
+ * CalendarView - displays application deadlines on a timeline.
+ *
+ * Handles both old dict format ({key: value}) and new array format
+ * ([{name, date, start, end, raw}]). Items with only 'raw' (unparseable
+ * dates) are skipped — they show in plaza details but not on the calendar.
+ */
+
 function getMonths() {
   const now = new Date()
   const months = []
@@ -7,8 +15,33 @@ function getMonths() {
   return months
 }
 
+function _parseDateString(s) {
+  /* Try to parse 'YYYY-MM-DD' or 'YYYY-M-D' into a Date, or null. */
+  if (!s) return null
+  const parts = String(s).split(/[-/]/)
+  if (parts.length < 3) return null
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+  return isNaN(d.getTime()) ? null : d
+}
+
 function getDeadlineDates(deadlines) {
   if (!deadlines) return []
+
+  if (Array.isArray(deadlines)) {
+    /* New format: [{name, date, start, end, raw}] */
+    const dots = []
+    for (const item of deadlines) {
+      const dateStr = item.date || item.start
+      if (!dateStr) continue /* skip raw-only items */
+      const d = _parseDateString(dateStr)
+      if (d) {
+        dots.push({ label: item.name, date: d, ds: dateStr.slice(0, 10) })
+      }
+    }
+    return dots
+  }
+
+  /* Old format: {key: value} */
   const dots = []
   Object.entries(deadlines).forEach(([k, v]) => {
     try {
@@ -17,7 +50,7 @@ function getDeadlineDates(deadlines) {
       if (!isNaN(d.getTime())) {
         dots.push({ label: k, date: d, ds })
       }
-    } catch {}
+    } catch { /* skip unparseable */ }
   })
   return dots
 }
@@ -63,7 +96,12 @@ export default function CalendarView({ applications }) {
                   </div>
                   {applications.map((app, ai) => {
                     const allDl = { ...(app.official_deadlines || {}), ...(app.deadlines || {}) };
-                    const dots = getDeadlineDates(allDl).filter(
+                    /* Merge array deadlines from official_deadlines if present */
+                    let mergedDeadlines = allDl;
+                    if (app.official_deadlines && Array.isArray(app.official_deadlines)) {
+                      mergedDeadlines = [...app.official_deadlines, ...(app.deadlines ? (Array.isArray(app.deadlines) ? app.deadlines : []) : [])];
+                    }
+                    const dots = getDeadlineDates(mergedDeadlines).filter(
                       d => d.date.getMonth() === m.getMonth() && d.date.getFullYear() === m.getFullYear()
                     )
                     return (
@@ -88,7 +126,7 @@ export default function CalendarView({ applications }) {
         <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-100 inline-block" /> 截止日</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted/50 border border-border inline-block" /> 本月</span>
-          <span className="text-muted-foreground/60">← 左右滑动 →</span>
+          <span className="text-muted-foreground/60">&larr; 左右滑动 &rarr;</span>
         </div>
       </div>
     </div>

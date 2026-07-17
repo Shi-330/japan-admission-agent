@@ -32,22 +32,27 @@ EXTRACT_PROMPT = """你是一个数据采集助手。请根据你对日本大学
 {{
   "name": "完整学校名 + 研究科名",
   "degree": "修士",
-  "jlpt_min": "N1 或 N2",
-  "eju_min": 数字(0表示不需要),
-  "eju_subjects": "科目1,科目2",
-  "gpa_min": 数字(如3.0),
-  "english_note": "TOEFL/TOEIC/IELTS 要求",
-  "deadline_april": "4月入学出愿截止(如'前年7月')",
-  "deadline_september": "9月入学出愿截止(无则留空)",
-  "exam": "考试形式",
-  "capacity": "外国人定员",
-  "notes": "补充说明",
-  "target_major": "专业关键词",
+  "majors": ["专业1", "专业2"],
+  "tags": ["标签1", "标签2"],
+  "exam": "考试形式（如：筆記+面接 / 口頭試問+書類審査）",
+  "notes": "补充说明（如：教授内諾必須、出願前に連絡必須 等）",
+  "jlpt_min": "N1 或 N2（不要求留空）",
+  "gpa_min": 数字(如3.0，0=不设线),
+  "english_req": {{"type": "TOEFL/TOEIC/IELTS", "min": 80, "required": true}},
+  "deadlines": [
+    {{"name": "出願期間", "start": "2026-12-10", "end": "2027-01-09"}},
+    {{"name": "試験日", "date": "2027-02-01"}},
+    {{"name": "合格発表", "raw": "2027年2月下旬"}}
+  ],
   "source_urls": ["官网入试要项URL1", "URL2"]
 }}
 
-请确保信息尽可能准确。source_urls 请提供真实的大学官网入试要项页面URL（你已知的）。
-不确定的字段填 "" 或 0，不要编造。"""
+重要说明：
+- deadlines 数组：单日用 "date"，区间用 "start"+ "end"，无法确定精确日期时用 "raw"
+- english_req.required=false 表示不要求英语
+- source_urls 请提供真实的大学官网入试要项页面URL
+
+请确保信息尽可能准确。不确定的字段填 "" 或 0，不要编造。"""
 
 SEARCH_PROMPT = """请列出日本大学中与「{major}」相关的5-8个知名研究科（修士课程），每行一个完整的"学校名 研究科名"。
 只输出学校名列表，不要其他内容。"""
@@ -117,7 +122,7 @@ def scrape_schools(school_names: list[str], output_file: str = OUTPUT_FILE) -> l
         json.dump(all_data, f, ensure_ascii=False, indent=2)
 
     print(f"\n完成！共 {len(all_data)} 所学校 → {output_file}")
-    print("请人工验证数据后，运行: python -m demo.school_database --import")
+    print("请人工验证后，使用 seed_schools_to_db.py 或 data_editor 导入 Supabase")
     return all_data
 
 

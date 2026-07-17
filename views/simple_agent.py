@@ -16,7 +16,7 @@ from agent.intent_layer import IntentLayerEngine, is_short_query
 def _get_profile():
     p = st.session_state.user_profile
     return StudentProfile(
-        jlpt_level=p.jlpt_level, eju_score=int(p.eju_score), gpa=float(p.gpa),
+        jlpt_level=p.jlpt_level, gpa=float(p.gpa),
         target_major=p.target_major, english_score=p.english_score,
         undergraduate_school=p.undergraduate_school,
     )
