@@ -2,6 +2,7 @@
 学校数据库：从 Supabase 读写学校数据。
 School 改为 Pydantic BaseModel，字段与 schools 表新 schema 一一对应。
 """
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field
@@ -35,16 +36,70 @@ class School(BaseModel):
 
 
 def _row_to_school(row: dict) -> Optional[School]:
-    """将一行 DB 数据解析为 School 对象。缺失字段用默认值并 warning。"""
+    """将一行 DB 数据解析为 School 对象。缺失字段用默认值并 warning。
+
+    Pydantic v2 拒绝 str/float/bool/list/dict 字段的 None 值，
+    因此需要预先将 DB 中可能为 Null 的字段转化为默认值。
+    JSONB 列 (deadlines, english_req) 在 Supabase 返回时可能为 str 而非 list/dict，
+    也需要反序列化。
+    """
     try:
         # Filter to only known model fields, fill missing with defaults
         known_fields = set(School.model_fields.keys())
         filtered = {k: v for k, v in row.items() if k in known_fields}
-        # Warn about missing critical fields
-        for f in ("name",):
-            if f not in filtered or not filtered[f]:
-                logger.warning(f"行解析跳过: 缺少必要字段 {f}, row={row.get('name', '?')}")
+
+        # Coerce None to defaults for all optional fields (Pydantic v2 strict)
+        for key in list(filtered.keys()):
+            val = filtered[key]
+            if val is not None:
+                continue
+            if key == "name":
+                # name is required; skip this row
+                logger.warning(f"行解析跳过: name 为 None, row={row.get('name', '?')}")
                 return None
+            # Map each optional field to its Pydantic default
+            filtered[key] = {
+                "degree": "修士",
+                "exam": "",
+                "notes": "",
+                "source": "manual",
+                "updated_at": "",
+                "jlpt_min": "",
+                "gpa_min": 0.0,
+                "verified": False,
+                "majors": [],
+                "tags": [],
+                "deadlines": [],
+                "english_req": {"required": False},
+            }.get(key, "")
+
+        # Handle JSONB columns that might be stored as JSON strings
+        if isinstance(filtered.get("deadlines"), str):
+            try:
+                filtered["deadlines"] = json.loads(filtered["deadlines"])
+            except (json.JSONDecodeError, TypeError):
+                filtered["deadlines"] = []
+
+        # Handle old-format deadlines dict -> structured array
+        # e.g. {"出願期間":"2026-12-10 ~ 2027-01-09","試験日":"2027年2月"}
+        # -> [{"name":"出願期間","raw":"2026-12-10 ~ 2027-01-09"}, ...]
+        if isinstance(filtered.get("deadlines"), dict):
+            filtered["deadlines"] = [
+                {"name": k, "raw": v} for k, v in filtered["deadlines"].items()
+                if isinstance(v, str)
+            ]
+
+        if isinstance(filtered.get("english_req"), str):
+            try:
+                filtered["english_req"] = json.loads(filtered["english_req"])
+            except (json.JSONDecodeError, TypeError):
+                filtered["english_req"] = {"required": False}
+
+        # Warn about missing required fields
+        if not filtered.get("name"):
+            logger.warning(f"行解析跳过: 缺少必要字段 name, row={row.get('name', '?')}")
+            return None
+
         return School(**filtered)
     except Exception as e:
         logger.warning(f"行解析失败: {row.get('name', '?')} - {e}")
