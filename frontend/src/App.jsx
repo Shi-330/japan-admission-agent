@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import CalendarView from '@/components/CalendarView';
 import DashboardView from '@/components/DashboardView';
 import OutreachDraft from '@/components/OutreachDraft';
+import ReminderBell from '@/components/ReminderBell';
+import ReminderDrawer from '@/components/ReminderDrawer';
 
 // Same-origin by default: FastAPI (local) and nginx (prod) both serve the SPA and /v1 API
 // on one domain. VITE_API_URL is only for running the SPA on a different host (e.g. vite dev :5173).
@@ -307,6 +309,42 @@ export default function App() {
   const [selectedProf, setSelectedProf] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inputOpen, setInputOpen] = useState(true);
+  // ── Reminder drawer state ──
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerData, setDrawerData] = useState({ reminders: [], loading: false, error: false, onRefresh: () => {} });
+  const reminderToastIds = useRef(new Set());
+
+  const handleNewReminders = useCallback((newItems) => {
+    for (const item of newItems) {
+      if (!reminderToastIds.current.has(item.id)) {
+        reminderToastIds.current.add(item.id);
+        toast(item.message, { duration: 5000 });
+      }
+    }
+  }, []);
+
+  const handleOpenDrawer = useCallback((data) => {
+    setDrawerData(data);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleDrawerClose = useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
+
+  const handleReminderAction = useCallback((reminder) => {
+    setDrawerOpen(false);
+    const action = reminder.action;
+    if (!action) return;
+    if (action.type === 'draft_outreach') {
+      // Open OutreachDraft dialog with pre-filled school/professor
+      setSelectedProf({ school: action.school, professorName: action.professor });
+    } else if (action.type === 'goto_calendar') {
+      setActiveTab('calendar');
+    } else if (action.type === 'open_profile') {
+      setShowProfile(true);
+    }
+  }, []);
   useEffect(() => {
     if (token) {
       apiCall('/v1/stage', token).then(setStage).catch(() => {});
@@ -925,20 +963,30 @@ export default function App() {
       <main className="flex-1 flex flex-col">
         {/* Tab bar */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="border-b border-border bg-card px-4">
-          <TabsList className="w-full justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
-            <TabsTrigger value="home" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
-              <LayoutGrid size={15} /> 首页
-            </TabsTrigger>
-            <TabsTrigger value="chat" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
-              <MessageCircle size={15} /> 对话
-            </TabsTrigger>
-            <TabsTrigger value="plaza" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
-              <LayoutGrid size={15} /> 广场
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
-              <Calendar size={15} /> 日历
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center">
+            <TabsList className="flex-1 justify-start gap-0 bg-transparent p-0 h-auto rounded-none">
+              <TabsTrigger value="home" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+                <LayoutGrid size={15} /> 首页
+              </TabsTrigger>
+              <TabsTrigger value="chat" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+                <MessageCircle size={15} /> 对话
+              </TabsTrigger>
+              <TabsTrigger value="plaza" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+                <LayoutGrid size={15} /> 广场
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+                <Calendar size={15} /> 日历
+              </TabsTrigger>
+            </TabsList>
+            <div className="shrink-0 flex items-center pr-1">
+              <ReminderBell
+                token={token}
+                activeTab={activeTab}
+                onOpenDrawer={handleOpenDrawer}
+                onNewReminders={handleNewReminders}
+              />
+            </div>
+          </div>
         </Tabs>
 
         <AnimatePresence mode="wait">
@@ -1178,6 +1226,18 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Reminder Drawer */}
+      <ReminderDrawer
+        open={drawerOpen}
+        onClose={handleDrawerClose}
+        reminders={drawerData.reminders}
+        loading={drawerData.loading}
+        error={drawerData.error}
+        onRefresh={drawerData.onRefresh}
+        token={token}
+        onAction={handleReminderAction}
+      />
 
       {/* Profile slide-out panel */}
       {showProfile && <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setShowProfile(false)}>

@@ -106,6 +106,10 @@ class OutreachRequest(BaseModel):
     school: str
     professor_name: str
 
+class AckRequest(BaseModel):
+    id: Optional[str] = None
+    all: Optional[bool] = None
+
 
 # ── Profile endpoints ──
 @app.get("/v1/profile")
@@ -183,7 +187,7 @@ async def root():
     return {
         "name": "Japan Admission Agent API",
         "docs": "/docs",
-        "endpoints": ["/health", "/v1/profile", "/v1/match", "/v1/rag", "/v1/chat", "/v1/stage", "/v1/applications"],
+        "endpoints": ["/health", "/v1/profile", "/v1/match", "/v1/rag", "/v1/chat", "/v1/stage", "/v1/applications", "/v1/reminders"],
     }
 
 
@@ -931,35 +935,158 @@ async def delete_application(school: str, user_id: str = Depends(get_user_id)):
     return {"ok": True, "school": school, "applications": profile.applications}
 
 
-def _collect_all_reminders(profile: UserProfile) -> list:
-    """Collect professor no-reply reminders across all applications."""
-    from agent.state_machine import check_reminders
+def _collect_all_reminders(profile: UserProfile) -> list[dict]:
+    """Collect all active reminders with structured format.
+
+    Each reminder: {id, type, school, professor?, message, days, severity, action, acknowledged}
+    Sorted: severity desc (high first), days asc within same severity.
+    """
     reminders = []
+    today = datetime.now().date()
+
     for app in profile.applications:
         school = app.get("school", "")
-        stage_id = app.get("stage", "preparing")
-        started = profile.field_sources.get(f"app_stage_{school}", {}).get("at")
-        stage_reminders = check_reminders(stage_id, started)
-        for r in stage_reminders:
-            reminders.append({"school": school, "message": r})
-        # Per-professor no-reply checks
+
+        # Per-professor no-reply checks (high severity)
         for prof in app.get("professors", []):
             status = prof.get("status", "")
             if status in ("sent", "no_reply"):
                 try:
                     sent_date = prof.get("date", "")
                     if sent_date:
-                        sent = datetime.fromisoformat(sent_date)
-                        elapsed = (datetime.now() - sent).days
-                        if elapsed >= 14 and status != "no_reply":
+                        sent = datetime.fromisoformat(sent_date).date()
+                        elapsed = (today - sent).days
+                        if elapsed >= 14:
+                            rid = f"prof_no_reply_{school}_{prof['name']}"
                             reminders.append({
+                                "id": rid,
+                                "type": "professor_no_reply",
                                 "school": school,
                                 "professor": prof["name"],
-                                "message": f"{prof['name']} {elapsed}天未回复，建议发跟进邮件或换教授"
+                                "message": f"{prof['name']} {elapsed}天未回复，建议发跟进邮件或换教授",
+                                "days": elapsed,
+                                "severity": "high",
+                                "action": {
+                                    "type": "draft_outreach",
+                                    "school": school,
+                                    "professor": prof["name"],
+                                    "hint": "换人或跟进"
+                                }
                             })
                 except (ValueError, TypeError):
                     pass
+
+        # Deadline reminders (approaching + expired, mutually exclusive)
+        for dl_name, dl_date_str in app.get("deadlines", {}).items():
+            try:
+                dl = datetime.fromisoformat(dl_date_str).date()
+                days_left = (dl - today).days
+                if days_left < 0:
+                    rid = f"deadline_expired_{school}_{dl_name}"
+                    reminders.append({
+                        "id": rid,
+                        "type": "deadline_expired",
+                        "school": school,
+                        "message": f"{dl_name} 已过期 {abs(days_left)} 天",
+                        "days": days_left,
+                        "severity": "high",
+                        "action": {"type": "goto_calendar"}
+                    })
+                elif days_left <= 14:
+                    rid = f"deadline_{school}_{dl_name}"
+                    severity = "high" if days_left <= 7 else "medium"
+                    reminders.append({
+                        "id": rid,
+                        "type": "deadline_approaching",
+                        "school": school,
+                        "message": f"{dl_name} 还剩 {days_left} 天",
+                        "days": days_left,
+                        "severity": severity,
+                        "action": {"type": "goto_calendar"}
+                    })
+            except (ValueError, TypeError):
+                pass
+
+    # Profile completeness check (< 50% triggers one reminder)
+    fields = {
+        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
+        "english": bool(profile.english_score and profile.english_score.strip()),
+        "gpa": profile.gpa_score > 0,
+        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
+        "major": profile.target_major and profile.target_major != "未设定",
+        "research": bool(profile.research_area and profile.research_area.strip()),
+    }
+    filled = sum(1 for v in fields.values() if v)
+    total = len(fields)
+    completeness_pct = round(filled / total * 100) if total > 0 else 0
+    if completeness_pct < 50:
+        reminders.append({
+            "id": "profile_incomplete",
+            "type": "profile_incomplete",
+            "school": "",
+            "message": f"学生档案仅完成 {completeness_pct}%，补全背景信息可获得更准的推荐",
+            "days": 0,
+            "severity": "medium",
+            "action": {"type": "open_profile"}
+        })
+
+    # Filter out dismissed reminders (24h expiry stored in profile.facts)
+    dismissed = profile.facts.get("dismissed_reminders", {})
+    now = datetime.now()
+    active_dismissals = {}
+    for rid, expiry_str in dismissed.items():
+        try:
+            expiry = datetime.fromisoformat(expiry_str)
+            if expiry > now:
+                active_dismissals[rid] = expiry_str
+        except (ValueError, TypeError):
+            pass
+
+    # Sort: high(0) > medium(1) > low(2), then by days ascending
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    reminders.sort(key=lambda r: (severity_order.get(r["severity"], 3), r["days"]))
+
+    # Mark acknowledged status
+    for r in reminders:
+        r["acknowledged"] = r["id"] in active_dismissals
+
     return reminders
+
+
+# ── Reminder endpoints ──
+@app.get("/v1/reminders")
+async def get_reminders(user_id: str = Depends(get_user_id)):
+    """Return all active reminders with action hints."""
+    profile = profile_mgr.get_profile(user_id)
+    reminders = _collect_all_reminders(profile)
+    return {"reminders": reminders, "total": len(reminders)}
+
+
+@app.post("/v1/reminders/ack")
+async def ack_reminder(body: AckRequest, user_id: str = Depends(get_user_id)):
+    """Acknowledge one or all reminders (24h dismiss, stored in profile.facts)."""
+    profile = profile_mgr.get_profile(user_id)
+    dismissed = profile.facts.get("dismissed_reminders", {})
+    expiry = (datetime.now() + timedelta(hours=24)).isoformat()
+
+    if body.all:
+        # Dismiss all currently visible reminders
+        all_reminders = _collect_all_reminders(profile)
+        count = 0
+        for r in all_reminders:
+            if not r["acknowledged"]:
+                dismissed[r["id"]] = expiry
+                count += 1
+        profile.facts["dismissed_reminders"] = dismissed
+        profile_mgr.save_profile(user_id, profile)
+        return {"ok": True, "count": count}
+    elif body.id:
+        dismissed[body.id] = expiry
+        profile.facts["dismissed_reminders"] = dismissed
+        profile_mgr.save_profile(user_id, profile)
+        return {"ok": True}
+    else:
+        raise HTTPException(400, "Provide 'id' or 'all: true'")
 
 
 @app.get("/health")

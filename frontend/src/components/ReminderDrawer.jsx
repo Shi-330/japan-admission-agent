@@ -1,0 +1,246 @@
+import { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Check, Bell, Calendar, User, Loader2, RefreshCw, FileText } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const API = import.meta.env.VITE_API_URL || '';
+
+const severityColors = {
+  high: 'bg-red-50 border-l-4 border-red-500',
+  medium: 'bg-amber-50 border-l-4 border-amber-400',
+  low: 'bg-gray-50 border-l-4 border-gray-300',
+};
+
+const severityIconColors = {
+  high: 'text-red-500',
+  medium: 'text-amber-500',
+  low: 'text-gray-400',
+};
+
+function typeIcon(type) {
+  switch (type) {
+    case 'professor_no_reply':
+      return <User size={14} />;
+    case 'deadline_approaching':
+    case 'deadline_expired':
+      return <Calendar size={14} />;
+    case 'profile_incomplete':
+      return <User size={14} />;
+    default:
+      return <Bell size={14} />;
+  }
+}
+
+export default function ReminderDrawer({
+  open, onClose, reminders, loading, error,
+  onRefresh, token, onAction, onNavigate
+}) {
+  const [ackLoading, setAckLoading] = useState(new Set());
+  const [ackAllLoading, setAckAllLoading] = useState(false);
+
+  const handleAck = useCallback(async (reminderId) => {
+    setAckLoading(prev => new Set(prev).add(reminderId));
+    try {
+      await fetch(`${API}/v1/reminders/ack`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id: reminderId }),
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.warn('Ack failed:', err);
+    } finally {
+      setAckLoading(prev => {
+        const next = new Set(prev);
+        next.delete(reminderId);
+        return next;
+      });
+    }
+  }, [token, onRefresh]);
+
+  const handleAckAll = useCallback(async () => {
+    setAckAllLoading(true);
+    try {
+      await fetch(`${API}/v1/reminders/ack`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ all: true }),
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.warn('Ack-all failed:', err);
+    } finally {
+      setAckAllLoading(false);
+    }
+  }, [token, onRefresh]);
+
+  const handleActionClick = useCallback((reminder) => {
+    if (onAction) {
+      onAction(reminder);
+    }
+  }, [onAction]);
+
+  const formatDays = (days) => {
+    if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+    return `${days} 天后`;
+  };
+
+  const unacknowledged = (reminders || []).filter(r => !r.acknowledged);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Overlay */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={onClose}
+          />
+
+          {/* Drawer */}
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="fixed right-0 top-0 h-full w-full max-w-sm bg-background shadow-xl z-50 flex flex-col"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+              <h3 className="text-base font-semibold">提醒</h3>
+              <div className="flex items-center gap-2">
+                {unacknowledged.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAckAll}
+                    disabled={ackAllLoading}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {ackAllLoading ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+                    全部已读
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
+                  <X size={16} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {loading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 size={20} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
+                  <p className="text-sm mb-2">加载失败，请稍后再试</p>
+                  <Button variant="outline" size="sm" onClick={onRefresh} className="text-xs">
+                    <RefreshCw size={12} className="mr-1" /> 重试
+                  </Button>
+                </div>
+              ) : unacknowledged.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">暂无提醒</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {unacknowledged.map((reminder) => {
+                    const isAckLoading = ackLoading.has(reminder.id);
+                    return (
+                      <div
+                        key={reminder.id}
+                        className={`${severityColors[reminder.severity] || 'bg-white border'} rounded p-3`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className={`mt-0.5 shrink-0 ${severityIconColors[reminder.severity] || 'text-gray-400'}`}>
+                            {typeIcon(reminder.type)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground mb-1">{reminder.message}</p>
+                            <span className={`text-xs font-medium ${
+                              reminder.days < 0 ? 'text-red-500' :
+                              reminder.days <= 7 ? 'text-red-500' :
+                              reminder.days <= 14 ? 'text-amber-500' :
+                              'text-gray-400'
+                            }`}>
+                              {formatDays(reminder.days)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Action button row */}
+                        {reminder.action && (
+                          <div className="mt-2 ml-6 mb-1">
+                            {reminder.action.type === 'draft_outreach' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                              >
+                                <FileText size={11} className="mr-1" />
+                                拟套磁信
+                              </Button>
+                            )}
+                            {reminder.action.type === 'goto_calendar' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                              >
+                                <Calendar size={11} className="mr-1" />
+                                去日历
+                              </Button>
+                            )}
+                            {reminder.action.type === 'open_profile' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                              >
+                                <User size={11} className="mr-1" />
+                                补全背景
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Ack buttons */}
+                        <div className="flex gap-1 mt-1 ml-6">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleAck(reminder.id); }}
+                            disabled={isAckLoading}
+                            className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                          >
+                            {isAckLoading ? <Loader2 size={10} className="animate-spin mr-1" /> : <Check size={10} className="mr-1" />}
+                            标记已读
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
