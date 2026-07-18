@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Check, Bell, Calendar, User, Loader2, RefreshCw, FileText } from 'lucide-react';
+import { X, Check, Bell, Calendar, User, Loader2, RefreshCw, FileText, ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -91,7 +91,10 @@ export default function ReminderDrawer({
     return `${days} 天后`;
   };
 
+  const [showRead, setShowRead] = useState(false);
+
   const unacknowledged = (reminders || []).filter(r => !r.acknowledged);
+  const acknowledged = (reminders || []).filter(r => r.acknowledged);
 
   return (
     <AnimatePresence>
@@ -150,91 +153,130 @@ export default function ReminderDrawer({
                     <RefreshCw size={12} className="mr-1" /> 重试
                   </Button>
                 </div>
-              ) : unacknowledged.length === 0 ? (
+              ) : unacknowledged.length === 0 && acknowledged.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-sm text-muted-foreground">暂无提醒</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {unacknowledged.map((reminder) => {
-                    const isAckLoading = ackLoading.has(reminder.id);
-                    return (
-                      <div
-                        key={reminder.id}
-                        className={`${severityColors[reminder.severity] || 'bg-white border'} rounded p-3`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className={`mt-0.5 shrink-0 ${severityIconColors[reminder.severity] || 'text-gray-400'}`}>
-                            {typeIcon(reminder.type)}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-foreground mb-1">{reminder.message}</p>
-                            <span className={`text-xs font-medium ${
-                              reminder.days < 0 ? 'text-red-500' :
-                              reminder.days <= 7 ? 'text-red-500' :
-                              reminder.days <= 14 ? 'text-amber-500' :
-                              'text-gray-400'
-                            }`}>
-                              {formatDays(reminder.days)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Action button row */}
-                        {reminder.action && (
-                          <div className="mt-2 ml-6 mb-1">
-                            {reminder.action.type === 'draft_outreach' && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
-                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
-                              >
-                                <FileText size={11} className="mr-1" />
-                                拟套磁信
-                              </Button>
-                            )}
-                            {reminder.action.type === 'goto_calendar' && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
-                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
-                              >
-                                <Calendar size={11} className="mr-1" />
-                                去日历
-                              </Button>
-                            )}
-                            {reminder.action.type === 'open_profile' && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
-                                className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
-                              >
-                                <User size={11} className="mr-1" />
-                                补全背景
-                              </Button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Ack buttons */}
-                        <div className="flex gap-1 mt-1 ml-6">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); handleAck(reminder.id); }}
-                            disabled={isAckLoading}
-                            className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                <div className="space-y-3">
+                  {/* Unread section */}
+                  {unacknowledged.length > 0 && (
+                    <div className="space-y-2">
+                      {unacknowledged.map((reminder) => {
+                        const isAckLoading = ackLoading.has(reminder.id);
+                        return (
+                          <div
+                            key={reminder.id}
+                            className={`${severityColors[reminder.severity] || 'bg-white border'} rounded p-3`}
                           >
-                            {isAckLoading ? <Loader2 size={10} className="animate-spin mr-1" /> : <Check size={10} className="mr-1" />}
-                            标记已读
-                          </Button>
+                            <div className="flex items-start gap-2">
+                              <span className={`mt-0.5 shrink-0 ${severityIconColors[reminder.severity] || 'text-gray-400'}`}>
+                                {typeIcon(reminder.type)}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-foreground mb-1">{reminder.message}</p>
+                                <span className={`text-xs font-medium ${
+                                  reminder.days < 0 ? 'text-red-500' :
+                                  reminder.days <= 7 ? 'text-red-500' :
+                                  reminder.days <= 14 ? 'text-amber-500' :
+                                  'text-gray-400'
+                                }`}>
+                                  {formatDays(reminder.days)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Action button row */}
+                            {reminder.action && (
+                              <div className="mt-2 ml-6 mb-1">
+                                {reminder.action.type === 'draft_outreach' && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                    className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                                  >
+                                    <FileText size={11} className="mr-1" />
+                                    拟套磁信
+                                  </Button>
+                                )}
+                                {reminder.action.type === 'goto_calendar' && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                    className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                                  >
+                                    <Calendar size={11} className="mr-1" />
+                                    去日历
+                                  </Button>
+                                )}
+                                {reminder.action.type === 'open_profile' && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
+                                    className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
+                                  >
+                                    <User size={11} className="mr-1" />
+                                    补全背景
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Ack buttons */}
+                            <div className="flex gap-1 mt-1 ml-6">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleAck(reminder.id); }}
+                                disabled={isAckLoading}
+                                className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                              >
+                                {isAckLoading ? <Loader2 size={10} className="animate-spin mr-1" /> : <Check size={10} className="mr-1" />}
+                                标记已读
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Read section (collapsible) */}
+                  {acknowledged.length > 0 && (
+                    <div>
+                      <button
+                        onClick={() => setShowRead(!showRead)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full py-1"
+                      >
+                        {showRead ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        <EyeOff size={12} className="ml-0.5" />
+                        <span>已读 ({acknowledged.length})</span>
+                      </button>
+                      {showRead && (
+                        <div className="space-y-1.5 mt-1">
+                          {acknowledged.map((reminder) => (
+                            <div
+                              key={reminder.id}
+                              className="bg-gray-50 border border-gray-100 rounded p-2.5 opacity-60"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="mt-0.5 shrink-0 text-gray-400">
+                                  {typeIcon(reminder.type)}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-gray-500 mb-0.5">{reminder.message}</p>
+                                  <span className="text-[10px] text-gray-400">{formatDays(reminder.days)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

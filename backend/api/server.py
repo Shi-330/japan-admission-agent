@@ -736,32 +736,41 @@ async def draft_outreach(body: OutreachRequest, user_id: str = Depends(get_user_
     profile = profile_mgr.get_profile(user_id)
     profile_str = profile_mgr.format_for_prompt(profile)
 
-    prompt = f"""你是日本留学套磁信写作助手。根据学生画像生成套磁信草稿。
+    prompt = f"""你是日本留学套磁信写作助手。根据学生画像生成套磁信草稿，需要高度个性化——充分利用学生已填写的背景信息，让草稿"补几个教授关键词就能发"。
 
 【学生画像】
 {profile_str}
 
 【目标学校】{body.school}
 【教授姓名】{body.professor_name} — 仅用于抬头称谓（如「{body.professor_name}先生」），不得用于事实断言。
+【学生研究方向】{profile.research_area or '未设定'}
+【学生本科背景】{profile.undergraduate_school or '未设定'} / {profile.target_major or '未设定'}
 
-请输出以下 JSON 格式，不要解释：
+请按以下结构生成套磁信（日文正文），输出 JSON 格式，不要解释：
 
+## 正文结构（日文 300-500 字）
+1. **自我介绍**：出身大学・学部、現在の専攻、日本語・英語能力（有数据的写，没有的跳过）
+2. **研究背景与动机**：结合学生的研究方向和经历（facts 中有项目/实习/论文的直接引用），自然过渡到为什么对该教授的研究感兴趣。学生已填的研究方向务必写进正文，教授的研究方向用占位符
+3. **志望理由**：为什么选这所学校这个教授（学校名可用，教授具体研究方向用占位符）
+4. **結び**：请求指导、询问是否接受研究生/修士、附上简历和研究计划书等
+
+## 硬性规则
+1. 正文只允许出现学生自报事实 + 通用日语套磁敬语 + 学校名
+2. 教授的研究方向・论文・业绩 → 用占位符（如[教授の研究分野]），绝不猜测
+3. 教授姓名仅用于抬头称谓，正文中不出现
+4. 学生有研究方向/经历的一定要写进正文，不要浪费已填的信息
+5. 学生未填的不要编造；缺信息就跳过或用通用表达
+
+## 输出格式
 {{
-  "subject": "邮件主题行（日文，可含大学名等）",
-  "body_ja": "套磁信正文（日文，用[xxx]占位符代替任何教授相关信息）",
-  "body_zh": "正文的中文翻译（同样用[xxx]占位符）",
+  "subject": "邮件主题（日文）",
+  "body_ja": "套磁信正文（日文，[xxx]为占位符）",
+  "body_zh": "正文中文翻译",
   "placeholders": [
-    {{"id": "kyouju_kenkyuu", "hint_ja": "教授の研究分野", "hint_zh": "教授的研究方向"}}
+    {{"id": "kyouju_kenkyuu", "hint_ja": "教授の研究分野", "hint_zh": "教授的研究方向"}},
+    {{"id": "kyouju_ronbun", "hint_ja": "教授の関連論文・業績", "hint_zh": "教授的相关论文或成果"}}
   ]
 }}
-
-硬性规则：
-1. 正文只允许出现学生自报事实（画像中的信息）和通用日语套磁敬语。
-2. 禁止输出任何具体教授事实（论文标题、研究成果、观点、获奖等），即使有数据也不碰。
-3. 教授相关信息（研究方向、论文、业绩等）一律用带方括号的占位符替代，如[教授の研究分野]。
-4. 正文必须包含基本套磁结构：自我介绍、志望动机、研究兴趣、请求指导。
-5. placeholders 的 id 只用字母和_，不加括号。hint_ja 和 hint_zh 是给用户的填空提示。
-6. professor_name 仅用于抬头称呼，不要将它填入任何占位符。
 
 JSON:"""
 
@@ -777,7 +786,54 @@ JSON:"""
     except json.JSONDecodeError:
         raise HTTPException(500, "LLM 返回格式异常")
 
+    # Auto-save to profile.facts[outreach_drafts] (cap 20 most recent)
+    try:
+        drafts = profile.facts.get("outreach_drafts", [])
+        draft_id = f"{body.school}_{body.professor_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        # Remove duplicate (same school + professor)
+        drafts = [d for d in drafts
+                  if not (d.get("school") == body.school and d.get("professor_name") == body.professor_name)]
+        drafts.insert(0, {
+            "id": draft_id,
+            "school": body.school,
+            "professor_name": body.professor_name,
+            "subject": result.get("subject", ""),
+            "body_ja": result.get("body_ja", ""),
+            "body_zh": result.get("body_zh", ""),
+            "placeholders": result.get("placeholders", []),
+            "created_at": datetime.now().isoformat(),
+        })
+        profile.facts["outreach_drafts"] = drafts[:20]
+        profile_mgr.save_profile(user_id, profile)
+        result["draft_id"] = draft_id
+    except Exception as e:
+        logger.warning(f"Failed to auto-save draft: {e}")
+        result["draft_id"] = None
     return result
+
+
+# ── Drafts endpoints ──
+@app.get("/v1/drafts")
+async def list_drafts(user_id: str = Depends(get_user_id)):
+    """List saved outreach drafts (max 20, newest first)."""
+    profile = profile_mgr.get_profile(user_id)
+    drafts = profile.facts.get("outreach_drafts", [])
+    return {"drafts": drafts, "total": len(drafts)}
+
+
+class DeleteDraftRequest(BaseModel):
+    draft_id: str
+
+
+@app.delete("/v1/drafts")
+async def delete_draft(body: DeleteDraftRequest, user_id: str = Depends(get_user_id)):
+    """Delete a saved draft by ID."""
+    profile = profile_mgr.get_profile(user_id)
+    drafts = profile.facts.get("outreach_drafts", [])
+    drafts = [d for d in drafts if d.get("id") != body.draft_id]
+    profile.facts["outreach_drafts"] = drafts
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True}
 
 
 # ── Doc fetch + LLM extraction ──
@@ -1056,10 +1112,16 @@ def _collect_all_reminders(profile: UserProfile) -> list[dict]:
 # ── Reminder endpoints ──
 @app.get("/v1/reminders")
 async def get_reminders(user_id: str = Depends(get_user_id)):
-    """Return all active reminders with action hints."""
+    """Return reminders split into unread/read groups. Read items persist 24h for review."""
     profile = profile_mgr.get_profile(user_id)
     reminders = _collect_all_reminders(profile)
-    return {"reminders": reminders, "total": len(reminders)}
+    unread = [r for r in reminders if not r.get("acknowledged")]
+    read = [r for r in reminders if r.get("acknowledged")]
+    return {
+        "unread": unread,
+        "read": read,
+        "total_unread": len(unread),
+    }
 
 
 @app.post("/v1/reminders/ack")

@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import CalendarView from '@/components/CalendarView';
 import DashboardView from '@/components/DashboardView';
+import DocumentsView from '@/components/DocumentsView';
 import OutreachDraft from '@/components/OutreachDraft';
 import ReminderBell from '@/components/ReminderBell';
 import ReminderDrawer from '@/components/ReminderDrawer';
@@ -977,6 +978,9 @@ export default function App() {
               <TabsTrigger value="calendar" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
                 <Calendar size={15} /> 日历
               </TabsTrigger>
+              <TabsTrigger value="documents" className="gap-2 text-sm data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none data-[state=active]:shadow-none border-b-2 border-transparent -mb-[2px]">
+                <FileText size={15} /> 文书
+              </TabsTrigger>
             </TabsList>
             <div className="shrink-0 flex items-center pr-1">
               <ReminderBell
@@ -1174,6 +1178,13 @@ export default function App() {
             </div>
           </div>
         </div>
+        ) : activeTab === 'documents' ? (
+        /* Documents view */
+        <DocumentsView
+          token={token}
+          onRegenerate={(prof) => setSelectedProf(prof)}
+          applications={stage?.applications}
+        />
         ) : (
         /* Calendar view */
         <CalendarView applications={stage?.applications} />

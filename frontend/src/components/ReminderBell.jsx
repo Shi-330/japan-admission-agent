@@ -22,15 +22,17 @@ export default function ReminderBell({ token, activeTab, onOpenDrawer, onNewRemi
       const data = await res.json();
       if (!mountedRef.current) return;
 
-      const items = data.reminders || [];
-      setReminders(items);
+      const unread = data.unread || [];
+      const read = data.read || [];
+      const allReminders = [...unread, ...read];
+      setReminders(allReminders);
       setLoading(false);
 
       // Check for new unacknowledged reminders (IDs not seen before)
-      const currentIds = new Set(items.filter(r => !r.acknowledged).map(r => r.id));
+      const currentIds = new Set(unread.map(r => r.id));
       const prevIds = prevIdsRef.current;
       if (prevIds.size > 0) {
-        const newItems = items.filter(r => !prevIds.has(r.id) && !r.acknowledged);
+        const newItems = unread.filter(r => !prevIds.has(r.id));
         if (newItems.length > 0 && onNewReminders) {
           onNewReminders(newItems);
         }
