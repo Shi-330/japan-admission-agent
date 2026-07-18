@@ -6,16 +6,58 @@ import { toast } from 'sonner';
 
 const API = import.meta.env.VITE_API_URL || '';
 
+// ── Sub-components ──
+
+/** Reusable label + copy button + scrollable text block for ja/zh body sections */
+function DraftBodySection({ label, copyLabel, content }) {
+  const copyText = (text, label) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('已复制 ' + label);
+    }).catch(() => {
+      toast.error('复制失败，请手动复制');
+    });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs font-medium text-muted-foreground">{label}</label>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => copyText(content, copyLabel)}
+          className="text-xs h-6 px-2 text-muted-foreground hover:text-foreground"
+        >
+          <Copy size={10} className="mr-1" /> 复制
+        </Button>
+      </div>
+      <div className="text-sm leading-relaxed whitespace-pre-wrap bg-card border border-border rounded p-2.5 max-h-60 overflow-y-auto">
+        {content || '(无内容)'}
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ──
+
+function formatDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const INITIAL_FORM = { show: false, school: '', prof: '', suggestions: [] };
+
 export default function DocumentsView({ token, onRegenerate, applications }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [deleting, setDeleting] = useState(new Set());
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [newSchool, setNewSchool] = useState('');
-  const [newProf, setNewProf] = useState('');
-  const [schoolSuggestions, setSchoolSuggestions] = useState([]);
+  const [form, setForm] = useState(INITIAL_FORM);
+
+  const resetForm = () => setForm(INITIAL_FORM);
 
   const fetchDrafts = useCallback(async () => {
     if (!token) return;
@@ -65,51 +107,33 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
     }
   };
 
-  const copyText = (text, label) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success('已复制 ' + label);
-    }).catch(() => {
-      toast.error('复制失败，请手动复制');
-    });
-  };
-
-  const formatDate = (isoStr) => {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
   const handleNewDraft = () => {
-    if (!newSchool.trim() || !newProf.trim()) return;
-    if (onRegenerate) {
-      onRegenerate({ school: newSchool.trim(), professorName: newProf.trim() });
-    }
-    setShowNewForm(false);
-    setNewSchool('');
-    setNewProf('');
-    setSchoolSuggestions([]);
+    const s = form.school.trim();
+    const p = form.prof.trim();
+    if (!s || !p) return;
+    onRegenerate?.({ school: s, professorName: p });
+    resetForm();
   };
 
   const handleSchoolInput = (value) => {
-    setNewSchool(value);
+    setForm(prev => ({ ...prev, school: value }));
     if (value && (applications || []).length > 0) {
       const suggestions = applications.filter(a =>
         a.school.toLowerCase().includes(value.toLowerCase())
       ).slice(0, 5);
-      setSchoolSuggestions(suggestions);
+      setForm(prev => ({ ...prev, suggestions }));
     } else {
-      setSchoolSuggestions([]);
+      setForm(prev => ({ ...prev, suggestions: [] }));
     }
   };
 
   const selectSchool = (school) => {
-    setNewSchool(school.school);
-    setSchoolSuggestions([]);
-    // Auto-fill professor if school has exactly one
-    if (school.professors?.length === 1) {
-      setNewProf(school.professors[0].name);
-    }
+    setForm(prev => ({
+      ...prev,
+      school: school.school,
+      suggestions: [],
+      prof: school.professors?.length === 1 ? school.professors[0].name : prev.prof,
+    }));
   };
 
   return (
@@ -121,7 +145,7 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
             <p className="text-sm text-gray-400">套磁信草稿存档，可查看、复制、重新生成</p>
           </div>
           <Button
-            onClick={() => setShowNewForm(!showNewForm)}
+            onClick={() => setForm(prev => ({ ...prev, show: !prev.show }))}
             className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-indigo-700"
           >
             <Plus size={14} className="mr-1" />
@@ -130,11 +154,11 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
         </div>
 
         {/* New draft form */}
-        {showNewForm && (
+        {form.show && (
           <div className="border border-indigo-200 rounded-lg bg-indigo-50/50 p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-indigo-800">生成新套磁信</span>
-              <button onClick={() => { setShowNewForm(false); setSchoolSuggestions([]); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
                 <X size={14} />
               </button>
             </div>
@@ -142,15 +166,15 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
               <div className="relative">
                 <label className="block text-xs text-gray-500 mb-1">学校</label>
                 <Input
-                  value={newSchool}
+                  value={form.school}
                   onChange={e => handleSchoolInput(e.target.value)}
                   placeholder="如：京都大学 情报理工"
                   className="w-full text-sm p-2 border rounded"
                   autoFocus
                 />
-                {schoolSuggestions.length > 0 && (
+                {form.suggestions.length > 0 && (
                   <div className="absolute z-10 top-full mt-0.5 w-full bg-white border border-border rounded shadow-lg max-h-40 overflow-y-auto">
-                    {schoolSuggestions.map((s, i) => (
+                    {form.suggestions.map((s, i) => (
                       <button
                         key={i}
                         onClick={() => selectSchool(s)}
@@ -170,8 +194,8 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">教授姓名</label>
                 <Input
-                  value={newProf}
-                  onChange={e => setNewProf(e.target.value)}
+                  value={form.prof}
+                  onChange={e => setForm(prev => ({ ...prev, prof: e.target.value }))}
                   placeholder="如：田中太郎"
                   className="w-full text-sm p-2 border rounded"
                   onKeyDown={e => { if (e.key === 'Enter') handleNewDraft(); }}
@@ -180,16 +204,12 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
               <div className="flex gap-2">
                 <Button
                   onClick={handleNewDraft}
-                  disabled={!newSchool.trim() || !newProf.trim()}
+                  disabled={!form.school.trim() || !form.prof.trim()}
                   className="text-xs px-4 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-30"
                 >
                   生成草稿
                 </Button>
-                <Button
-                  onClick={() => { setShowNewForm(false); setSchoolSuggestions([]); }}
-                  variant="outline"
-                  className="text-xs px-4 py-1.5 rounded"
-                >
+                <Button onClick={resetForm} variant="outline" className="text-xs px-4 py-1.5 rounded">
                   取消
                 </Button>
               </div>
@@ -244,11 +264,7 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          if (onRegenerate) {
-                            onRegenerate({ school: draft.school, professorName: draft.professor_name });
-                          }
-                        }}
+                        onClick={() => onRegenerate?.({ school: draft.school, professorName: draft.professor_name })}
                         className="text-xs text-muted-foreground hover:text-indigo-500 h-7 px-2"
                         title="重新生成"
                       >
@@ -271,41 +287,8 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
                   {/* Expanded content */}
                   {isExpanded && (
                     <div className="border-t border-border p-3 space-y-3 bg-muted/30">
-                      {/* Japanese body */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-xs font-medium text-muted-foreground">正文（日文）</label>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyText(draft.body_ja, '日文正文')}
-                            className="text-xs h-6 px-2 text-muted-foreground hover:text-foreground"
-                          >
-                            <Copy size={10} className="mr-1" /> 复制
-                          </Button>
-                        </div>
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap bg-card border border-border rounded p-2.5 max-h-60 overflow-y-auto">
-                          {draft.body_ja || '(无内容)'}
-                        </div>
-                      </div>
-
-                      {/* Chinese body */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-xs font-medium text-muted-foreground">中文翻译（参考）</label>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyText(draft.body_zh, '中文翻译')}
-                            className="text-xs h-6 px-2 text-muted-foreground hover:text-foreground"
-                          >
-                            <Copy size={10} className="mr-1" /> 复制
-                          </Button>
-                        </div>
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap bg-card border border-border rounded p-2.5 max-h-60 overflow-y-auto">
-                          {draft.body_zh || '(无内容)'}
-                        </div>
-                      </div>
+                      <DraftBodySection label="正文（日文）" copyLabel="日文正文" content={draft.body_ja} />
+                      <DraftBodySection label="中文翻译（参考）" copyLabel="中文翻译" content={draft.body_zh} />
 
                       {/* Placeholders */}
                       {draft.placeholders && draft.placeholders.length > 0 && (

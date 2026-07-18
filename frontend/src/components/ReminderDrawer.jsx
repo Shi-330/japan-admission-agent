@@ -31,6 +31,12 @@ function typeIcon(type) {
   }
 }
 
+const ACTION_CONFIG = {
+  draft_outreach: { Icon: FileText, label: '拟套磁信' },
+  goto_calendar: { Icon: Calendar, label: '去日历' },
+  open_profile:   { Icon: User, label: '补全背景' },
+};
+
 export default function ReminderDrawer({
   open, onClose, reminders, loading, error,
   onRefresh, token, onAction, onNavigate
@@ -187,43 +193,23 @@ export default function ReminderDrawer({
                             </div>
 
                             {/* Action button row */}
-                            {reminder.action && (
-                              <div className="mt-2 ml-6 mb-1">
-                                {reminder.action.type === 'draft_outreach' && (
+                            {reminder.action && ACTION_CONFIG[reminder.action.type] && (() => {
+                              const cfg = ACTION_CONFIG[reminder.action.type];
+                              const Icon = cfg.Icon;
+                              return (
+                                <div className="mt-2 ml-6 mb-1">
                                   <Button
                                     variant="default"
                                     size="sm"
                                     onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
                                     className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
                                   >
-                                    <FileText size={11} className="mr-1" />
-                                    拟套磁信
+                                    <Icon size={11} className="mr-1" />
+                                    {cfg.label}
                                   </Button>
-                                )}
-                                {reminder.action.type === 'goto_calendar' && (
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
-                                    className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
-                                  >
-                                    <Calendar size={11} className="mr-1" />
-                                    去日历
-                                  </Button>
-                                )}
-                                {reminder.action.type === 'open_profile' && (
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={(e) => { e.stopPropagation(); handleActionClick(reminder); }}
-                                    className="text-xs px-3 py-1 h-7 bg-primary text-primary-foreground hover:bg-indigo-700"
-                                  >
-                                    <User size={11} className="mr-1" />
-                                    补全背景
-                                  </Button>
-                                )}
-                              </div>
-                            )}
+                                </div>
+                              );
+                            })()}
 
                             {/* Ack buttons */}
                             <div className="flex gap-1 mt-1 ml-6">

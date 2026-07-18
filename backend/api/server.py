@@ -22,6 +22,9 @@ from model.factory import chat_model
 from utils.supabase_client import supabase
 from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
+
+# ── Constants ──
+OUTREACH_DRAFTS_KEY = "outreach_drafts"
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
@@ -786,10 +789,11 @@ JSON:"""
     except json.JSONDecodeError:
         raise HTTPException(500, "LLM 返回格式异常")
 
-    # Auto-save to profile.facts[outreach_drafts] (cap 20 most recent)
+    # Auto-save to profile.facts[OUTREACH_DRAFTS_KEY] (cap 20 most recent)
+    import uuid as _uuid
     try:
-        drafts = profile.facts.get("outreach_drafts", [])
-        draft_id = f"{body.school}_{body.professor_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        drafts = profile.facts.get(OUTREACH_DRAFTS_KEY, [])
+        draft_id = str(_uuid.uuid4())
         # Remove duplicate (same school + professor)
         drafts = [d for d in drafts
                   if not (d.get("school") == body.school and d.get("professor_name") == body.professor_name)]
@@ -803,7 +807,7 @@ JSON:"""
             "placeholders": result.get("placeholders", []),
             "created_at": datetime.now().isoformat(),
         })
-        profile.facts["outreach_drafts"] = drafts[:20]
+        profile.facts[OUTREACH_DRAFTS_KEY] = drafts[:20]
         profile_mgr.save_profile(user_id, profile)
         result["draft_id"] = draft_id
     except Exception as e:
@@ -817,7 +821,7 @@ JSON:"""
 async def list_drafts(user_id: str = Depends(get_user_id)):
     """List saved outreach drafts (max 20, newest first)."""
     profile = profile_mgr.get_profile(user_id)
-    drafts = profile.facts.get("outreach_drafts", [])
+    drafts = profile.facts.get(OUTREACH_DRAFTS_KEY, [])
     return {"drafts": drafts, "total": len(drafts)}
 
 
@@ -829,9 +833,9 @@ class DeleteDraftRequest(BaseModel):
 async def delete_draft(body: DeleteDraftRequest, user_id: str = Depends(get_user_id)):
     """Delete a saved draft by ID."""
     profile = profile_mgr.get_profile(user_id)
-    drafts = profile.facts.get("outreach_drafts", [])
+    drafts = profile.facts.get(OUTREACH_DRAFTS_KEY, [])
     drafts = [d for d in drafts if d.get("id") != body.draft_id]
-    profile.facts["outreach_drafts"] = drafts
+    profile.facts[OUTREACH_DRAFTS_KEY] = drafts
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True}
 
@@ -1117,11 +1121,7 @@ async def get_reminders(user_id: str = Depends(get_user_id)):
     reminders = _collect_all_reminders(profile)
     unread = [r for r in reminders if not r.get("acknowledged")]
     read = [r for r in reminders if r.get("acknowledged")]
-    return {
-        "unread": unread,
-        "read": read,
-        "total_unread": len(unread),
-    }
+    return {"unread": unread, "read": read}
 
 
 @app.post("/v1/reminders/ack")
