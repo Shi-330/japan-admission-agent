@@ -1,4 +1,5 @@
-import os, json
+import os, json, logging
+logger = logging.getLogger("agent")
 # Kill broken system proxy & use HF mirror for China access
 for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
     os.environ.pop(_v, None)
@@ -52,13 +53,34 @@ class ChatModelFactory(BaseModelFactory):
 
 class EmbeddingModelFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
+        # Resolve local snapshot path so we can use local_files_only
+        cache_dir = os.path.join(os.path.dirname(__file__), "..", ".hf_cache")
+        snapshot_dir = os.path.join(
+            cache_dir, "models--BAAI--bge-small-zh-v1.5", "snapshots",
+        )
+        if os.path.isdir(snapshot_dir):
+            # Pick the first (and only) snapshot hash
+            hashes = os.listdir(snapshot_dir)
+            if hashes:
+                model_path = os.path.join(snapshot_dir, hashes[0])
+                if os.path.isfile(os.path.join(model_path, "model.safetensors")):
+                    logger.info(f"Loading embedding model from local cache: {model_path}")
+                    base = HuggingFaceEmbeddings(
+                        model_name=model_path,
+                        model_kwargs={"device": "cpu", "local_files_only": True},
+                        encode_kwargs={"normalize_embeddings": True},
+                    )
+                    return _PadEmbedding(base, target_dim=1024)
+
+        # Fallback: standard loading (requires HF access for first download)
+        logger.warning("Local model cache incomplete, attempting HF download...")
         base = HuggingFaceEmbeddings(
-            model_name="BAAI/bge-small-zh-v1.5",  # 512-dim native
+            model_name="BAAI/bge-small-zh-v1.5",
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
-            cache_folder=os.path.join(os.path.dirname(__file__), "..", ".hf_cache"),
+            cache_folder=cache_dir,
         )
-        return _PadEmbedding(base, target_dim=1024)  # pad to 1024-dim for Supabase schema
+        return _PadEmbedding(base, target_dim=1024)
 
 
 class _PadEmbedding:
