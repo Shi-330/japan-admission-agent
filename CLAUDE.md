@@ -126,14 +126,14 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
 | V2.1 Profile 2.0 | done | facts, events, field_sources, gpa_scale, extraction |
 | V2.2 State Machine | done | per-school tracks, professor attempts, React cards, inline editing |
 | V2.3 Private DB | todo | real senpai cases, structured import |
-| V2.4 Hybrid Search | todo | metadata filter + vector + BM25 |
+| V2.4 Hybrid Search | done | /v1/schools/search, school vector index, metadata filters, RRF fusion |
 | V2.5 Frontend Dashboard | todo | stage cards UI in React |
 | V2.6 Email Automation | todo | OAuth + draft + confirm + track |
 | FastAPI + Auth | done | 8 endpoints, JWT middleware |
 | React Frontend | done | login/chat/profile/stage, shadcn/ui, dark mode |
 | Deployment | done | ECS systemd + nginx + certbot, agent.shi330.xyz |
 | Sprint 1: Core E2E | done | Playwright 83/100, alert→toast fixed |
-| Sprint 2: RAG Q&A | todo | pip install sentence-transformers + 补知识库内容 |
+| Sprint 2: RAG Q&A | done | 7 knowledge files + 89 chunks ingested, bge-small-zh-v1.5 with padding |
 | Sprint 3: School Data | todo | 补 15-20 所学校数据到 Supabase |
 
 ## Configuration
@@ -141,7 +141,8 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
 - `.env` — `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`, `EMBEDDING_MODE`
 - `config/rag.yml` — model names (documentation only, factory.py hardcodes values)
 - `frontend/.env` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`, `VITE_API_URL`
-- Model: `deepseek-chat` via DeepSeek API. Embedding: `BAAI/bge-small-zh-v1.5` (local) or DashScope `text-embedding-v4` (api)
+- Model: `deepseek-chat` via DeepSeek API. Embedding: `BAAI/bge-small-zh-v1.5` (local, 512-dim native, padded to 1024-dim for Supabase pgvector). Alt: DashScope `text-embedding-v4` (API mode, 1024-dim native)
+- Knowledge ingestion: `python ingest_knowledge.py` (batched upload, md5 dedup). School index: `seed_schools_to_db.py` auto-indexes after seeding.
 
 ## Key Patterns
 

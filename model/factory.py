@@ -52,12 +52,30 @@ class ChatModelFactory(BaseModelFactory):
 
 class EmbeddingModelFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
-        return HuggingFaceEmbeddings(
-            model_name="BAAI/bge-small-zh-v1.5",  # 24 MB, fast local download
+        base = HuggingFaceEmbeddings(
+            model_name="BAAI/bge-small-zh-v1.5",  # 512-dim native
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
             cache_folder=os.path.join(os.path.dirname(__file__), "..", ".hf_cache"),
         )
+        return _PadEmbedding(base, target_dim=1024)  # pad to 1024-dim for Supabase schema
+
+
+class _PadEmbedding:
+    """Wrapper that pads short embeddings to target_dim with zeros, preserving cosine similarity."""
+    def __init__(self, base, target_dim):
+        self._base = base
+        self._target = target_dim
+
+    def embed_query(self, text):
+        v = self._base.embed_query(text)
+        return v + [0.0] * (self._target - len(v))
+
+    def embed_documents(self, texts):
+        return [[*v, *([0.0] * (self._target - len(v)))] for v in self._base.embed_documents(texts)]
+
+    def __getattr__(self, name):
+        return getattr(self._base, name)
 
 
 class RemoteEmbeddingFactory(BaseModelFactory):

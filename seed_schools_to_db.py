@@ -320,6 +320,14 @@ def main():
 
     print(f"\nDone. {success} OK, {fail} FAIL")
 
+    # Index schools into vector store for hybrid search (V2.4)
+    print("\nIndexing schools for hybrid search...")
+    try:
+        from demo.school_search import index_schools
+        index_schools(clear_first=True)
+    except Exception as e:
+        print(f"  School indexing skipped: {e}")
+
 
 if __name__ == "__main__":
     main()

@@ -963,6 +963,60 @@ async def list_schools(major: str = ""):
         )]
     return {"schools": results, "total": len(results)}
 
+
+# ── V2.4: Hybrid school search (vector + BM25 + metadata filters) ──
+@app.get("/v1/schools/search")
+async def hybrid_search_schools(
+    q: str = "",
+    k: int = 10,
+    jlpt: str = "",
+    degree: str = "",
+    english: Optional[bool] = None,
+):
+    """
+    Hybrid search schools: semantic (vector) + keyword (BM25) with RRF fusion.
+    Optional filters: jlpt (N1/N2/...), degree (修士/学部), english (true/false).
+    Falls back to substring search if vector index is unavailable.
+    """
+    if not q:
+        return {"schools": [], "total": 0}
+
+    try:
+        from demo.school_search import hybrid_search_schools as hss
+        results = hss(
+            query=q, k=k, jlpt_min=jlpt.upper() if jlpt else "",
+            degree=degree, english_required=english,
+        )
+        if results:
+            return {"schools": results, "total": len(results), "method": "hybrid"}
+    except Exception as e:
+        logger.warning(f"Hybrid school search failed, falling back to substring: {e}")
+
+    # Fallback: substring search on school catalog
+    terms = cn2jp_normalize(q, chat_model=chat_model)
+    results = [s for s in SCHOOL_CATALOG if any(
+        t in s.get("name", "") or
+        any(t in m for m in s.get("majors", [])) or
+        any(t in tag for tag in s.get("tags", []))
+        for t in terms
+    )]
+    # Post-filters for fallback
+    if jlpt:
+        jlpt_order = ["N5", "N4", "N3", "N2", "N1"]
+        try:
+            jlpt_idx = jlpt_order.index(jlpt.upper())
+            results = [s for s in results
+                       if s.get("jlpt_min", "") in jlpt_order[:jlpt_idx + 1]]
+        except ValueError:
+            pass
+    if degree:
+        results = [s for s in results if s.get("degree", "") == degree]
+    if english is not None:
+        results = [s for s in results
+                   if s.get("english_req", {}).get("required", False) == english]
+    return {"schools": results[:k], "total": len(results), "method": "substring"}
+
+
 # ── Application CRUD (V2.2: manual school management) ──
 class ApplicationUpsert(BaseModel):
     school: str
