@@ -3,21 +3,13 @@ import { Loader2, FileText, Trash2, Copy, RefreshCw, ChevronDown, ChevronRight, 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-
-const API = import.meta.env.VITE_API_URL || '';
+import { apiCall } from '@/lib/api';
+import { copyText } from '@/lib/utils';
 
 // ── Sub-components ──
 
 /** Reusable label + copy button + scrollable text block for ja/zh body sections */
 function DraftBodySection({ label, copyLabel, content }) {
-  const copyText = (text, label) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success('已复制 ' + label);
-    }).catch(() => {
-      toast.error('复制失败，请手动复制');
-    });
-  };
-
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -64,11 +56,7 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/v1/drafts`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('API error');
-      const data = await res.json();
+      const data = await apiCall('/v1/drafts', token);
       setDrafts(data.drafts || []);
     } catch (err) {
       setError(err.message);
@@ -84,15 +72,7 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
   const handleDelete = async (draftId) => {
     setDeleting(prev => new Set(prev).add(draftId));
     try {
-      const res = await fetch(`${API}/v1/drafts`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ draft_id: draftId }),
-      });
-      if (!res.ok) throw new Error('Delete failed');
+      await apiCall('/v1/drafts', token, { method: 'DELETE', body: { draft_id: draftId } });
       setDrafts(prev => prev.filter(d => d.id !== draftId));
       if (expandedId === draftId) setExpandedId(null);
       toast.success('已删除');

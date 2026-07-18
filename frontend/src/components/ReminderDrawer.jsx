@@ -2,8 +2,7 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check, Bell, Calendar, User, Loader2, RefreshCw, FileText, ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-const API = import.meta.env.VITE_API_URL || '';
+import { apiCall } from '@/lib/api';
 
 const severityColors = {
   high: 'bg-red-50 border-l-4 border-red-500',
@@ -47,15 +46,8 @@ export default function ReminderDrawer({
   const handleAck = useCallback(async (reminderId) => {
     setAckLoading(prev => new Set(prev).add(reminderId));
     try {
-      await fetch(`${API}/v1/reminders/ack`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ id: reminderId }),
-      });
-      if (onRefresh) onRefresh();
+      await apiCall('/v1/reminders/ack', token, { method: 'POST', body: { id: reminderId } });
+      onRefresh?.();
     } catch (err) {
       console.warn('Ack failed:', err);
     } finally {
@@ -70,15 +62,8 @@ export default function ReminderDrawer({
   const handleAckAll = useCallback(async () => {
     setAckAllLoading(true);
     try {
-      await fetch(`${API}/v1/reminders/ack`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ all: true }),
-      });
-      if (onRefresh) onRefresh();
+      await apiCall('/v1/reminders/ack', token, { method: 'POST', body: { all: true } });
+      onRefresh?.();
     } catch (err) {
       console.warn('Ack-all failed:', err);
     } finally {

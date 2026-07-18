@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { apiCall } from '@/lib/api';
 
 export default function ReminderBell({ token, activeTab, onOpenDrawer, onNewReminders }) {
   const [reminders, setReminders] = useState([]);
@@ -15,11 +16,7 @@ export default function ReminderBell({ token, activeTab, onOpenDrawer, onNewRemi
     if (!silent) setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/v1/reminders`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('API error');
-      const data = await res.json();
+      const data = await apiCall('/v1/reminders', token);
       if (!mountedRef.current) return;
 
       const unread = data.unread || [];

@@ -14,10 +14,8 @@ import DocumentsView from '@/components/DocumentsView';
 import OutreachDraft from '@/components/OutreachDraft';
 import ReminderBell from '@/components/ReminderBell';
 import ReminderDrawer from '@/components/ReminderDrawer';
+import { apiCall as baseApiCall } from '@/lib/api';
 
-// Same-origin by default: FastAPI (local) and nginx (prod) both serve the SPA and /v1 API
-// on one domain. VITE_API_URL is only for running the SPA on a different host (e.g. vite dev :5173).
-const API = import.meta.env.VITE_API_URL || '';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
@@ -106,19 +104,17 @@ async function refreshSupabaseToken() {
 }
 
 // ── API helpers ──
-async function apiCall(path, token, { method = 'GET', body } = {}, _retried = false) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (res.status === 401 && !_retried && localStorage.getItem('refresh_token')) {
-    const newToken = await refreshSupabaseToken().catch(() => null);
-    if (newToken) return apiCall(path, newToken, { method, body }, true);
+// Shared apiCall wrapped with 401 auto-refresh (token state lives in this component)
+async function apiCall(path, token, opts = {}, _retried = false) {
+  try {
+    return await baseApiCall(path, token, opts);
+  } catch (err) {
+    if (err.status === 401 && !_retried && localStorage.getItem('refresh_token')) {
+      const newToken = await refreshSupabaseToken().catch(() => null);
+      if (newToken) return apiCall(path, newToken, opts, true);
+    }
+    throw err;
   }
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `${res.status} ${res.statusText}`);
-  }
-  return res.json();
 }
 
 export default function App() {

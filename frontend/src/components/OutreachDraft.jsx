@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { apiCall } from '@/lib/api';
+import { copyText } from '@/lib/utils';
 
 function highlightPlaceholders(text) {
   if (!text) return '';
@@ -37,19 +37,10 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
     setError(null);
     setDraft(null);
     try {
-      const res = await fetch(`${API}/v1/draft/outreach`, {
+      const data = await apiCall('/v1/draft/outreach', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ school, professor_name: professorName }),
+        body: { school, professor_name: professorName },
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || '生成失败，请重试');
-      }
-      const data = await res.json();
       setDraft(data);
       setBodyJa(data.body_ja || '');
       setBodyZh(data.body_zh || '');
@@ -59,14 +50,6 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
     } finally {
       setLoading(false);
     }
-  };
-
-  const copyText = (text, label) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success('已复制' + label);
-    }).catch(() => {
-      toast.error('复制失败，请手动复制');
-    });
   };
 
   return (
