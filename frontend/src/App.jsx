@@ -303,6 +303,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // home | chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
+  const [normalizedTerms, setNormalizedTerms] = useState([]);
+  // Auto-set plaza filter from profile research_area on first visit
+  useEffect(() => {
+    if (activeTab === 'plaza' && !plazaFilter && profile?.research_area) {
+      setPlazaFilter(profile.research_area);
+    }
+  }, [activeTab, profile]);
+  // Use pre-normalised terms from profile (computed once on profile save)
+  useEffect(() => {
+    const stored = profile?.facts?.normalized_research_terms;
+    if (stored && Array.isArray(stored) && stored.length > 0) {
+      setNormalizedTerms(stored);
+    }
+  }, [profile]);
   const [selectedProf, setSelectedProf] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inputOpen, setInputOpen] = useState(true);
@@ -1119,16 +1133,32 @@ export default function App() {
               <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
                 placeholder="筛选专业，如：情报理工、NLP..."
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              {plazaFilter && (
+              {plazaFilter && (() => {
+                const fCount = catalog.filter(s => {
+                  const terms = [plazaFilter, ...normalizedTerms];
+                  return terms.some(t => {
+                    const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
+                    return text.includes(t.toLowerCase());
+                  });
+                }).length;
+                return (
                 <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
-                  {catalog.filter(s => schoolMatches(s, plazaFilter)).length} 条结果
+                  {fCount} 条结果
                   <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
                 </span>
-              )}
+                );
+              })()}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
-                const filtered = catalog.filter(s => schoolMatches(s, plazaFilter));
+                const filtered = catalog.filter(s => {
+                  if (!plazaFilter) return true;
+                  const terms = [plazaFilter, ...normalizedTerms];
+                  return terms.some(t => {
+                    const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
+                    return text.includes(t.toLowerCase());
+                  });
+                });
                 if (filtered.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>

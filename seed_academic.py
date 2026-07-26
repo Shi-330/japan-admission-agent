@@ -174,6 +174,20 @@ def run(dry_run=False):
         print("\n=== Run without --dry-run to write ===")
 
 
+def _format_exam(periods) -> str:
+    """Format exam_periods JSONB into readable text like '夏季入试(7月) + 冬季入试(2月)'."""
+    if isinstance(periods, str):
+        periods = json.loads(periods)
+    if not periods:
+        return ""
+    parts = []
+    for p in periods:
+        month = p.get("month", "")
+        name = p.get("name", "")
+        parts.append(f"{name}({month}月)" if month else name)
+    return " + ".join(parts)
+
+
 def _sync_to_schools_table():
     """Rebuild the flat 'schools' table from the hierarchy for backward compat.
 
@@ -193,7 +207,7 @@ def _sync_to_schools_table():
             "type": uni_type,   # 国立/公立/私立
             "majors": json.loads(p.get("research_areas", "[]")) if isinstance(p.get("research_areas"), str) else (p.get("research_areas") or []),
             "tags": [p.get("name", ""), uni_type, gs_data.get("exam_type", "")],
-            "exam": json.dumps(p.get("exam_periods", []), ensure_ascii=False) if p.get("exam_periods") else "",
+            "exam": _format_exam(p.get("exam_periods")) if p.get("exam_periods") else "",
             "notes": p.get("notes", ""),
             "jlpt_min": (json.loads(p.get("jlpt")) if isinstance(p.get("jlpt"), str) else (p.get("jlpt") or {})).get("level", ""),
             "gpa_min": 0.0,

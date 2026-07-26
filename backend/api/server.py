@@ -127,6 +127,11 @@ async def update_profile(body: ProfileUpdate, user_id: str = Depends(get_user_id
     for field, value in body.model_dump(exclude_none=True).items():
         if hasattr(profile, field) and value is not None:
             profile.set_field(field, value, "form")
+    # Normalise research_area to JP terms once on save (avoids LLM latency in search)
+    if body.research_area and body.research_area.strip():
+        terms = cn2jp_normalize(body.research_area, chat_model=chat_model)
+        profile.facts["normalized_research_terms"] = terms
+        logger.info(f"Normalised research_area '{body.research_area}' -> {terms}")
     profile_mgr.save_profile(user_id, profile)
     return profile.to_dict()
 
@@ -934,7 +939,7 @@ def _load_school_catalog() -> list[dict]:
             if school_obj:
                 d = school_obj.model_dump()
                 # Preserve extra fields not in School model but useful for frontend
-                for extra in ("website", "jlpt", "english"):
+                for extra in ("website", "jlpt", "english", "type"):
                     if extra in row:
                         d[extra] = row.get(extra, "")
                 catalog.append(d)
@@ -947,6 +952,15 @@ SCHOOL_CATALOG = _load_school_catalog()
 
 # ── Intent layer engine ──
 intent_engine = IntentLayerEngine(SCHOOL_CATALOG)
+
+
+@app.get("/v1/normalize")
+async def normalize_query(q: str = ""):
+    """CN→JP term normalisation for school search. Uses static map + LLM fallback."""
+    if not q:
+        return {"terms": [], "query": q}
+    terms = cn2jp_normalize(q, chat_model=chat_model)
+    return {"terms": terms, "query": q}
 
 
 @app.get("/v1/schools")
