@@ -326,7 +326,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 # Use matching engine to find schools, then render as actionable cards
                 from demo.matching_engine import StudentProfile, match_schools
                 sp = StudentProfile(
-                    jlpt_level=profile.jlpt_level, eju_score=int(profile.eju_score),
+                    jlpt_level=profile.jlpt_level,
                     gpa=float(profile.gpa), target_major=profile.target_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
