@@ -24,7 +24,7 @@ After editing frontend code: `cd frontend && npm run build`, refresh browser.
 
 No separate frontend server needed (FastAPI serves `frontend/dist/` as static files).
 
-Test account: `test@example.com` / `AgentV2_test!`
+Test account: `test@example.com` — see Supabase dashboard for current password
 
 ## Architecture
 
@@ -108,7 +108,7 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
 ## Production
 
 - **URL**: https://agent.shi330.xyz
-- **Server**: 阿里云轻量香港 (Ubuntu 22.04, 2 vCPU/2GB, IP: 8.217.152.173)
+- **Server**: 阿里云轻量香港 (Ubuntu 22.04, 2 vCPU/2GB)
 - **Deploy runbook**: `../llm-wiki/wiki/works/personal-website-deploy.md`
 - **Update flow**: `git push` → SSH 上去 `git pull && cd frontend && npm run build && sudo cp -r dist/* /var/www/agent/dist/`
 - **Add new schools**:
@@ -117,7 +117,7 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
   3. Restart server: `sudo systemctl restart jp-agent`
   4. Commit + deploy as above
 - **CN→JP search**: `/v1/schools?major=情报` auto-normalizes via LLM (chat_model.invoke) before filtering. No frontend hardcoding.
-- **Sprint workflow**: Plan (`specs/sprint-plan.md`) → Spec (`specs/feature-{n}.md`) → Build → Playwright Eval (`critiques/eval_sprint{n}.js`). Run eval before every deploy.
+- **Sprint workflow**: Plan (`specs/sprint-plan.md`) → Spec (`specs/feature-{n}.md`) → Build → verify via API + manual acceptance.
 
 ## V2 Remaining Tasks
 
@@ -125,16 +125,18 @@ State machine definitions in `agent/state_machine.py` (STAGES dict).
 |------|--------|------|
 | V2.1 Profile 2.0 | done | facts, events, field_sources, gpa_scale, extraction |
 | V2.2 State Machine | done | per-school tracks, professor attempts, React cards, inline editing |
-| V2.3 Private DB | todo | real senpai cases, structured import |
+| V2.3 Private DB | todo | structured senpai cases, public case collection + import pipeline |
 | V2.4 Hybrid Search | done | /v1/schools/search, school vector index, metadata filters, RRF fusion |
-| V2.5 Frontend Dashboard | todo | stage cards UI in React |
+| V2.4 threshold fix | todo | lower match_threshold 0.5→0.3 for cross-lingual vector search; similarity display bug |
+| V2.5 Frontend Dashboard | partial | 时相脊椎 + 结构风控 done; stage cards UI pending |
 | V2.6 Email Automation | todo | OAuth + draft + confirm + track |
 | FastAPI + Auth | done | 8 endpoints, JWT middleware |
 | React Frontend | done | login/chat/profile/stage, shadcn/ui, dark mode |
 | Deployment | done | ECS systemd + nginx + certbot, agent.shi330.xyz |
-| Sprint 1: Core E2E | done | Playwright 83/100, alert→toast fixed |
+| Sprint 1: Core E2E | done | Chat UX, ChatPanel component, suggested questions |
 | Sprint 2: RAG Q&A | done | 7 knowledge files + 89 chunks ingested, bge-small-zh-v1.5 with padding |
-| Sprint 3: School Data | todo | 补 15-20 所学校数据到 Supabase |
+| Sprint 3: School Data | done | 33 schools, idempotent upsert, 2026-2027 dates |
+| Retrieval Eval | todo | recall@k, MRR, hybrid vs vector-only benchmark |
 
 ## Configuration
 
