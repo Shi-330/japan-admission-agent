@@ -325,9 +325,13 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             elif intent == "search_schools":
                 # Use matching engine to find schools, then render as actionable cards
                 from demo.matching_engine import StudentProfile, match_schools
+                # Extract intended major from query — not from profile (user may ask about a different field)
+                from utils.cn2jp import normalize as cn2jp_norm
+                q_terms = cn2jp_norm(body.query, chat_model=chat_model)
+                q_major = q_terms[0] if q_terms else (profile.target_major or "")
                 sp = StudentProfile(
                     jlpt_level=profile.jlpt_level,
-                    gpa=float(profile.gpa), target_major=profile.target_major,
+                    gpa=float(profile.gpa), target_major=q_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
                 )
@@ -394,6 +398,24 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             })
                         schools_context = "\n【匹配学校】\n" + "\n".join(lines)
                         actions.append({"type": "school_cards", "cards": school_cards_data})
+
+                        # Web search enrichment when DB has few matches
+                        if len(matches) <= 5:
+                            try:
+                                web_hint = rag.search_with_fallback(
+                                    f"{body.query} 日本 大学院 推荐 研究科")
+                                if web_hint and not web_hint.startswith("未找到"):
+                                    schools_context += f"\n【网络补充】\n{web_hint[:600]}"
+                                    # Extract potential school names for discovered_schools
+                                    import re
+                                    found_names = list(set(
+                                        re.findall(r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web_hint)))
+                                    existing = {s.get("name","") for s in SCHOOL_CATALOG}
+                                    discovered = [{"name": n, "source": "web_search"} for n in found_names[:5] if n not in existing]
+                                    if discovered:
+                                        actions.append({"type": "discovered_schools", "schools": discovered})
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.warning(f"School matching in qa failed: {e}")
 
