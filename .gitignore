@@ -105,6 +105,7 @@ large_data/
 #
 md5.txt
 *.md
+!README.md
 !TODO.md
 !docs/*.md
 *.sql
