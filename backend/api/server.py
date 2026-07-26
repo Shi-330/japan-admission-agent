@@ -139,7 +139,7 @@ async def update_profile(body: ProfileUpdate, user_id: str = Depends(get_user_id
 # ── Match endpoint ──
 @app.post("/v1/match")
 async def match_schools_endpoint(body: MatchRequest, user_id: str = Depends(get_user_id)):
-    from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
+    from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS, STATUS_LABELS
     profile = profile_mgr.get_profile(user_id)
     target = body.target_major or profile.target_major
     sp = StudentProfile(
@@ -305,8 +305,9 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
         try:
             # 3. Route by intent
+            logger.info(f"Intent: {intent}, flow: {result.get('flow','')}, query: {body.query[:40]}")
             if intent == "match":
-                from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
+                from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS, STATUS_LABELS
                 from utils.cn2jp import normalize as cn2jp_norm
                 q_terms = cn2jp_norm(body.query, chat_model=chat_model)
                 q_major = q_terms[0] if q_terms else (profile.target_major or "")
@@ -327,7 +328,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
             elif intent == "search_schools":
                 # Use matching engine to find schools, then render as actionable cards
-                from demo.matching_engine import StudentProfile, match_schools
+                from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
                 # Extract intended major from query — not from profile (user may ask about a different field)
                 from utils.cn2jp import normalize as cn2jp_norm
                 q_terms = cn2jp_norm(body.query, chat_model=chat_model)
@@ -340,14 +341,70 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 )
                 matches = match_schools(sp)
                 if matches:
-                    top3 = [m.school_name for m in matches[:3]]
-                    # Push school recommendations as suggested_schools actions
-                    actions.append({"type": "suggested_schools", "schools": top3})
-                    # Also enable plaza jump with the search filter pre-filled
+                    top_count = min(len(matches), 8)
+                    top_names = [m.school_name for m in matches[:top_count]]
+                    actions.append({"type": "suggested_schools", "schools": top_names})
                     actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场按{q_major}方向筛选"})
-                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top3)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
+                    # Build school cards with match status (same as qa intent)
+                    cards = []
+                    for m in matches[:8]:
+                        full = next((s for s in SCHOOL_CATALOG if s.get("name") == m.school_name), {})
+                        cards.append({
+                            "name": m.school_name, "type": full.get("type",""),
+                            "majors": full.get("majors",[]), "jlpt_min": full.get("jlpt_min",""),
+                            "english_req": full.get("english_req",{}), "exam": full.get("exam",""),
+                            "notes": full.get("notes",""),
+                            "status_label": STATUS_LABELS.get(m.status, m.status),
+                            "gaps": [{"field": g.field, "required": g.required, "current": g.current, "met": g.met} for g in (m.gaps or [])],
+                        })
+                    if cards:
+                        actions.append({"type": "school_cards", "cards": cards})
+                    # Broaden when few matches — web search + auto-ingest
+                    if len(matches) < 8:
+                        logger.info(f"search_schools: only {len(matches)} matches, triggering web search")
+                        try:
+                            from rag.rag_service import RagSummarizeService as R
+                            web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
+                            if web and not web.startswith("未找到"):
+                                import re
+                                found = list(set(re.findall(
+                                    r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
+                                existing = {s.get("name","") for s in SCHOOL_CATALOG}
+                                new_names = [n for n in found[:5] if n not in existing]
+                                if new_names:
+                                    from demo.school_database import upsert_school, School
+                                    for n in new_names:
+                                        try: upsert_school(School(name=n, source="web_search", verified=False))
+                                        except: pass
+                                    actions.append({"type": "discovered_schools",
+                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
+                                    logger.info(f"Auto-ingested {len(new_names)} schools from web")
+                        except Exception as e2:
+                            logger.warning(f"Web search failed in search_schools: {e2}")
+                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top_names)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
                 else:
                     prompt = f"匹配引擎暂无数据。学生背景：{profile_str}。1句话建议学生补充画像或去广场手动筛选。"
+                    if q_major:
+                        try:
+                            from rag.rag_service import RagSummarizeService as R
+                            rag2 = R()
+                            web = rag2.search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
+                            if web and not web.startswith("未找到"):
+                                import re
+                                found = list(set(re.findall(
+                                    r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
+                                existing = {s.get("name","") for s in SCHOOL_CATALOG}
+                                new_names = [n for n in found[:5] if n not in existing]
+                                if new_names:
+                                    from demo.school_database import upsert_school, School
+                                    for n in new_names:
+                                        try: upsert_school(School(name=n, source="web_search", verified=False))
+                                        except: pass
+                                    actions.append({"type": "discovered_schools",
+                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
+                                    prompt += f"（从网络发现了{len(new_names)}所相关学校，已加入数据库）"
+                        except Exception:
+                            pass
                 async for event in _stream(prompt):
                     yield event
 
@@ -381,6 +438,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         undergraduate_school=profile.undergraduate_school,
                     )
                     matches = match_schools(sp)
+                    logger.info(f"QA matching: q_major={q_major}, terms={terms}, matches={len(matches or [])}")
 
                     # Broaden search: also match schools where ANY research_area overlaps with query terms
                     matched_names = {m.school_name for m in (matches or [])}
@@ -432,6 +490,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         actions.append({"type": "school_cards", "cards": school_cards_data})
                         actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场查看{len(school_cards_data)}所匹配学校"})
 
+                        logger.info(f"School cards before enrichment: {len(school_cards_data)}")
                         # Web search enrichment + auto-ingest into DB
                         if len(school_cards_data) < 8:
                             try:
