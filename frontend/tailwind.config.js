@@ -40,6 +40,30 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        stage: {
+          preparing: "hsl(var(--stage-preparing))",
+          contacting: "hsl(var(--stage-contacting))",
+          applying: "hsl(var(--stage-applying))",
+          exam: "hsl(var(--stage-exam))",
+          waiting: "hsl(var(--stage-waiting))",
+          decided: "hsl(var(--stage-decided))",
+        },
+        urgency: {
+          high: "hsl(var(--urgency-high))",
+          medium: "hsl(var(--urgency-medium))",
+          low: "hsl(var(--urgency-low))",
+        },
+        prof: {
+          sent: "hsl(var(--prof-sent))",
+          replied: "hsl(var(--prof-replied))",
+          rejected: "hsl(var(--prof-rejected))",
+          noreply: "hsl(var(--prof-noreply))",
+          interview: "hsl(var(--prof-interview))",
+        },
+        brand: {
+          DEFAULT: "hsl(var(--brand))",
+          foreground: "hsl(var(--brand-foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

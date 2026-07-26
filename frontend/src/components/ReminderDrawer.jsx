@@ -5,15 +5,15 @@ import { Button } from '@/components/ui/button';
 import { apiCall } from '@/lib/api';
 
 const severityColors = {
-  high: 'bg-red-50 border-l-4 border-red-500',
-  medium: 'bg-amber-50 border-l-4 border-amber-400',
-  low: 'bg-gray-50 border-l-4 border-gray-300',
+  high: 'bg-urgency-high/10 border-l-4 border-urgency-high',
+  medium: 'bg-urgency-medium/10 border-l-4 border-urgency-medium',
+  low: 'bg-muted border-l-4 border-muted-foreground/30',
 };
 
 const severityIconColors = {
-  high: 'text-red-500',
-  medium: 'text-amber-500',
-  low: 'text-gray-400',
+  high: 'text-urgency-high',
+  medium: 'text-urgency-medium',
+  low: 'text-muted-foreground',
 };
 
 function typeIcon(type) {
@@ -167,10 +167,10 @@ export default function ReminderDrawer({
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-foreground mb-1">{reminder.message}</p>
                                 <span className={`text-xs font-medium ${
-                                  reminder.days < 0 ? 'text-red-500' :
-                                  reminder.days <= 7 ? 'text-red-500' :
-                                  reminder.days <= 14 ? 'text-amber-500' :
-                                  'text-gray-400'
+                                  reminder.days < 0 ? 'text-urgency-high' :
+                                  reminder.days <= 7 ? 'text-urgency-high' :
+                                  reminder.days <= 14 ? 'text-urgency-medium' :
+                                  'text-muted-foreground'
                                 }`}>
                                   {formatDays(reminder.days)}
                                 </span>

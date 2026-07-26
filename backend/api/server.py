@@ -1205,6 +1205,78 @@ async def ack_reminder(body: AckRequest, user_id: str = Depends(get_user_id)):
         raise HTTPException(400, "Provide 'id' or 'all: true'")
 
 
+# ── Demo mode: one-click seed / clear sample data for interview demos ──
+
+DEMO_APPS = [
+    {
+        "school": "京都大学 情报理工学研究科",
+        "stage": "contacting",
+        "major": "知能情报学",
+        "professors": [
+            {"name": "田中太郎", "status": "sent", "date": "2026-06-20"},
+            {"name": "山田花子", "status": "no_reply", "date": "2026-07-05"},
+        ],
+        "deadlines": {"I期出願": "2026-08-15", "II期出願": "2026-12-10"},
+        "notes": "田中2周未回，已换山田。I期8月截止需抓紧。",
+    },
+    {
+        "school": "东京工业大学 情报理工学院",
+        "stage": "preparing",
+        "major": "情报工学",
+        "professors": [],
+        "deadlines": {"夏季入试": "2026-09-01"},
+        "notes": "",
+    },
+    {
+        "school": "大阪大学 情报科学研究科",
+        "stage": "applying",
+        "major": "知能系统",
+        "professors": [{"name": "中村健一", "status": "replied", "date": "2026-07-10"}],
+        "deadlines": {"冬季出願": "2026-12-15"},
+        "notes": "中村教授回复积极，建议申请",
+    },
+]
+
+
+@app.post("/v1/demo/seed")
+async def demo_seed(user_id: str = Depends(get_user_id)):
+    """Inject demo data: 3 tracked schools, professors, deadlines, profile fields."""
+    profile = profile_mgr.get_profile(user_id)
+    profile.facts["demo_mode"] = True
+    profile.facts["demo_injected_at"] = datetime.now().isoformat()
+    # Profile fields
+    profile.target_degree = "修士"
+    profile.research_area = "自然语言处理"
+    profile.jlpt_level = "N1"
+    profile.gpa_score = 3.2
+    profile.gpa_scale = 4.0
+    profile.ielts = 7.0
+    profile.undergrad_school = "北京邮电大学"
+    profile.undergrad_major = "计算机科学与技术"
+
+    # Upsert demo applications (idempotent by school name)
+    for app_data in DEMO_APPS:
+        profile.upsert_application(**app_data)
+
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True, "message": "Demo data injected. Reload to see full dashboard."}
+
+
+@app.delete("/v1/demo/seed")
+async def demo_clear(user_id: str = Depends(get_user_id)):
+    """Remove all demo-injected data, restore clean profile."""
+    profile = profile_mgr.get_profile(user_id)
+    # Remove demo applications
+    demo_schools = {a["school"] for a in DEMO_APPS}
+    profile.applications = [a for a in (profile.applications or []) if a.get("school") not in demo_schools]
+    # Clear demo facts
+    profile.facts.pop("demo_mode", None)
+    profile.facts.pop("demo_injected_at", None)
+    profile.facts.pop("dismissed_reminders", None)
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True, "message": "Demo data cleared."}
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

@@ -658,12 +658,16 @@ export default function App() {
               )}
 
               {stage.applications?.map((app, i) => {
-                  const stageColors = { browsing: 'bg-muted text-muted-foreground', preparing: 'bg-secondary text-foreground/70', contacting: 'bg-[#E8F0EC] text-[#2F5233]',
-                    applying: 'bg-[#F0EDF7] text-[#5B4D7D]', exam: 'bg-[#FDF2E6] text-[#8C6D41]',
-                    waiting: 'bg-[#F9F1E7] text-[#8C6D41]', decided: 'bg-[#E8F0EC] text-[#2F5233]' };
-                  const profStatusColors = { pending: 'text-muted-foreground', sent: 'text-[#5B6D8A]',
-                    replied: 'text-[#3D6B52]', rejected: 'text-[#C4655A]', no_reply: 'text-[#D4A853]',
-                    interview: 'text-[#4A7C8C]' };
+                  const stageColors = { browsing: 'bg-muted text-muted-foreground',
+                    preparing: 'bg-stage-preparing/12 text-stage-preparing',
+                    contacting: 'bg-stage-contacting/12 text-stage-contacting',
+                    applying: 'bg-stage-applying/12 text-stage-applying',
+                    exam: 'bg-stage-exam/12 text-stage-exam',
+                    waiting: 'bg-stage-waiting/12 text-stage-waiting',
+                    decided: 'bg-stage-decided/12 text-stage-decided' };
+                  const profStatusColors = { pending: 'text-muted-foreground',
+                    sent: 'text-prof-sent', replied: 'text-prof-replied', rejected: 'text-prof-rejected',
+                    no_reply: 'text-prof-noreply', interview: 'text-prof-interview' };
                   const profStatusLabel = { pending: '待联系', sent: '已发信', replied: '已回复',
                     rejected: '婉拒', no_reply: '超期未回', interview: '获面试' };
                   return (
@@ -947,11 +951,40 @@ export default function App() {
 
         </div>{/* end scrollable area */}
 
-        <div className="p-2 border-t border-border shrink-0 flex justify-center">
-          <Button onClick={handleLogout} variant="ghost" size="icon"
-            className="text-muted-foreground hover:text-red-500" title="退出">
-            <LogOut size={15} />
-          </Button>
+        <div className="p-2 border-t border-border shrink-0 space-y-2">
+          {/* Demo mode toggle */}
+          {profile && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] text-muted-foreground">演示模式</span>
+              <button
+                onClick={async () => {
+                  if (profile.facts?.demo_mode) {
+                    await apiCall('/v1/demo/seed', token, { method: 'DELETE' });
+                    toast.success('演示数据已清除');
+                  } else {
+                    await apiCall('/v1/demo/seed', token, { method: 'POST' });
+                    toast.success('演示数据已注入');
+                  }
+                  const [s, p] = await Promise.all([
+                    apiCall('/v1/stage', token).catch(() => null),
+                    apiCall('/v1/profile', token).catch(() => null),
+                  ]);
+                  if (s) setStage(s);
+                  if (p) setProfile(p);
+                  await loadGreeting(token, { resetMessages: false });
+                }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${profile.facts?.demo_mode ? 'bg-brand' : 'bg-muted-foreground/25'}`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${profile.facts?.demo_mode ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+              </button>
+            </div>
+          )}
+          <div className="flex justify-center">
+            <Button onClick={handleLogout} variant="ghost" size="icon"
+              className="text-muted-foreground hover:text-red-500" title="退出">
+              <LogOut size={15} />
+            </Button>
+          </div>
         </div>
         </div>
       </aside>

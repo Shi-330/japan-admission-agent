@@ -108,7 +108,7 @@ export default function CalendarView({ applications }) {
                       <div key={ai} className="h-16 border-b border-border relative">
                         {dots.map((dot, di) => (
                           <div key={di}
-                            className="absolute left-0.5 right-0.5 text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 truncate font-medium"
+                            className="absolute left-0.5 right-0.5 text-[10px] px-1 py-0.5 rounded bg-urgency-high/10 text-urgency-high truncate font-medium"
                             style={{ top: `${3 + di * 18}px` }}
                             title={`${dot.label}: ${dot.ds}`}
                           >
@@ -124,7 +124,7 @@ export default function CalendarView({ applications }) {
           </div>
         </div>
         <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-100 inline-block" /> 截止日</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-urgency-high/10 inline-block" /> 截止日</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted/50 border border-border inline-block" /> 本月</span>
           <span className="text-muted-foreground/60">&larr; 左右滑动 &rarr;</span>
         </div>
