@@ -343,7 +343,9 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     top3 = [m.school_name for m in matches[:3]]
                     # Push school recommendations as suggested_schools actions
                     actions.append({"type": "suggested_schools", "schools": top3})
-                    prompt = f"学生想找学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}、{profile.target_major or '未设定专业'}方向），推荐了{len(top3)}所匹配学校。1句话告诉学生已推荐，引导去首页看板看详情。"
+                    # Also enable plaza jump with the search filter pre-filled
+                    actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场按{q_major}方向筛选"})
+                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top3)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
                 else:
                     prompt = f"匹配引擎暂无数据。学生背景：{profile_str}。1句话建议学生补充画像或去广场手动筛选。"
                 async for event in _stream(prompt):
@@ -365,58 +367,94 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     ctx = ""
 
                 # ── School matching injected into qa context ──
-                schools_context = ""
                 school_cards_data = []
+                schools_context = ""
                 try:
                     from demo.matching_engine import StudentProfile as SP, match_schools, STATUS_LABELS
                     from utils.cn2jp import normalize as cn2jp_norm
                     terms = cn2jp_norm(body.query, chat_model=chat_model)
+                    q_major = terms[0] if terms else (profile.target_major or profile.research_area or "")
                     sp = SP(
                         jlpt_level=profile.jlpt_level, gpa=float(profile.gpa),
-                        target_major=terms[0] if terms else (profile.target_major or profile.research_area or ""),
+                        target_major=q_major,
                         english_score=profile.english_score,
                         undergraduate_school=profile.undergraduate_school,
                     )
                     matches = match_schools(sp)
-                    if matches:
-                        top = matches[:5]
+
+                    # Broaden search: also match schools where ANY research_area overlaps with query terms
+                    matched_names = {m.school_name for m in (matches or [])}
+                    extra_schools = []
+                    if len(matched_names) < 8:
+                        for s in SCHOOL_CATALOG:
+                            if s.get("name") in matched_names: continue
+                            text = " ".join([s.get("name","")] + (s.get("majors") or []) + (s.get("tags") or []))
+                            if any(t.lower() in text.lower() for t in terms):
+                                extra_schools.append(s)
+                                if len(extra_schools) + len(matched_names) >= 10:
+                                    break
+
+                    all_schools = list(matches or [])
+                    if all_schools:
+                        top = all_schools[:8]
                         lines = []
                         for m in top:
+                            status_label = STATUS_LABELS.get(m.status, m.status)
                             lines.append(
-                                f"- {STATUS_LABELS.get(m.status, m.status)} {m.school_name}: "
+                                f"- {status_label} {m.school_name}: "
                                 f"JLPT={m.gaps[0].required if m.gaps and len(m.gaps)>0 else '无要求'}, "
                                 f"GPA={m.gaps[1].required if m.gaps and len(m.gaps)>1 else '无要求'}")
-                            # Look up full school info from catalog for the card
                             full = next((s for s in SCHOOL_CATALOG if s.get("name") == m.school_name), {})
                             school_cards_data.append({
-                                "name": m.school_name,
-                                "type": full.get("type", ""),
+                                "name": m.school_name, "type": full.get("type", ""),
                                 "majors": full.get("majors", []),
                                 "jlpt_min": full.get("jlpt_min", ""),
                                 "english_req": full.get("english_req", {}),
-                                "exam": full.get("exam", ""),
-                                "notes": full.get("notes", ""),
-                                "status_label": STATUS_LABELS.get(m.status, m.status),
+                                "exam": full.get("exam", ""), "notes": full.get("notes", ""),
+                                "status_label": status_label,
                                 "gaps": [{"field": g.field, "required": g.required, "current": g.current, "met": g.met} for g in (m.gaps or [])],
                             })
+                        # Add extra schools (no match status, shown as "参考")
+                        for s in extra_schools:
+                            if len(school_cards_data) >= 10: break
+                            school_cards_data.append({
+                                "name": s.get("name",""), "type": s.get("type",""),
+                                "majors": s.get("majors", []),
+                                "jlpt_min": s.get("jlpt_min", s.get("jlpt","")),
+                                "english_req": s.get("english_req", {}),
+                                "exam": s.get("exam",""), "notes": s.get("notes",""),
+                                "status_label": "参考",
+                                "gaps": [],
+                            })
                         schools_context = "\n【匹配学校】\n" + "\n".join(lines)
+                        if extra_schools:
+                            schools_context += f"\n【相关领域】还发现{len(extra_schools)}所相关学校"
                         actions.append({"type": "school_cards", "cards": school_cards_data})
+                        actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场查看{len(school_cards_data)}所匹配学校"})
 
-                        # Web search enrichment when DB has few matches
-                        if len(matches) <= 5:
+                        # Web search enrichment + auto-ingest into DB
+                        if len(school_cards_data) < 8:
                             try:
-                                web_hint = rag.search_with_fallback(
-                                    f"{body.query} 日本 大学院 推荐 研究科")
+                                web_hint = rag.search_with_fallback(f"{body.query} 日本 大学院 推荐 研究科")
                                 if web_hint and not web_hint.startswith("未找到"):
                                     schools_context += f"\n【网络补充】\n{web_hint[:600]}"
-                                    # Extract potential school names for discovered_schools
                                     import re
-                                    found_names = list(set(
-                                        re.findall(r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web_hint)))
+                                    found = list(set(re.findall(
+                                        r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web_hint)))
                                     existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                                    discovered = [{"name": n, "source": "web_search"} for n in found_names[:5] if n not in existing]
-                                    if discovered:
-                                        actions.append({"type": "discovered_schools", "schools": discovered})
+                                    new_names = [n for n in found[:5] if n not in existing]
+                                    if new_names:
+                                        # Auto-ingest: write to DB immediately
+                                        from demo.school_database import upsert_school, School
+                                        for n in new_names:
+                                            try:
+                                                upsert_school(School(name=n, source="web_search", verified=False))
+                                            except Exception:
+                                                pass
+                                        # Still show as discovered cards for context
+                                        actions.append({"type": "discovered_schools",
+                                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
+                                        logger.info(f"Auto-ingested {len(new_names)} schools from web search")
                             except Exception:
                                 pass
                 except Exception as e:

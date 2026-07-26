@@ -1203,7 +1203,9 @@ export default function App() {
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {plazaFilter && (() => {
                 const fCount = catalog.filter(s => {
-                  const terms = [plazaFilter, ...normalizedTerms];
+                  const staticTerms = Object.entries(CN2JP).flatMap(([cn, jp]) =>
+                    plazaFilter.includes(cn) ? jp : []);
+                  const terms = [...(new Set([plazaFilter, ...staticTerms]))];
                   return terms.some(t => {
                     const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
                     return text.includes(t.toLowerCase());
@@ -1228,12 +1230,10 @@ export default function App() {
                 }
                 const filtered = catalog.filter(s => {
                   if (!plazaFilter) return true;
-                  // Expand: original term + LLM normalised + static CN2JP fallback
-                  const rawTerms = [plazaFilter, ...normalizedTerms];
-                  // Add static CN2JP synonyms: check if filter contains any known CN key
+                  // Expand: filter term + static CN2JP synonyms only (no profile mixing)
                   const staticTerms = Object.entries(CN2JP).flatMap(([cn, jp]) =>
                     plazaFilter.includes(cn) ? jp : []);
-                  const terms = [...(new Set([...rawTerms, ...staticTerms]))];
+                  const terms = [...(new Set([plazaFilter, ...staticTerms]))];
                   return terms.some(t => {
                     const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
                     return text.includes(t.toLowerCase());
