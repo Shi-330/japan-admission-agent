@@ -108,6 +108,7 @@ md5.txt
 !TODO.md
 !docs/*.md
 *.sql
+!migrations/*.sql
 prompts/
 *.resolvednode_modules/
 screenshots/

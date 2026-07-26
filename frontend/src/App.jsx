@@ -420,7 +420,7 @@ export default function App() {
     setInput(''); setLoading(true);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    const timeout = setTimeout(() => controller.abort(), 90000);
     try {
       const chatBody = JSON.stringify({ query: input, history: messages.slice(-6) });
       const doFetch = (t) => fetch(`/v1/chat`, {
