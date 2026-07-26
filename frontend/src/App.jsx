@@ -14,6 +14,7 @@ import DocumentsView from '@/components/DocumentsView';
 import OutreachDraft from '@/components/OutreachDraft';
 import ReminderBell from '@/components/ReminderBell';
 import ReminderDrawer from '@/components/ReminderDrawer';
+import SchoolCard from '@/components/SchoolCard';
 import { apiCall as baseApiCall } from '@/lib/api';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -437,6 +438,8 @@ export default function App() {
     const timeout = setTimeout(() => controller.abort(), 90000);
     let assistantContent = '';
     let suggested = [];
+    let pendingSchoolCards = null;
+    let pendingDiscovered = null;
     try {
       const chatBody = JSON.stringify({ query: input, history: messages.slice(-6) });
       const doFetch = (t) => fetch(`/v1/chat`, {
@@ -469,6 +472,12 @@ export default function App() {
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
               break;
+            }
+            if (parsed.school_cards) {
+              pendingSchoolCards = parsed.school_cards;
+            }
+            if (parsed.discovered_schools) {
+              pendingDiscovered = parsed.discovered_schools;
             }
             if (parsed.done) {
               break;
@@ -503,6 +512,21 @@ export default function App() {
             suggestedSchools: suggested
           }]);
         }
+      }
+
+      // School cards from matching engine
+      if (pendingSchoolCards && pendingSchoolCards.length > 0) {
+        setMessages(prev => [...prev, {
+          role: 'assistant', content: '',
+          schoolCards: pendingSchoolCards,
+        }]);
+      }
+      // Discovered schools from web search
+      if (pendingDiscovered && pendingDiscovered.length > 0) {
+        setMessages(prev => [...prev, {
+          role: 'assistant', content: '',
+          discoveredSchools: pendingDiscovered,
+        }]);
       }
     } catch (err) {
       const msg = err.name === 'AbortError' ? '回复超时，请重试' : `连接失败: ${err.message}`;
@@ -1112,6 +1136,50 @@ export default function App() {
                   </div>
                   );
                 })()}
+                {msg.schoolCards && (
+                  <div className="space-y-2 mt-2">
+                    <p className="text-xs text-gray-500 font-medium mb-1">匹配学校</p>
+                    {msg.schoolCards.map((card, i) => {
+                      const trackedNames = (stage?.applications || []).map(a => a.school);
+                      return (
+                        <SchoolCard key={i} school={card} compact
+                          status={card.status_label ? { status_label: card.status_label, gaps: card.gaps || [] } : null}
+                          alreadyTracked={trackedNames.includes(card.name)}
+                          onTrack={async () => {
+                            try {
+                              await apiCall('/v1/applications', token, { method: 'POST', body: { school: card.name } });
+                              const updated = await apiCall('/v1/stage', token);
+                              setStage(updated);
+                              showToast(`已添加「${card.name}」`, 'success');
+                            } catch (err) { showToast(`添加失败: ${err.message}`); }
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {msg.discoveredSchools && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mt-2">
+                    <p className="text-sm text-amber-800 mb-2">
+                      发现 {msg.discoveredSchools.length} 所相关学校，要加入数据库吗？
+                    </p>
+                    <div className="flex gap-2">
+                      <Button onClick={async () => {
+                        for (const s of msg.discoveredSchools) {
+                          try { await apiCall('/v1/schools/discovered', token, { method: 'POST', body: s }); } catch {}
+                        }
+                        setMessages(prev => prev.map(m => m.discoveredSchools ? { ...m, discoveredSchools: null, content: '已加入数据库' } : m));
+                      }} className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+                        确认添加
+                      </Button>
+                      <Button onClick={() => {
+                        setMessages(prev => prev.map(m => m.discoveredSchools ? { ...m, discoveredSchools: null, content: '' } : m));
+                      }} className="text-xs px-3 py-1.5 rounded-lg bg-white border text-gray-500 hover:bg-gray-50">
+                        取消
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}

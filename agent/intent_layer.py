@@ -246,6 +246,10 @@ class IntentLayerEngine:
                 })
             elif atype == "suggest_report":
                 result["report_suggestion"] = True
+            elif atype == "school_cards":
+                result["school_cards"] = action.get("cards", [])
+            elif atype == "discovered_schools":
+                result["discovered_schools"] = action.get("schools", [])
 
         if nav:
             result["nav_suggestion"] = nav

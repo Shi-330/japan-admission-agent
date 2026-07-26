@@ -343,18 +343,67 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             elif intent in ("qa", "report"):
+                # ── Adaptive detail level ──
+                app_count = len(profile.applications) if profile.applications else 0
+                detail_instruction = "用2-3句话简洁回答。" if app_count >= 3 else \
+                    "新手用户，请详细解释申请路径、语言要求和备考建议。分步骤给出建议。" if app_count <= 1 else \
+                    "根据用户的问题给出恰当详尽的回答。"
+
+                # ── RAG / web search ──
                 from rag.rag_service import RagSummarizeService
                 try:
                     rag = RagSummarizeService()
                     ctx = rag.search_with_fallback(body.query)
                 except Exception:
                     ctx = ""
+
+                # ── School matching injected into qa context ──
+                schools_context = ""
+                school_cards_data = []
+                try:
+                    from demo.matching_engine import StudentProfile as SP, match_schools, STATUS_LABELS
+                    from utils.cn2jp import normalize as cn2jp_norm
+                    terms = cn2jp_norm(body.query, chat_model=chat_model)
+                    sp = SP(
+                        jlpt_level=profile.jlpt_level, gpa=float(profile.gpa),
+                        target_major=terms[0] if terms else (profile.target_major or profile.research_area or ""),
+                        english_score=profile.english_score,
+                        undergraduate_school=profile.undergraduate_school,
+                    )
+                    matches = match_schools(sp)
+                    if matches:
+                        top = matches[:5]
+                        lines = []
+                        for m in top:
+                            lines.append(
+                                f"- {STATUS_LABELS.get(m.status, m.status)} {m.school_name}: "
+                                f"JLPT={m.gaps[0].required if m.gaps and len(m.gaps)>0 else '无要求'}, "
+                                f"GPA={m.gaps[1].required if m.gaps and len(m.gaps)>1 else '无要求'}")
+                            # Look up full school info from catalog for the card
+                            full = next((s for s in SCHOOL_CATALOG if s.get("name") == m.school_name), {})
+                            school_cards_data.append({
+                                "name": m.school_name,
+                                "type": full.get("type", ""),
+                                "majors": full.get("majors", []),
+                                "jlpt_min": full.get("jlpt_min", ""),
+                                "english_req": full.get("english_req", {}),
+                                "exam": full.get("exam", ""),
+                                "notes": full.get("notes", ""),
+                                "status_label": STATUS_LABELS.get(m.status, m.status),
+                                "gaps": [{"field": g.field, "required": g.required, "current": g.current, "met": g.met} for g in (m.gaps or [])],
+                            })
+                        schools_context = "\n【匹配学校】\n" + "\n".join(lines)
+                        actions.append({"type": "school_cards", "cards": school_cards_data})
+                except Exception as e:
+                    logger.warning(f"School matching in qa failed: {e}")
+
                 prompt = f"""你是日本升学顾问。
 【资料】{ctx[:800] if ctx else "无"}
+{schools_context}
 【学生】{profile_str}
 {stage_ctx}
 【问题】{body.query}
-用2-3句话简洁回答。资料为空则说明暂无相关内容。"""
+{detail_instruction}资料为空则说明暂无相关内容。"""
                 async for event in _stream(prompt):
                     yield event
 
@@ -925,6 +974,27 @@ JSON:"""
         "text_preview": text[:300],
         "updated": bool(body.school and extracted.get("deadlines")),
     }
+
+
+# ── Web-discovered school ingestion ──
+
+@app.post("/v1/schools/discovered")
+async def add_discovered_school(body: dict, user_id: str = Depends(get_user_id)):
+    """Add a school discovered via web search. Requires admin or service role."""
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "School name required")
+    try:
+        from demo.school_database import upsert_school, School
+        s = School(name=name, degree=body.get("degree", "修士"),
+                   majors=body.get("majors", []), tags=body.get("tags", []),
+                   jlpt_min=body.get("jlpt_min", ""), exam=body.get("exam", ""),
+                   notes=body.get("notes", ""), source="web_search", verified=False)
+        upsert_school(s)
+        # Refresh catalog (lazy — next restart picks it up)
+        return {"ok": True, "name": name}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 # ── School catalog loaded from Supabase at startup ──
