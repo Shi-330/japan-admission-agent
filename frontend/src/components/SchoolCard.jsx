@@ -45,11 +45,18 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
             <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
               status.status_label === '可报考' ? 'bg-stage-contacting/15 text-stage-contacting' :
               status.status_label === '条件不足' ? 'bg-urgency-medium/15 text-urgency-medium' :
+              status.status_label === '参考' ? 'bg-muted text-muted-foreground' :
               'bg-urgency-high/15 text-urgency-high'
             }`}>{status.status_label}</span>
-            <span className="text-xs text-muted-foreground">
-              JLPT {s.jlpt_min || '-'} | {englishText} | {s.exam || '-'}
-            </span>
+            {(s.jlpt_min || englishText !== '-' || s.exam) && (
+              <span className="text-xs text-muted-foreground">
+                {s.jlpt_min ? `JLPT ${s.jlpt_min}` : ''}
+                {s.jlpt_min && englishText !== '-' ? ' | ' : ''}
+                {englishText !== '-' ? englishText : ''}
+                {((s.jlpt_min || englishText !== '-') && s.exam) ? ' | ' : ''}
+                {s.exam || ''}
+              </span>
+            )}
           </div>
         )}
         {status?.gaps?.some(g => !g.met) && (
@@ -61,10 +68,13 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
             ))}
           </div>
         )}
-        {!status && (
+        {!status && (s.jlpt_min || englishText !== '-' || s.exam) && (
           <div className="text-xs text-muted-foreground">
             JLPT: {s.jlpt_min || s.jlpt || '-'} | 英语: {englishText} | 考试: {s.exam || '-'}
           </div>
+        )}
+        {s.notes && (
+          <div className="text-[10px] text-muted-foreground mt-1 italic">{s.notes}</div>
         )}
       </div>
     );

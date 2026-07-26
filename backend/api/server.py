@@ -289,6 +289,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     intent = result["intent"]
     actions = result["actions"]
 
+    # ── Pre-filter: force "search_schools" for "考XX研究" patterns ──
+    import re
+    if intent == "chat" and re.search(r'考.{1,10}(?:研究|方向|専攻|专攻|专业|学校|大学)', body.query):
+        intent = "search_schools"
+        result["flow"] = "school_search"
+        result["depth"] = 1
+        logger.info(f"Pre-filter forced search_schools for: {body.query[:30]}")
+
     async def event_generator():
         assistant_text = ""
         final_event = {'content': '', 'is_status': False, 'done': True}
@@ -340,13 +348,13 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     undergraduate_school=profile.undergraduate_school,
                 )
                 matches = match_schools(sp)
+                cards = []
                 if matches:
                     top_count = min(len(matches), 8)
                     top_names = [m.school_name for m in matches[:top_count]]
                     actions.append({"type": "suggested_schools", "schools": top_names})
-                    actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场按{q_major}方向筛选"})
+                    actions.append({"type": "nav_plaza", "filter": q_major or "", "prompt": f"去广场查看{len(top_names)}所{q_major or ''}方向学校"})
                     # Build school cards with match status (same as qa intent)
-                    cards = []
                     for m in matches[:8]:
                         full = next((s for s in SCHOOL_CATALOG if s.get("name") == m.school_name), {})
                         cards.append({
@@ -383,72 +391,75 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             logger.warning(f"Web search failed in search_schools: {e2}")
                     prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top_names)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
                 else:
-                    # No matches — try web search first, then broad catalog scan, then LLM fallback
+                    # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
-                    cards = []
                     try:
-                        from rag.rag_service import RagSummarizeService as R
-                        web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
-                        if web and not web.startswith("未找到"):
-                            import re
-                            found = list(set(re.findall(r'([一-鿿]{2,8}(?:大学|大学院)[^\s,，。]*)', web)))
-                            existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                            new_names = [n for n in found[:8] if n not in existing]
-                            if new_names:
-                                from demo.school_database import upsert_school, School
-                                for n in new_names:
-                                    try: upsert_school(School(name=n, source="web_search", verified=False))
-                                    except: pass
-                                cards = [{"name": n, "type": "", "majors": [], "jlpt_min": "", "english_req": {},
-                                          "exam": "", "notes": "来自网络搜索", "status_label": "参考", "gaps": []}
-                                         for n in new_names]
-                                prompt += f"从网络找了{len(new_names)}所学校。"
+                        llm_prompt = (
+                            f"列出日本有{q_major}相关研究科的5-8所大学。每行一个，格式：\n"
+                            f"大学名 | 研究科名 | JLPT要求 | 英语要求 | 一句话特点\n"
+                            f"例如：东京大学 | 人文社会系研究科 | N1 | TOEFL 80 | 日本社会学发源地\n"
+                            f"只列真实存在的大学，JLPT/英语如不确定写'要確認'。不要其他解释。"
+                        )
+                        resp = chat_model.invoke(llm_prompt)
+                        llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                        logger.info(f"LLM school suggestion for {q_major}: {llm_text[:200]}")
+                        for line in llm_text.strip().split("\n"):
+                            line = line.strip().lstrip("0123456789.-) ").strip()
+                            if not line or len(line) < 6: continue
+                            parts = [p.strip() for p in line.split("|")]
+                            if len(parts) < 2: continue
+                            uni_name = parts[0]
+                            gs_name = parts[1] if len(parts) > 1 else ""
+                            full_name = f"{uni_name} {gs_name}" if gs_name else uni_name
+                            jlpt = parts[2] if len(parts) > 2 else ""
+                            eng = parts[3] if len(parts) > 3 else ""
+                            note = parts[4] if len(parts) > 4 else "AI推荐·请核实官网"
+                            # Try to find university type from catalog
+                            uni_type = ""
+                            for s in SCHOOL_CATALOG:
+                                if uni_name in s.get("name", ""):
+                                    uni_type = s.get("type", "")
+                                    break
+                            cards.append({
+                                "name": full_name, "type": uni_type, "majors": [],
+                                "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
+                                "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
+                                "exam": "", "notes": note,
+                                "status_label": "参考", "gaps": [],
+                            })
+                            # Auto-ingest into DB (service key) + in-memory catalog
+                            import os as _os
+                            _sk = create_client(_os.getenv("SUPABASE_URL"), _os.getenv("SUPABASE_SERVICE_KEY"))
+                            try:
+                                _sk.table("schools").upsert({
+                                    "name": full_name, "type": uni_type, "majors": [],
+                                    "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
+                                    "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
+                                    "exam": "", "notes": note, "tags": ["llm_suggestion"],
+                                    "deadlines": [], "source": "llm_suggestion", "verified": False,
+                                }, on_conflict="name").execute()
+                                logger.info(f"Auto-ingested: {full_name}")
+                            except Exception as e3:
+                                logger.warning(f"Auto-ingest DB failed for {full_name}: {e3}")
+                            # Always update in-memory catalog
+                            SCHOOL_CATALOG.append({
+                                "name": full_name, "type": uni_type, "majors": [],
+                                "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
+                                "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
+                                "exam": "", "notes": note, "tags": ["llm_suggestion"],
+                                "deadlines": [], "source": "llm_suggestion", "verified": False,
+                            })
+                            if len(cards) >= 8: break
                     except Exception as e2:
-                        logger.warning(f"Web search failed in search_schools: {e2}")
-
-                    # Broad catalog fallback: scan all schools with CN2JP terms
-                    if not cards:
-                        for s in SCHOOL_CATALOG:
-                            text = " ".join([s.get("name","")] + (s.get("majors") or []) + (s.get("tags") or []))
-                            if any(t.lower() in text.lower() for t in q_terms):
-                                cards.append({
-                                    "name": s.get("name",""), "type": s.get("type",""),
-                                    "majors": s.get("majors",[]),
-                                    "jlpt_min": s.get("jlpt_min", s.get("jlpt","")),
-                                    "english_req": s.get("english_req",{}),
-                                    "exam": s.get("exam",""), "notes": s.get("notes",""),
-                                    "status_label": "参考", "gaps": [],
-                                })
-                                if len(cards) >= 8: break
-                        if cards:
-                            prompt += f"为你找了{len(cards)}所相关领域的学校。"
-
-                    # LLM final fallback for school names
-                    if not cards:
-                        prompt += "正通过AI为你推荐相关学校。"
-                        try:
-                            llm_prompt = f"列出日本有{q_major}相关研究科的5-8所大学名称（格式：每行一个\"大学名 研究科名\"）。只列真实存在的大学。"
-                            resp = chat_model.invoke(llm_prompt)
-                            llm_text = resp.content if hasattr(resp, "content") else str(resp)
-                            for line in llm_text.strip().split("\n"):
-                                name = line.strip().lstrip("0123456789.-) ").strip()
-                                if len(name) >= 6:
-                                    cards.append({
-                                        "name": name, "type": "", "majors": [],
-                                        "jlpt_min": "", "english_req": {},
-                                        "exam": "", "notes": "AI推荐",
-                                        "status_label": "参考", "gaps": [],
-                                    })
-                                    if len(cards) >= 8: break
-                            prompt += f"AI推荐了{len(cards)}所学校。"
-                        except Exception as e3:
-                            logger.warning(f"LLM fallback failed: {e3}")
+                        logger.warning(f"LLM fallback failed for {q_major}: {e2}")
 
                     if cards:
                         actions.append({"type": "school_cards", "cards": cards})
-                        actions.append({"type": "nav_plaza", "filter": body.query,
+                        actions.append({"type": "nav_plaza", "filter": q_major or "",
                                         "prompt": f"去广场查看{len(cards)}所{q_major or ''}方向学校"})
-                    prompt += "1句话告诉学生这些学校来自搜索或AI推荐，建议去官网核实。"
+                        prompt += f"为你找到{len(cards)}所{q_major or '相关'}方向的学校（见下方卡片）。1句话简介即可，具体信息在卡片里。"
+                    else:
+                        prompt += "1句话建议学生手动搜索或换个专业方向试试。"
                 async for event in _stream(prompt):
                     yield event
 
@@ -532,7 +543,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         if extra_schools:
                             schools_context += f"\n【相关领域】还发现{len(extra_schools)}所相关学校"
                         actions.append({"type": "school_cards", "cards": school_cards_data})
-                        actions.append({"type": "nav_plaza", "filter": body.query, "prompt": f"去广场查看{len(school_cards_data)}所匹配学校"})
+                        actions.append({"type": "nav_plaza", "filter": q_major or "", "prompt": f"去广场查看{len(school_cards_data)}所匹配学校"})
 
                         logger.info(f"School cards before enrichment: {len(school_cards_data)}")
                         # Web search enrichment + auto-ingest into DB

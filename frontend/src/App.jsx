@@ -318,6 +318,12 @@ export default function App() {
       setNormalizedTerms(stored);
     }
   }, [profile]);
+  // Server-side catalog reload on plaza filter change (semantic CN2JP, not substring)
+  useEffect(() => {
+    if (!token) return;
+    const q = plazaFilter.trim() ? `?major=${encodeURIComponent(plazaFilter.trim())}` : '';
+    apiCall(`/v1/schools${q}`, token).then(r => setCatalog(r.schools || [])).catch(() => {});
+  }, [plazaFilter]);
   const [selectedProf, setSelectedProf] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inputOpen, setInputOpen] = useState(true);
@@ -435,7 +441,7 @@ export default function App() {
     setInput(''); setLoading(true);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
     let assistantContent = '';
     let suggested = [];
     let pendingSchoolCards = null;
@@ -465,6 +471,13 @@ export default function App() {
           if (!line.startsWith('data:')) continue;
           try {
             const parsed = JSON.parse(line.startsWith('data: ') ? line.slice(6) : line.slice(5));
+            // Process school_cards/discovered BEFORE nav_suggestion (both may be in same event)
+            if (parsed.school_cards) {
+              pendingSchoolCards = parsed.school_cards;
+            }
+            if (parsed.discovered_schools) {
+              pendingDiscovered = parsed.discovered_schools;
+            }
             if (parsed.nav_suggestion) {
               suggested = [{ type: 'nav', ...parsed.nav_suggestion }];
               break;
@@ -472,12 +485,6 @@ export default function App() {
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
               break;
-            }
-            if (parsed.school_cards) {
-              pendingSchoolCards = parsed.school_cards;
-            }
-            if (parsed.discovered_schools) {
-              pendingDiscovered = parsed.discovered_schools;
             }
             if (parsed.done) {
               break;
@@ -1201,23 +1208,12 @@ export default function App() {
               <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
                 placeholder="筛选专业，如：情报理工、NLP..."
                 className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              {plazaFilter && (() => {
-                const fCount = catalog.filter(s => {
-                  const staticTerms = Object.entries(CN2JP).flatMap(([cn, jp]) =>
-                    plazaFilter.includes(cn) ? jp : []);
-                  const terms = [...(new Set([plazaFilter, ...staticTerms]))];
-                  return terms.some(t => {
-                    const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
-                    return text.includes(t.toLowerCase());
-                  });
-                }).length;
-                return (
+              {plazaFilter && (
                 <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
-                  {fCount} 条结果
+                  {catalog.length} 条结果
                   <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
                 </span>
-                );
-              })()}
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
@@ -1228,24 +1224,13 @@ export default function App() {
                     <p className="text-sm">正在匹配「{profile.research_area}」方向…</p>
                   </div>;
                 }
-                const filtered = catalog.filter(s => {
-                  if (!plazaFilter) return true;
-                  // Expand: filter term + static CN2JP synonyms only (no profile mixing)
-                  const staticTerms = Object.entries(CN2JP).flatMap(([cn, jp]) =>
-                    plazaFilter.includes(cn) ? jp : []);
-                  const terms = [...(new Set([plazaFilter, ...staticTerms]))];
-                  return terms.some(t => {
-                    const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
-                    return text.includes(t.toLowerCase());
-                  });
-                });
-                if (filtered.length === 0 && plazaFilter) {
+                if (catalog.length === 0 && plazaFilter) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>
                     <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
                   </div>;
                 }
-                return filtered.map((s, i) => {
+                return catalog.map((s, i) => {
                   const trackedSchools = (stage?.applications || []).map(a => a.school);
                   const alreadyTracked = trackedSchools.includes(s.name);
                   return (

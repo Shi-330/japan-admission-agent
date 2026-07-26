@@ -63,13 +63,13 @@ def normalize(term: str, chat_model=None) -> list[str]:
     """
     terms = [term]
 
-    # 1. Static synonym map
+    # 1. Static synonym map — no raw CN key (too broad)
     for cn, jp_list in CN_JP_SYNONYMS.items():
         if cn in term:
             terms.extend(jp_list)
 
-    # 2. LLM enrichment: always call when available (merges with static, not replaces)
-    if chat_model is not None:
+    # 2. LLM fallback: only if no static match AND chat_model is available
+    if len(terms) == 1 and chat_model is not None:
         try:
             prompt = (
                 f"将以下中文专业方向转换为日本大学院（研究生院）中对应的学科/专攻名称。"
