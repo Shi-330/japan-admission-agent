@@ -1160,7 +1160,12 @@ export default function App() {
                 }
                 const filtered = catalog.filter(s => {
                   if (!plazaFilter) return true;
-                  const terms = [plazaFilter, ...normalizedTerms];
+                  // Expand: original term + LLM normalised + static CN2JP fallback
+                  const rawTerms = [plazaFilter, ...normalizedTerms];
+                  // Add static CN2JP synonyms: check if filter contains any known CN key
+                  const staticTerms = Object.entries(CN2JP).flatMap(([cn, jp]) =>
+                    plazaFilter.includes(cn) ? jp : []);
+                  const terms = [...(new Set([...rawTerms, ...staticTerms]))];
                   return terms.some(t => {
                     const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
                     return text.includes(t.toLowerCase());
