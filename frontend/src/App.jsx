@@ -435,6 +435,8 @@ export default function App() {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90000);
+    let assistantContent = '';
+    let suggested = [];
     try {
       const chatBody = JSON.stringify({ query: input, history: messages.slice(-6) });
       const doFetch = (t) => fetch(`/v1/chat`, {
@@ -451,8 +453,6 @@ export default function App() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let assistantContent = '';
-      let suggested = [];
 
       while (true) {
         const { done, value } = await reader.read();
