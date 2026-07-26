@@ -6,9 +6,10 @@
  */
 const { chromium } = require('playwright');
 const BASE = 'http://localhost:8000';
-// Override via env: TEST_EMAIL / TEST_PASSWORD
+// Env vars: TEST_EMAIL, TEST_PASSWORD, TEST_MAJOR (default: 环境学)
 const TEST_EMAIL = process.env.TEST_EMAIL || 'test@example.com';
 const TEST_PASSWORD = process.env.TEST_PASSWORD || '<your-test-password>';
+const TEST_MAJOR = process.env.TEST_MAJOR || '环境学';
 
 const results = [];
 function R(label, pass, detail) {
@@ -45,8 +46,9 @@ function R(label, pass, detail) {
   const hasGreeting = await page.locator('text=加载中').isVisible().catch(() => true);
   R('2-dashboard', hasGreeting !== null, 'Dashboard renders without crash');
 
-  // ── 3. Chat SSE — send a query ──
+  // ── 3. Chat SSE — search 环境学, verify cards >= 8 ──
   console.log('--- Chat ---');
+  let cardCount = 0;
   try {
     // Switch to chat tab
     const chatTab = page.locator('button[value="chat"]');
@@ -57,26 +59,37 @@ function R(label, pass, detail) {
 
     const chatInput = page.locator('input[placeholder*="输入"], textarea[placeholder*="输入"]');
     if (await chatInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await chatInput.fill('我想考环境相关的研究室');
+      await chatInput.fill(`我想考${TEST_MAJOR}相关的研究室`);
       await page.keyboard.press('Enter');
     }
 
-    // Wait for SSE response (school cards or text)
-    await page.waitForTimeout(15000);
+    // Wait for SSE response + web search enrichment + LLM fallback
+    await page.waitForTimeout(35000);
 
-    // Check for school cards in chat
+    // Count school cards (track buttons in chat)
+    cardCount = await page.locator('button:has-text("追踪")').count().catch(() => 0);
     const pageText = await page.locator('main').textContent().catch(() => '');
-    const hasSchoolCard = pageText.includes('追踪') || pageText.includes('匹配') || pageText.includes('学校');
-    R('3-chat-school-search', hasSchoolCard, hasSchoolCard ? 'Chat shows school-related content' : 'No school content in chat');
-
-    // Check for SchoolCard component
-    const hasCard = await page.locator('text=追踪').first().isVisible().catch(() => false);
-    R('4-chat-cards', hasCard || hasSchoolCard, hasCard ? 'School cards visible in chat' : 'Cards not visible but content present');
-
-    // Check for errors
     const hasError = pageText.includes('[错误]');
+
+    R('3-chat-cards', cardCount >= 1, `${cardCount} school cards in chat (target: >=1)`);
+    R('4-chat-enrichment', cardCount >= 8, `${cardCount} cards (target: >=8 with web search enrichment)`);
     R('5-no-error', !hasError, hasError ? 'Chat returned error' : 'No chat error');
 
+    // ── 4. Jump to plaza — verify filter + school count ──
+    console.log('--- Plaza jump ---');
+    const goBtn = page.locator('button:has-text("去看看")');
+    if (await goBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await goBtn.click();
+      await page.waitForTimeout(4000);
+    }
+
+    // Check plaza filter is pre-filled
+    const filterVal = await page.locator('input[placeholder*="筛选"]').inputValue().catch(() => '');
+    R('6-plaza-filter', filterVal.length > 0, `Plaza filter pre-filled: "${filterVal.slice(0,30)}"`);
+
+    // Count schools in plaza
+    const plazaCards = await page.locator('text=追踪').count().catch(() => 0);
+    R('7-plaza-count', plazaCards >= 3, `${plazaCards} schools in plaza`);
   } catch (e) {
     R('3-chat', false, `Chat test exception: ${e.message}`);
   }

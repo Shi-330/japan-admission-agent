@@ -383,28 +383,72 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             logger.warning(f"Web search failed in search_schools: {e2}")
                     prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top_names)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
                 else:
-                    prompt = f"匹配引擎暂无数据。学生背景：{profile_str}。1句话建议学生补充画像或去广场手动筛选。"
-                    if q_major:
+                    # No matches — try web search first, then broad catalog scan, then LLM fallback
+                    prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
+                    cards = []
+                    try:
+                        from rag.rag_service import RagSummarizeService as R
+                        web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
+                        if web and not web.startswith("未找到"):
+                            import re
+                            found = list(set(re.findall(r'([一-鿿]{2,8}(?:大学|大学院)[^\s,，。]*)', web)))
+                            existing = {s.get("name","") for s in SCHOOL_CATALOG}
+                            new_names = [n for n in found[:8] if n not in existing]
+                            if new_names:
+                                from demo.school_database import upsert_school, School
+                                for n in new_names:
+                                    try: upsert_school(School(name=n, source="web_search", verified=False))
+                                    except: pass
+                                cards = [{"name": n, "type": "", "majors": [], "jlpt_min": "", "english_req": {},
+                                          "exam": "", "notes": "来自网络搜索", "status_label": "参考", "gaps": []}
+                                         for n in new_names]
+                                prompt += f"从网络找了{len(new_names)}所学校。"
+                    except Exception as e2:
+                        logger.warning(f"Web search failed in search_schools: {e2}")
+
+                    # Broad catalog fallback: scan all schools with CN2JP terms
+                    if not cards:
+                        for s in SCHOOL_CATALOG:
+                            text = " ".join([s.get("name","")] + (s.get("majors") or []) + (s.get("tags") or []))
+                            if any(t.lower() in text.lower() for t in q_terms):
+                                cards.append({
+                                    "name": s.get("name",""), "type": s.get("type",""),
+                                    "majors": s.get("majors",[]),
+                                    "jlpt_min": s.get("jlpt_min", s.get("jlpt","")),
+                                    "english_req": s.get("english_req",{}),
+                                    "exam": s.get("exam",""), "notes": s.get("notes",""),
+                                    "status_label": "参考", "gaps": [],
+                                })
+                                if len(cards) >= 8: break
+                        if cards:
+                            prompt += f"为你找了{len(cards)}所相关领域的学校。"
+
+                    # LLM final fallback for school names
+                    if not cards:
+                        prompt += "正通过AI为你推荐相关学校。"
                         try:
-                            from rag.rag_service import RagSummarizeService as R
-                            rag2 = R()
-                            web = rag2.search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
-                            if web and not web.startswith("未找到"):
-                                import re
-                                found = list(set(re.findall(
-                                    r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
-                                existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                                new_names = [n for n in found[:5] if n not in existing]
-                                if new_names:
-                                    from demo.school_database import upsert_school, School
-                                    for n in new_names:
-                                        try: upsert_school(School(name=n, source="web_search", verified=False))
-                                        except: pass
-                                    actions.append({"type": "discovered_schools",
-                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
-                                    prompt += f"（从网络发现了{len(new_names)}所相关学校，已加入数据库）"
-                        except Exception:
-                            pass
+                            llm_prompt = f"列出日本有{q_major}相关研究科的5-8所大学名称（格式：每行一个\"大学名 研究科名\"）。只列真实存在的大学。"
+                            resp = chat_model.invoke(llm_prompt)
+                            llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                            for line in llm_text.strip().split("\n"):
+                                name = line.strip().lstrip("0123456789.-) ").strip()
+                                if len(name) >= 6:
+                                    cards.append({
+                                        "name": name, "type": "", "majors": [],
+                                        "jlpt_min": "", "english_req": {},
+                                        "exam": "", "notes": "AI推荐",
+                                        "status_label": "参考", "gaps": [],
+                                    })
+                                    if len(cards) >= 8: break
+                            prompt += f"AI推荐了{len(cards)}所学校。"
+                        except Exception as e3:
+                            logger.warning(f"LLM fallback failed: {e3}")
+
+                    if cards:
+                        actions.append({"type": "school_cards", "cards": cards})
+                        actions.append({"type": "nav_plaza", "filter": body.query,
+                                        "prompt": f"去广场查看{len(cards)}所{q_major or ''}方向学校"})
+                    prompt += "1句话告诉学生这些学校来自搜索或AI推荐，建议去官网核实。"
                 async for event in _stream(prompt):
                     yield event
 
@@ -447,7 +491,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         for s in SCHOOL_CATALOG:
                             if s.get("name") in matched_names: continue
                             text = " ".join([s.get("name","")] + (s.get("majors") or []) + (s.get("tags") or []))
-                            if any(t.lower() in text.lower() for t in terms):
+                            if any(t.lower() in text.lower() for t in q_terms):
                                 extra_schools.append(s)
                                 if len(extra_schools) + len(matched_names) >= 10:
                                     break
