@@ -1151,6 +1151,13 @@ export default function App() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
+                // When user has research_area but filter not yet applied, show matching hint instead of all 33 schools
+                const hasResearch = profile?.research_area && profile.research_area.trim();
+                if (!plazaFilter && hasResearch && normalizedTerms.length === 0) {
+                  return <div className="col-span-2 text-center py-12 text-gray-400">
+                    <p className="text-sm">正在匹配「{profile.research_area}」方向…</p>
+                  </div>;
+                }
                 const filtered = catalog.filter(s => {
                   if (!plazaFilter) return true;
                   const terms = [plazaFilter, ...normalizedTerms];
