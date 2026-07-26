@@ -118,16 +118,7 @@ def run(dry_run=False):
     if dry_run:
         print("=== DRY RUN (no writes) ===\n")
 
-    # 1. Run migration
-    migration_path = os.path.join(os.path.dirname(__file__), "..", "migrations", "001_academic_hierarchy.sql")
-    with open(migration_path, "r", encoding="utf-8") as f:
-        sql = f.read()
-    if dry_run:
-        print(f"[SQL] Execute migration: {migration_path}")
-    else:
-        supabase.rpc("exec_sql", {"sql": sql}).execute()  # type: ignore
-        print("Migration: tables created (if not exist)")
-
+    # 1. Migration must be run first in Supabase SQL Editor (migrations/001_academic_hierarchy.sql)
     # 2. Upsert university
     if dry_run:
         print(f"[UPSERT] universities: {UNIVERSITY['name']}")
@@ -148,7 +139,7 @@ def run(dry_run=False):
     # 4. Upsert program
     prog = {**PROGRAM, "graduate_school_id": gs_id}
     # JSON fields need explicit serialization for Supabase
-    for field in ("english", "jlpt", "research_areas", "exam_periods", "application_deadlines"):
+    for field in ("english", "jlpt", "exam_periods", "application_deadlines"):
         if isinstance(prog.get(field), (dict, list)):
             prog[field] = json.dumps(prog[field], ensure_ascii=False)
     if dry_run:
@@ -158,16 +149,20 @@ def run(dry_run=False):
         prog_id = result.data[0]["id"]
         print(f"    Program: {PROGRAM['name']} (id={prog_id[:8]}...)")
 
-    # 5. Upsert documents
+    # 5. Insert documents (idempotent — skip if already exists)
     for doc in DOCUMENTS:
         doc_data = {**doc, "program_id": prog_id}
         if dry_run:
-            print(f"[UPSERT] documents: {doc['doc_type']} ({doc['year_tag']})")
+            print(f"[INSERT] documents: {doc['doc_type']} ({doc['year_tag']})")
         else:
-            supabase.table("program_documents").upsert(
-                doc_data, on_conflict="program_id,doc_type,year_tag"
-            ).execute()
-            print(f"      Doc: {doc['doc_type']} {doc['year_tag']} — {doc['title'][:40]}...")
+            try:
+                supabase.table("program_documents").insert(doc_data).execute()
+                print(f"      Doc: {doc['doc_type']} {doc['year_tag']} — {doc['title'][:40]}...")
+            except Exception as e:
+                if "duplicate" in str(e).lower():
+                    print(f"      Skip (exists): {doc['doc_type']} {doc['year_tag']}")
+                else:
+                    raise
 
     # 6. Rebuild flat schools cache for backward compat
     if not dry_run:
@@ -208,7 +203,7 @@ def _sync_to_schools_table():
             "source": "hierarchy",
             "verified": True,
         }
-        supabase.table("schools").upsert(school, on_conflict="name").execute()
+        supabase.table("schools").insert(school).execute()
     print(f"  Synced {len(pk.data)} program(s) to schools cache.")
 
 
