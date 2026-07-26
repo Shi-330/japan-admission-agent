@@ -20,6 +20,7 @@ from agent.orchestrator import ChatOrchestrator
 from agent.intent_layer import IntentLayerEngine, is_light_greeting, is_short_query
 from model.factory import chat_model
 from utils.supabase_client import supabase
+from supabase import create_client
 from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
 
@@ -291,7 +292,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
     # ── Pre-filter: force "search_schools" for "考XX研究" patterns ──
     import re
-    if intent == "chat" and re.search(r'考.{1,10}(?:研究|方向|専攻|专攻|专业|学校|大学)', body.query):
+    if intent == "chat" and re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么).{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室)', body.query):
         intent = "search_schools"
         result["flow"] = "school_search"
         result["depth"] = 1
@@ -395,10 +396,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
                     try:
                         llm_prompt = (
-                            f"列出日本有{q_major}相关研究科的5-8所大学。每行一个，格式：\n"
+                            f"列出日本有{q_major}相关研究科的5-8所日本大学。每行一个，格式：\n"
                             f"大学名 | 研究科名 | JLPT要求 | 英语要求 | 一句话特点\n"
                             f"例如：东京大学 | 人文社会系研究科 | N1 | TOEFL 80 | 日本社会学发源地\n"
-                            f"只列真实存在的大学，JLPT/英语如不确定写'要確認'。不要其他解释。"
+                            f"重要：只列日本国内的大学（日本の大学のみ），不要列中国或欧美的大学。"
+                            f"JLPT/英语如不确定写'要確認'。不要其他解释。"
                         )
                         resp = chat_model.invoke(llm_prompt)
                         llm_text = resp.content if hasattr(resp, "content") else str(resp)
@@ -429,7 +431,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             })
                             # Auto-ingest into DB (service key) + in-memory catalog
                             import os as _os
-                            _sk = create_client(_os.getenv("SUPABASE_URL"), _os.getenv("SUPABASE_SERVICE_KEY"))
+                            _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
                             try:
                                 _sk.table("schools").upsert({
                                     "name": full_name, "type": uni_type, "majors": [],
@@ -437,6 +439,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
                                     "exam": "", "notes": note, "tags": ["llm_suggestion"],
                                     "deadlines": [], "source": "llm_suggestion", "verified": False,
+                                "enrichment_status": "skeleton",
                                 }, on_conflict="name").execute()
                                 logger.info(f"Auto-ingested: {full_name}")
                             except Exception as e3:
@@ -458,6 +461,9 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         actions.append({"type": "nav_plaza", "filter": q_major or "",
                                         "prompt": f"去广场查看{len(cards)}所{q_major or ''}方向学校"})
                         prompt += f"为你找到{len(cards)}所{q_major or '相关'}方向的学校（见下方卡片）。1句话简介即可，具体信息在卡片里。"
+                        # Fire-and-forget: enrich skeletons in background
+                        from threading import Thread
+                        Thread(target=_enrich_skeletons, args=(cards,), daemon=True).start()
                     else:
                         prompt += "1句话建议学生手动搜索或换个专业方向试试。"
                 async for event in _stream(prompt):
@@ -1172,6 +1178,44 @@ async def add_discovered_school(body: dict, user_id: str = Depends(get_user_id))
         return {"ok": True, "name": name}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+def _enrich_skeletons(cards: list[dict]):
+    """Background: web-search & LLM-extract requirements for skeleton schools."""
+    import time as _time
+    _time.sleep(1)  # let the SSE response finish first
+    for card in cards:
+        name = card.get("name","")
+        try:
+            from rag.rag_service import RagSummarizeService
+            rag = RagSummarizeService()
+            query = f"{name} 修士課程 募集要項 site:ac.jp"
+            web = rag.search_with_fallback(query)
+            if not web or web.startswith("未找到"):
+                query2 = f"{name} 大学院 入試要項"
+                web = rag.search_with_fallback(query2)
+            if not web or web.startswith("未找到"):
+                continue
+            import json as _json, re as _re
+            prompt = f"""以下は日本大学院のWeb検索結果です。入試情報を抽出しJSONで返してください。
+{web[:1500]}
+形式: {{"jlpt_min":"N1など","english_req":{{"type":"TOEFL/TOEIC/IELTS","min_score":数値,"required":true/false}},"exam":"筆記+面接","deadlines":[{{"name":"出願","date":"YYYY-MM-DD"}}],"notes":"備考"}} 不明項目はnull。"""
+            resp = chat_model.invoke(prompt)
+            text = resp.content if hasattr(resp, "content") else str(resp)
+            m = _re.search(r'\{.*\}', text, re.DOTALL)
+            if not m: continue
+            data = _json.loads(m.group(0))
+            update = {"enrichment_status": "completed", "verified": True}
+            if data.get("jlpt_min"): update["jlpt_min"] = data["jlpt_min"]
+            if data.get("english_req"): update["english_req"] = _json.dumps(data["english_req"], ensure_ascii=False)
+            if data.get("exam"): update["exam"] = data["exam"]
+            if data.get("deadlines"): update["deadlines"] = _json.dumps(data["deadlines"], ensure_ascii=False)
+            if data.get("notes"): update["notes"] = data["notes"]
+            _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+            _sk.table("schools").update(update).eq("name", name).execute()
+            logger.info(f"Enriched: {name}")
+        except Exception as e:
+            logger.warning(f"Enrich failed for {name}: {e}")
 
 
 # ── School catalog loaded from Supabase at startup ──

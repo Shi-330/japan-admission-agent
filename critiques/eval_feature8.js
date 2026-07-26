@@ -111,7 +111,21 @@ function R(label, pass, detail) {
     R('6-plaza', false, `Plaza test exception: ${e.message}`);
   }
 
-  // ── 5. Summary ──
+  // ── 5. Enrichment worker ──
+  console.log('--- Enrichment ---');
+  try {
+    const { execSync } = require('child_process');
+    const enrichResult = execSync(
+      `python enrich_schools.py --school "一桥大学 社会学研究科"`,
+      { cwd: '..', timeout: 120000, encoding: 'utf8' }
+    ).catch(() => '');
+    const enriched = enrichResult.includes('OK');
+    R('8-enrichment', enriched, enrichResult.slice(0, 100) || 'enrichment ran');
+  } catch (e) {
+    R('8-enrichment', false, `Enrichment test: ${e.message?.slice(0, 80)}`);
+  }
+
+  // ── 6. Summary ──
   const passed = results.filter(r => r.pass).length;
   const total = results.length;
   console.log(`\n=== ${passed}/${total} passed ===`);
