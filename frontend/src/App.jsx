@@ -423,7 +423,7 @@ export default function App() {
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
       const chatBody = JSON.stringify({ query: input, history: messages.slice(-6) });
-      const doFetch = (t) => fetch(`${API}/v1/chat`, {
+      const doFetch = (t) => fetch(`/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
         body: chatBody,

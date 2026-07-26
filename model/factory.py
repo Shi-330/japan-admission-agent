@@ -42,7 +42,7 @@ class BaseModelFactory(ABC):
 class ChatModelFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
         return ChatOpenAI(
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
             api_key=_get_deepseek_key(),
             base_url="https://api.deepseek.com/v1",
             streaming=True,
