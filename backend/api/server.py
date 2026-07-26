@@ -307,9 +307,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             # 3. Route by intent
             if intent == "match":
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
+                from utils.cn2jp import normalize as cn2jp_norm
+                q_terms = cn2jp_norm(body.query, chat_model=chat_model)
+                q_major = q_terms[0] if q_terms else (profile.target_major or "")
                 sp = StudentProfile(
                     jlpt_level=profile.jlpt_level,
-                    gpa=float(profile.gpa), target_major=profile.target_major,
+                    gpa=float(profile.gpa), target_major=q_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
                 )
