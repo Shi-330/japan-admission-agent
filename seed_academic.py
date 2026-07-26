@@ -179,9 +179,6 @@ def _sync_to_schools_table():
 
     Each program becomes one school row. Existing search endpoints read 'schools'.
     """
-    print("  (clearing old schools...)")
-    supabase.table("schools").delete().neq("name", "__RESERVED__").execute()
-
     pk = supabase.table("programs").select("*").execute()
     for p in pk.data:
         gs = supabase.table("graduate_schools").select("*, universities(*)").eq("id", p["graduate_school_id"]).execute()
@@ -189,11 +186,13 @@ def _sync_to_schools_table():
         uni = gs_data.get("universities") or {}
 
         school_name = f"{uni.get('name', '')} {gs_data.get('name', '')}"
+        uni_type = uni.get("type", "")
         school = {
             "name": school_name,
             "degree": p.get("degree", "修士"),
+            "type": uni_type,   # 国立/公立/私立
             "majors": json.loads(p.get("research_areas", "[]")) if isinstance(p.get("research_areas"), str) else (p.get("research_areas") or []),
-            "tags": [p.get("name", ""), uni.get("type", ""), gs_data.get("exam_type", "")],
+            "tags": [p.get("name", ""), uni_type, gs_data.get("exam_type", "")],
             "exam": json.dumps(p.get("exam_periods", []), ensure_ascii=False) if p.get("exam_periods") else "",
             "notes": p.get("notes", ""),
             "jlpt_min": (json.loads(p.get("jlpt")) if isinstance(p.get("jlpt"), str) else (p.get("jlpt") or {})).get("level", ""),
@@ -203,7 +202,7 @@ def _sync_to_schools_table():
             "source": "hierarchy",
             "verified": True,
         }
-        supabase.table("schools").insert(school).execute()
+        supabase.table("schools").upsert(school, on_conflict="name").execute()
     print(f"  Synced {len(pk.data)} program(s) to schools cache.")
 
 

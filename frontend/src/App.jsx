@@ -1142,7 +1142,16 @@ export default function App() {
                 <Card key={i} data-testid="school-card">
 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-800 school-name">{s.name}</h3>
+                    <h3 className="text-sm font-semibold text-gray-800 school-name">
+                      {s.name}
+                      {s.type && (
+                        <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium align-middle ${
+                          s.type === '国立' ? 'bg-blue-50 text-blue-600' :
+                          s.type === '公立' ? 'bg-emerald-50 text-emerald-600' :
+                          'bg-purple-50 text-purple-600'
+                        }`}>{s.type}</span>
+                      )}
+                    </h3>
                     <Button onClick={async () => {
                       if (alreadyTracked) return;
                       try {
