@@ -248,6 +248,11 @@ def _build_stage_context(profile: UserProfile) -> str:
 @app.post("/v1/chat")
 async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     """Intent classification → route to match/RAG/chat → SSE streaming response."""
+    # ── Rate limit check — per-user sliding window, 5 req/min ──
+    from backend.middleware.rate_limit import check_rate_limit
+    if not check_rate_limit(user_id):
+        raise HTTPException(429, detail="请求过于频繁，请稍后再试。")
+
     # 0. Lightweight greeting — no LLM, no DB needed
     if is_light_greeting(body.query):
         async def greet_generator():
