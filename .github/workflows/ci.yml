@@ -1,0 +1,28 @@
+name: CI — RAG Eval + Lint
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  rag-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - run: pip install -r requirements.txt
+      - run: PYTHONPATH=. python tests/rag_eval.py --json
+
+  # Playwright E2E — needs a running server. Skipped until self-hosted runner is set up.
+  # e2e:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: pip install -r requirements.txt && npm ci --prefix frontend && npm run build --prefix frontend
+  #     - run: uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 &
+  #     - run: npx playwright test
