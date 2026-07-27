@@ -20,18 +20,6 @@ import { apiCall as baseApiCall } from '@/lib/api';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
-// ── Plaza CN→JP school matching (shared by count badge + grid so they never disagree) ──
-const CN2JP = { '计算机':['情報工学','コンピュータ科学','情報理工'], '人工智能':['知能情報学','人工知能','AI'], '电子':['電気電子','電子情報学'], '机械':['機械工学','機械創造工学'], '数学':['数理工学','数理情報学'], '通信':['情報通信','通信情報システム'], '网络':['情報ネットワーク','メディアネットワーク'], '生命':['生命人間情報科学','バイオ情報工学'], '数据':['データ科学','データサイエンス'], '金融':['社会情報学','システム情報学'], '信息':['情報理工','情報工学','情報科学'], '情报':['情報理工','情報工学','情報科学'] };
-function schoolMatches(s, filter) {
-  if (!filter) return true;
-  const text = [s.name, ...(s.majors || []), ...(s.tags || [])].join(' ').toLowerCase();
-  return filter.toLowerCase().split(/\s+/).filter(Boolean).some(w => {
-    if (text.includes(w)) return true;
-    const aliases = CN2JP[w];
-    return aliases ? aliases.some(a => text.includes(a)) : false;
-  });
-}
-
 // ── Auth helpers (Supabase REST API, no SDK needed) ──
 async function loginSupabase(email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {

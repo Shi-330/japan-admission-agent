@@ -126,6 +126,9 @@ def hybrid_search_schools(
     except Exception:
         results = vs.similarity_search(query, k=k * 2, filter_metadata=filter_meta)
 
+    # Batch-load all schools once (avoid N+1 queries)
+    all_schools = {s.name: s for s in get_all_schools()}
+
     # Deduplicate by school name + post-filter
     seen = set()
     output = []
@@ -135,7 +138,7 @@ def hybrid_search_schools(
             continue
         seen.add(school_name)
 
-        school = _get_school_by_name(school_name)
+        school = all_schools.get(school_name)
         if not school:
             continue
 

@@ -86,36 +86,34 @@ class VectorStoreService:
         if not bm25_results:
             return vector_docs[:k]
 
-        # Build a unified doc list for RRF
+        # Build a unified doc list for RRF — use hash as stable unique key (no collision on [:100])
         all_docs = list(vector_docs)  # copy
         doc_to_vec_rank = {}
         for i, doc in enumerate(vector_docs):
-            key = doc.page_content[:100]  # heuristic key — first 100 chars
-            doc_to_vec_rank[key] = i + 1  # 1-indexed rank
+            doc_to_vec_rank[hash(doc.page_content)] = i + 1  # 1-indexed rank
 
         # Add any BM25-only docs not in vector results
         for idx, _ in bm25_results:
             doc_text = self._bm25_index._docs[idx]
-            key = doc_text[:100]
-            if key not in doc_to_vec_rank:
+            if hash(doc_text) not in doc_to_vec_rank:
                 all_docs.append(Document(page_content=doc_text, metadata={}))
 
         # Precompute BM25 rank lookup
         bm25_rank_map = {}
         for j, (bm_idx, _) in enumerate(bm25_results):
-            bm25_rank_map[self._bm25_index._docs[bm_idx][:100]] = j + 1
+            bm25_rank_map[hash(self._bm25_index._docs[bm_idx])] = j + 1
         default_rank = len(all_docs)
 
         # RRF scoring
         rrf_scores = {}
         for i, doc in enumerate(all_docs):
-            key = doc.page_content[:100]
+            key = hash(doc.page_content)
             vec_rank = doc_to_vec_rank.get(key, default_rank)
             bm25_rank = bm25_rank_map.get(key, default_rank)
             rrf_scores[key] = 1.0 / (60 + vec_rank) + 1.0 / (60 + bm25_rank)
 
         # Sort by RRF score descending
-        sorted_docs = sorted(all_docs, key=lambda d: rrf_scores.get(d.page_content[:100], 0), reverse=True)
+        sorted_docs = sorted(all_docs, key=lambda d: rrf_scores.get(hash(d.page_content), 0), reverse=True)
         return [d for d in sorted_docs if d.page_content.strip()][:k]
 
     def get_retriever(self, k: int = None, filter_kwargs: dict = None):

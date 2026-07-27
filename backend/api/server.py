@@ -34,6 +34,7 @@ app = FastAPI(title="Japan Admission Agent API")
 
 # ── Simple TTL cache for chat responses ──
 _chat_cache: dict = {}  # key -> (response_text, timestamp)
+_search_cache: dict = {}  # key -> (cards, actions, timestamp)
 _CACHE_TTL = 300  # 5 minutes
 
 
@@ -150,7 +151,7 @@ async def match_schools_endpoint(body: MatchRequest, user_id: str = Depends(get_
         english_score=profile.english_score,
         undergraduate_school=profile.undergraduate_school,
     )
-    matches = match_schools(sp)
+    matches = match_schools(sp, chat_model=chat_model)
     if not matches:
         raise HTTPException(status_code=503, detail="学校数据加载失败，无法执行匹配")
     # Run extraction after match
@@ -292,11 +293,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
     # ── Pre-filter: force "search_schools" for "考XX研究" patterns ──
     import re
-    if intent == "chat" and re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么).{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室)', body.query):
+    if re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么).{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室)', body.query):
+        if intent != "search_schools":
+            logger.info(f"Pre-filter overriding intent {intent} -> search_schools for: {body.query[:30]}")
         intent = "search_schools"
         result["flow"] = "school_search"
         result["depth"] = 1
-        logger.info(f"Pre-filter forced search_schools for: {body.query[:30]}")
 
     async def event_generator():
         assistant_text = ""
@@ -319,14 +321,20 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS, STATUS_LABELS
                 from utils.cn2jp import normalize as cn2jp_norm
                 q_terms = cn2jp_norm(body.query, chat_model=chat_model)
-                q_major = q_terms[0] if q_terms else (profile.target_major or "")
+                # q_terms[0] is the original query, prefer the first normalized JP term
+                if len(q_terms) > 1:
+                    q_major = q_terms[1]
+                elif q_terms:
+                    q_major = q_terms[0]
+                else:
+                    q_major = profile.target_major or ""
                 sp = StudentProfile(
                     jlpt_level=profile.jlpt_level,
                     gpa=float(profile.gpa), target_major=q_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
                 )
-                matches = match_schools(sp)
+                matches = match_schools(sp, chat_model=chat_model)
                 if not matches:
                     yield f"data: {json.dumps({'content': '学校数据加载失败，无法执行匹配。去广场手动筛选吧。', 'is_status': False, 'done': False})}\n\n"
                 else:
@@ -336,19 +344,37 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         yield f"data: {json.dumps({'content': line, 'is_status': False, 'done': False})}\n\n"
 
             elif intent == "search_schools":
+                # ── Cache check for repeated searches ──
+                sk = _cache_key(user_id, body.query, profile_hash)
+                cached = _search_cache.get(sk)
+                if cached:
+                    cards, cached_actions, ts = cached
+                    if time.time() - ts < _CACHE_TTL:
+                        logger.info(f"Search cache HIT for: {body.query[:30]}")
+                        yield f"data: {json.dumps({'content': f'为你匹配了{len(cards)}所学校：', 'is_status': False})}\n\n"
+                        yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True, 'school_cards': cards, **{k:v for k,v in cached_actions.items() if v}})}\n\n"
+                        return
+                    del _search_cache[sk]
+
                 # Use matching engine to find schools, then render as actionable cards
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
                 # Extract intended major from query — not from profile (user may ask about a different field)
                 from utils.cn2jp import normalize as cn2jp_norm
                 q_terms = cn2jp_norm(body.query, chat_model=chat_model)
-                q_major = q_terms[0] if q_terms else (profile.target_major or "")
+                # q_terms[0] is the original query, prefer the first normalized JP term
+                if len(q_terms) > 1:
+                    q_major = q_terms[1]
+                elif q_terms:
+                    q_major = q_terms[0]
+                else:
+                    q_major = profile.target_major or ""
                 sp = StudentProfile(
                     jlpt_level=profile.jlpt_level,
                     gpa=float(profile.gpa), target_major=q_major,
                     english_score=profile.english_score,
                     undergraduate_school=profile.undergraduate_school,
                 )
-                matches = match_schools(sp)
+                matches = match_schools(sp, chat_model=chat_model)
                 cards = []
                 if matches:
                     top_count = min(len(matches), 8)
@@ -466,6 +492,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         Thread(target=_enrich_skeletons, args=(cards,), daemon=True).start()
                     else:
                         prompt += "1句话建议学生手动搜索或换个专业方向试试。"
+                # Cache the search result for future identical queries
+                _search_cache[sk] = (cards, actions, time.time())
+                if len(_search_cache) > 100:
+                    oldest = min(_search_cache, key=lambda k: _search_cache[k][2])
+                    del _search_cache[oldest]
                 async for event in _stream(prompt):
                     yield event
 
@@ -498,7 +529,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         english_score=profile.english_score,
                         undergraduate_school=profile.undergraduate_school,
                     )
-                    matches = match_schools(sp)
+                    matches = match_schools(sp, chat_model=chat_model)
                     logger.info(f"QA matching: q_major={q_major}, terms={terms}, matches={len(matches or [])}")
 
                     # Broaden search: also match schools where ANY research_area overlaps with query terms
@@ -1182,7 +1213,7 @@ async def add_discovered_school(body: dict, user_id: str = Depends(get_user_id))
 
 def _enrich_skeletons(cards: list[dict]):
     """Background: web-search & LLM-extract requirements for skeleton schools."""
-    import time as _time
+    import time as _time, re as _re, json as _json
     _time.sleep(1)  # let the SSE response finish first
     for card in cards:
         name = card.get("name","")

@@ -125,8 +125,8 @@ def _schools_from_db() -> list[dict]:
     return []
 
 
-def match_schools(profile: StudentProfile) -> List[MatchResult]:
-    """对全部学校做匹配。读 Supabase 数据库，无 fallback。"""
+def match_schools(profile: StudentProfile, chat_model=None) -> List[MatchResult]:
+    """对全部学校做匹配。chat_model 用于 cn2jp LLM fallback。"""
     results = []
     schools = _schools_from_db()
 
@@ -134,12 +134,12 @@ def match_schools(profile: StudentProfile) -> List[MatchResult]:
         logger.warning("学校数据加载失败，无法执行匹配")
         return results  # empty — caller should handle with error message
 
-    # Use cn2jp for major normalization
+    # Use cn2jp for major normalization (LLM enrichment when available)
     target_terms = [profile.target_major] if profile.target_major else []
     if profile.target_major:
         try:
             from utils.cn2jp import normalize
-            target_terms = normalize(profile.target_major)
+            target_terms = normalize(profile.target_major, chat_model=chat_model)
         except Exception:
             pass
 

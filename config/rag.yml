@@ -1,7 +1,3 @@
-# Model config — overridden by factory.py since DashScope → DeepSeek + BGE migration.
-# These values are NOT read at runtime; they document the current model stack.
-# Keep in sync with:
-#   model/factory.py:   deepseek-chat  |  BAAI/bge-large-zh-v1.5
-#   .env:               DEEPSEEK_API_KEY
-chat_model_name: deepseek-chat
-embedding_model_name: BAAI/bge-large-zh-v1.5
+# Model config — kept as documentation only. Actual values in model/factory.py.
+chat_model_name: deepseek-v4-pro
+embedding_model_name: BAAI/bge-small-zh-v1.5 (512-dim, padded to 1024)

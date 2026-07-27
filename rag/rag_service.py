@@ -51,8 +51,8 @@ class RagSummarizeService(object):
                 results = search.invoke(query)
                 if results:
                     return f"【网络搜索】{results}"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"DDG search failed: {e}")
             return ""
 
         def _bing():
@@ -88,14 +88,17 @@ class RagSummarizeService(object):
                 parser.feed(resp.text)
                 if parser.snippets:
                     return "【Bing搜索】" + "\n".join(parser.snippets[:max_results])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Bing scrape failed: {e}")
             return ""
 
-        # Race DDG first (5s), fall back to Bing
-        result = _ddg()
-        if result:
-            return result
+        # Race DDG first (8s timeout), fall back to Bing
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                result = pool.submit(_ddg).result(timeout=8)
+                if result: return result
+        except Exception:
+            pass
         # DDG failed or timed out — try Bing with a short deadline
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:

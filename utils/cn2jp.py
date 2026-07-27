@@ -11,12 +11,12 @@ CN_JP_SYNONYMS = {
     "计算机": ["情報工学", "コンピュータ科学", "情報理工"],
     "人工智能": ["知能情報学", "人工知能", "AI"],
     "电子": ["電気電子", "電子情報学"],
-    "机械": ["機械工学", "機械創造工学"],
+    "机械": ["機械工学", "機械創造工学", "メカトロニクス", "ロボット工学"],
     "数学": ["数理工学", "数理情報学", "数学"],
     "通信": ["情報通信", "通信情報システム"],
     "网络": ["情報ネットワーク", "メディアネットワーク"],
     "生命": ["生命人間情報科学", "バイオ情報工学"],
-    "数据": ["データ科学", "データサイエンス"],
+    "数据": ["データ科学", "データサイエンス", "データサイエンス研究科", "統計数理研究所"],
     "金融": ["社会情報学", "システム情報学"],
     "信息": ["情報理工", "情報工学", "情報科学"],
     "情报": ["情報理工", "情報工学", "情報科学"],
@@ -30,7 +30,7 @@ CN_JP_SYNONYMS = {
     "化学": ["化学", "応用化学", "材料化学"],
     "物理": ["物理学", "物性物理学", "応用物理学"],
     "材料": ["材料工学", "マテリアル工学", "ナノ材料"],
-    "机械": ["機械工学", "メカトロニクス", "ロボット工学"],
+
     "建筑": ["建築学", "建築設計", "建築構造"],
     "电气": ["電気工学", "電気電子工学", "パワーエレクトロニクス"],
     # ── From 396 graduate school names in DB (auto-mapped by Kanji overlap) ──
@@ -45,7 +45,7 @@ CN_JP_SYNONYMS = {
     "能源": ["エネルギー科学研究科", "環境エネルギー工学"],
     "情報": ["情報理工学系研究科", "情報科学研究科", "システム情報科学府", "情報学府"],
     "AI": ["人工知能科学研究科", "知能情報学", "知能システム学"],
-    "数据": ["データサイエンス研究科", "統計数理研究所"],
+
     "纳米": ["ナノテクノロジー", "ナノ材料科学"],
     "光": ["光エレクトロニクス", "光工学"],
 }
@@ -63,10 +63,21 @@ def normalize(term: str, chat_model=None) -> list[str]:
     """
     terms = [term]
 
-    # 1. Static synonym map — no raw CN key (too broad)
+    # 1. Static synonym map — supports both simplified and traditional Chinese
     for cn, jp_list in CN_JP_SYNONYMS.items():
         if cn in term:
             terms.extend(jp_list)
+        else:
+            # Try traditional Chinese variant of the key (common S->T mappings)
+            trad_cn = cn.replace('筑','築').replace('华','華').replace('学','學').replace('国','國')\
+                        .replace('门','門').replace('关','關').replace('对','對').replace('尔','爾')\
+                        .replace('语','語').replace('体','體').replace('电','電').replace('机','機')\
+                        .replace('气','氣').replace('网','網').replace('计','計').replace('算','算')\
+                        .replace('数','數').replace('据','據').replace('经','經').replace('济','濟')\
+                        .replace('药','藥').replace('农','農').replace('医','醫').replace('环','環')\
+                        .replace('境','境').replace('艺','藝').replace('术','術')
+            if trad_cn != cn and trad_cn in term:
+                terms.extend(jp_list)
 
     # 2. LLM fallback: only if no static match AND chat_model is available
     if len(terms) == 1 and chat_model is not None:
