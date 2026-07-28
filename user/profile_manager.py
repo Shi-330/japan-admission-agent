@@ -174,6 +174,16 @@ PROFILE_EXTRACTION_PROMPT = """你是信息提取助手。分析对话，提取�
 JSON:"""
 
 # 2. 线上版管理器 (Supabase)
+def deadlines_to_items(deadlines):
+    """Normalize deadlines to (name, date_str) tuples. Handles both:
+    - list format: [{name: "...", date: "..."}, ...] (falls back to type/raw keys)
+    - dict format: {"出願": "2026-08-15", ...}
+    """
+    if isinstance(deadlines, list):
+        return [(d.get("name") or d.get("type", "?"), d.get("date") or d.get("raw", "?")) for d in deadlines]
+    return list(deadlines.items())
+
+
 class ProfileManager:
     def __init__(self):
         self.supabase = _shared_supabase
@@ -254,9 +264,22 @@ class ProfileManager:
                     prof.get("status", "pending"),
                     prof.get("date", "")
                 )
-            # merge deadlines
-            for k, v in app_delta.get("deadlines", {}).items():
-                existing.setdefault("deadlines", {})[k] = v
+            # merge deadlines — normalize to list format
+            delta_dl = app_delta.get("deadlines", {})
+            if isinstance(delta_dl, dict):
+                delta_dl = [{"name": k, "date": v} for k, v in delta_dl.items()]
+            existing_dl = existing.setdefault("deadlines", [])
+            if isinstance(existing_dl, dict):
+                existing["deadlines"] = existing_dl = [{"name": k, "date": v} for k, v in existing_dl.items()]
+            for d in delta_dl:
+                name = d.get("name", "")
+                # dedup by name
+                for e in existing_dl:
+                    if e.get("name") == name:
+                        e["date"] = d.get("date", "")
+                        break
+                else:
+                    existing_dl.append({"name": name, "date": d.get("date", "")})
 
         return profile
 
@@ -323,9 +346,10 @@ class ProfileManager:
                 if profs:
                     prof_strs = [f"{p['name']}({p.get('status','?')})" for p in profs]
                     line += f" | 教授: {', '.join(prof_strs)}"
-                deadlines = app.get("deadlines", {})
+                deadlines = app.get("deadlines", [])
                 if deadlines:
-                    line += f" | 截止: {'; '.join(f'{k}:{v}' for k,v in deadlines.items())}"
+                    d_str = '; '.join(f"{name}:{date}" for name, date in deadlines_to_items(deadlines))
+                    line += f" | 截止: {d_str}"
                 if app.get("notes"):
                     line += f" | {app['notes']}"
                 app_lines.append(line)

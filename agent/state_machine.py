@@ -258,7 +258,8 @@ def generate_timeline(stage_id: str, start_date: Optional[str] = None,
         }
         # Collect dates per stage
         stage_dates = {}
-        for key, val in deadlines.items():
+        items = deadlines.items() if isinstance(deadlines, dict) else ((d.get("name", ""), d.get("date", "")) for d in (deadlines or []))
+        for key, val in items:
             for kw, stage in keyword_stage.items():
                 if kw in key:
                     # Parse date — try various formats

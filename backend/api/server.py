@@ -12,10 +12,11 @@ from typing import Optional, List, Dict, Any
 import hashlib
 import asyncio
 import json
+import re
 import time
 
 from backend.api.auth import get_user_id
-from user.profile_manager import ProfileManager, UserProfile
+from user.profile_manager import ProfileManager, UserProfile, deadlines_to_items
 from agent.orchestrator import ChatOrchestrator
 from agent.intent_layer import IntentLayerEngine, is_light_greeting, is_short_query
 from model.factory import chat_model
@@ -223,9 +224,9 @@ def _build_stage_context(profile: UserProfile) -> str:
                 ps = status_cn.get(p.get("status", ""), p.get("status", "?"))
                 prof_strs.append(f"{p['name']}({ps})")
             line += f" | 教授: {', '.join(prof_strs)}"
-        deadlines = app.get("deadlines", {})
+        deadlines = app.get("deadlines", [])
         if deadlines:
-            d_strs = [f"{k}:{v}" for k, v in deadlines.items()]
+            d_strs = [f"{name}:{date}" for name, date in deadlines_to_items(deadlines)]
             line += f" | 截止: {'; '.join(d_strs)}"
         if app.get("notes"):
             line += f" | {app['notes']}"
@@ -296,9 +297,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     intent = result["intent"]
     actions = result["actions"]
 
-    # ── Pre-filter: force "search_schools" for "考XX研究" patterns ──
-    import re
-    if re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么).{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室)', body.query):
+    # ── Pre-filter: force "search_schools" for "考XX" / "推荐XX" patterns ──
+    if re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么|想学)(?:.{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室))?', body.query):
         if intent != "search_schools":
             logger.info(f"Pre-filter overriding intent {intent} -> search_schools for: {body.query[:30]}")
         intent = "search_schools"
@@ -406,7 +406,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             from rag.rag_service import RagSummarizeService as R
                             web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
                             if web and not web.startswith("未找到"):
-                                import re
                                 found = list(set(re.findall(
                                     r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
                                 existing = {s.get("name","") for s in SCHOOL_CATALOG}
@@ -594,7 +593,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                 web_hint = rag.search_with_fallback(f"{body.query} 日本 大学院 推荐 研究科")
                                 if web_hint and not web_hint.startswith("未找到"):
                                     schools_context += f"\n【网络补充】\n{web_hint[:600]}"
-                                    import re
                                     found = list(set(re.findall(
                                         r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web_hint)))
                                     existing = {s.get("name","") for s in SCHOOL_CATALOG}
@@ -795,7 +793,7 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
                         overdue_profs += 1
                 except (ValueError, TypeError):
                     pass
-        for name, date_str in app.get("deadlines", {}).items():
+        for name, date_str in deadlines_to_items(app.get("deadlines", [])):
             try:
                 dl = datetime.fromisoformat(date_str).date()
                 days_left = (dl - today).days
@@ -1122,7 +1120,7 @@ class DocFetchRequest(BaseModel):
 async def fetch_and_extract(body: DocFetchRequest, user_id: str = Depends(get_user_id)):
     """Fetch a URL, extract text, use LLM to find deadlines/exam info."""
     import urllib.request
-    import re
+
 
     # 1. Fetch the URL
     try:
@@ -1432,7 +1430,7 @@ def _collect_all_reminders(profile: UserProfile) -> list[dict]:
                     pass
 
         # Deadline reminders (approaching + expired, mutually exclusive)
-        for dl_name, dl_date_str in app.get("deadlines", {}).items():
+        for dl_name, dl_date_str in deadlines_to_items(app.get("deadlines", [])):
             try:
                 dl = datetime.fromisoformat(dl_date_str).date()
                 days_left = (dl - today).days
