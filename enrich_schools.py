@@ -31,7 +31,23 @@ def enrich_school(school: dict) -> bool:
     supabase.table("schools").update({"enrichment_status": "enriching"}).eq("name", name).execute()
 
     try:
-        # Step 1: Web search for official admission PDF
+        # Step 0: Search Bing for PDF URLs directly
+        pdf_url = None
+        try:
+            import requests as _req
+            from urllib.parse import quote
+            _uq = quote(f"{name} 大学院 募集要項 2027 filetype:pdf site:ac.jp")
+            _r = _req.get(f"https://www.bing.com/search?q={_uq}&count=5",
+                          timeout=10, verify=False,
+                          headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            pdf_matches = re.findall(r'https?://[^\s<>"]+\.pdf', _r.text)
+            if pdf_matches:
+                pdf_url = pdf_matches[0]
+                print(f"    Found PDF: {pdf_url[:120]}")
+        except Exception as e:
+            print(f"    PDF search skipped: {e}")
+
+        # Step 1: Web search for official admission text
         query = f"{name} 修士課程 募集要項 2027 site:ac.jp"
         from rag.rag_service import RagSummarizeService
         rag = RagSummarizeService()
@@ -45,7 +61,9 @@ def enrich_school(school: dict) -> bool:
             return False
 
         # Step 2: LLM extract structured fields
+        pdf_hint = f"\n\n【PDF URL】{pdf_url}" if pdf_url else ""
         prompt = f"""以下は日本大学院の募集要項に関するWeb検索結果です。この学校の修士課程入試情報を抽出してください。
+入学試験情報は必ずPDFに記載があるので、PDFがあれば優先して参照してください。{pdf_hint}
 
 {web_text[:1500]}
 
@@ -71,11 +89,13 @@ def enrich_school(school: dict) -> bool:
         if data.get("exam"): update["exam"] = data["exam"]
         if data.get("deadlines"): update["deadlines"] = data["deadlines"]
         if data.get("notes"): update["notes"] = (school.get("notes","") + " | " + data["notes"]).strip(" |")
+        # Use LLM-found PDF URL or dedicated-search-found URL
+        _final_pdf = data.get("pdf_url") or pdf_url
         # PDF download + upload to Supabase Storage
-        if data.get("pdf_url"):
+        if _final_pdf:
             try:
                 import requests as _req
-                _r = _req.get(data["pdf_url"], timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+                _r = _req.get(_final_pdf, timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0"})
                 _cl = int(_r.headers.get("Content-Length", 0))
                 if _r.status_code == 200 and _cl < 5 * 1024 * 1024:
                     pdf_bytes = _r.content

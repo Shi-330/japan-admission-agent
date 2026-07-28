@@ -787,7 +787,7 @@ export default function App() {
                                   dl.splice(j, 1);
                                   updateApplication(app.school, { deadlines: dl });
                                 }} title="点击删除">
-                                {item.name}: {item.date || (item.start ? `${item.start.slice(0,10)}~${item.end ? item.end.slice(0,10) : ''}` : item.raw || '')}
+                                {item.name}: {(() => { const d = new Date(item.date); return isNaN(d.getTime()) ? (item.date || '') : `${d.getMonth()+1}月${d.getDate()}日`; })()}
                                 <span className="text-muted-foreground/50">&times;</span>
                               </span>
                             ))
@@ -859,7 +859,8 @@ export default function App() {
                             className="flex-1 text-xs p-1 border rounded" />
                           <Button onClick={() => {
                             if (editDeadlineKey.trim() && editDeadlineVal.trim()) {
-                              const dl = { ...(app.deadlines || {}), [editDeadlineKey.trim()]: editDeadlineVal.trim() };
+                              const existing = Array.isArray(app.deadlines) ? app.deadlines : [];
+                              const dl = [...existing, { name: editDeadlineKey.trim(), date: editDeadlineVal.trim() }];
                               updateApplication(app.school, { deadlines: dl });
                               setEditCard(null); setEditDeadlineKey(''); setEditDeadlineVal('');
                             }

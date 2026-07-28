@@ -1,9 +1,11 @@
 import os, json, logging
 logger = logging.getLogger("agent")
-# Kill broken system proxy & use HF mirror for China access
-for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
-    os.environ.pop(_v, None)
-os.environ["NO_PROXY"] = "*"
+# Respect system proxy if set (e.g. for CN→global access)
+# Only kill proxy if JP_AGENT_NO_PROXY is set (opt-in for offline mode)
+if os.environ.get("JP_AGENT_NO_PROXY"):
+    for _v in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+        os.environ.pop(_v, None)
+    os.environ["NO_PROXY"] = "*"
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"  # Windows no symlink support
 
