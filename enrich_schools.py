@@ -111,15 +111,32 @@ def enrich_school(school: dict) -> bool:
         return True
 
     except Exception as e:
-        supabase.table("schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+        try:
+            supabase.table("schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+        except Exception:
+            pass
         print(f"    FAIL: {e}")
         return False
 
 
 def run(batch_size=5):
-    """Process a batch of pending schools."""
-    res = supabase.table("schools").select("name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
-    pending = res.data
+    """Process a batch of pending schools with retry on network errors."""
+    import time as _time
+    for attempt in range(3):
+        try:
+            res = supabase.table("schools").select("name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
+            pending = res.data
+            break
+        except Exception:
+            if attempt < 2:
+                print(f"  DB read retry {attempt+1}...")
+                _time.sleep(5 * (attempt + 1))
+            else:
+                print("  DB read failed after 3 retries, aborting batch")
+                return
+    else:
+        return
+
     if not pending:
         # Also retry failed ones
         res = supabase.table("schools").select("name,notes").eq("enrichment_status", "failed").limit(batch_size).execute()
@@ -131,8 +148,12 @@ def run(batch_size=5):
     print(f"Found {len(pending)} pending school(s)")
     ok = 0
     for s in pending:
-        if enrich_school(s):
-            ok += 1
+        try:
+            if enrich_school(s):
+                ok += 1
+        except Exception as e:
+            print(f"    CRASH on {s.get('name','?')}: {e}")
+        _time.sleep(1)  # rate limit between schools
     print(f"\nDone: {ok}/{len(pending)} enriched")
 
 
