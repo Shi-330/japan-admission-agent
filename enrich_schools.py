@@ -71,7 +71,20 @@ def enrich_school(school: dict) -> bool:
         if data.get("exam"): update["exam"] = data["exam"]
         if data.get("deadlines"): update["deadlines"] = data["deadlines"]
         if data.get("notes"): update["notes"] = (school.get("notes","") + " | " + data["notes"]).strip(" |")
-        if data.get("pdf_url"): update["pdf_url"] = data["pdf_url"]
+        # PDF download + upload to Supabase Storage
+        if data.get("pdf_url"):
+            try:
+                import requests as _req
+                _r = _req.get(data["pdf_url"], timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+                _cl = int(_r.headers.get("Content-Length", 0))
+                if _r.status_code == 200 and _cl < 5 * 1024 * 1024:
+                    pdf_bytes = _r.content
+                    storage_path = f"{name}/{name}_{data.get('year','2027')}_募集要項.pdf"
+                    supabase.storage.from_("pdfs").upload(storage_path, pdf_bytes, {"content-type": "application/pdf"})
+                    storage_url = supabase.storage.from_("pdfs").get_public_url(storage_path)
+                    update["pdf_url"] = storage_url
+            except Exception:
+                pass  # keep original URL if storage upload fails
 
         supabase.table("schools").update(update).eq("name", name).execute()
         print(f"    OK: {json.dumps({k:v for k,v in update.items() if k != 'enrichment_status'}, ensure_ascii=False)[:120]}")

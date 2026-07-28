@@ -1233,7 +1233,7 @@ def _enrich_skeletons(cards: list[dict]):
             import json as _json, re as _re
             prompt = f"""以下は日本大学院のWeb検索結果です。入試情報を抽出しJSONで返してください。
 {web[:1500]}
-形式: {{"jlpt_min":"N1など","english_req":{{"type":"TOEFL/TOEIC/IELTS","min_score":数値,"required":true/false}},"exam":"筆記+面接","deadlines":[{{"name":"出願","date":"YYYY-MM-DD"}}],"notes":"備考"}} 不明項目はnull。"""
+形式: {{"jlpt_min":"N1など","english_req":{{"type":"TOEFL/TOEIC/IELTS","min_score":数値,"required":true/false}},"exam":"筆記+面接","deadlines":[{{"name":"出願","date":"YYYY-MM-DD"}}],"pdf_url":"PDF_URLがあれば","notes":"備考"}} 不明項目はnull。"""
             resp = chat_model.invoke(prompt)
             text = resp.content if hasattr(resp, "content") else str(resp)
             m = _re.search(r'\{.*\}', text, re.DOTALL)
@@ -1246,6 +1246,20 @@ def _enrich_skeletons(cards: list[dict]):
             if data.get("deadlines"): update["deadlines"] = _json.dumps(data["deadlines"], ensure_ascii=False)
             if data.get("notes"): update["notes"] = data["notes"]
             _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+            # PDF download + upload to Supabase Storage
+            if data.get("pdf_url"):
+                try:
+                    import requests as _req
+                    _r = _req.get(data["pdf_url"], timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+                    _cl = int(_r.headers.get("Content-Length", 0))
+                    if _r.status_code == 200 and _cl < 5 * 1024 * 1024:
+                        pdf_bytes = _r.content
+                        storage_path = f"{name}/{name}_{data.get('year','2027')}_募集要項.pdf"
+                        _sk.storage.from_("pdfs").upload(storage_path, pdf_bytes, {"content-type": "application/pdf"})
+                        storage_url = _sk.storage.from_("pdfs").get_public_url(storage_path)
+                        update["pdf_url"] = storage_url
+                except Exception:
+                    pass  # keep original URL if storage upload fails
             _sk.table("schools").update(update).eq("name", name).execute()
             logger.info(f"Enriched: {name}")
         except Exception as e:
