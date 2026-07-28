@@ -153,7 +153,7 @@ def run(batch_size=5):
                 ok += 1
         except Exception as e:
             print(f"    CRASH on {s.get('name','?')}: {e}")
-        _time.sleep(1)  # rate limit between schools
+        _time.sleep(3)  # Supabase free tier rate limit
     print(f"\nDone: {ok}/{len(pending)} enriched")
 
 
