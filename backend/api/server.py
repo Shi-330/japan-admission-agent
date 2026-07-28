@@ -442,6 +442,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             if len(parts) < 2: continue
                             uni_name = parts[0]
                             gs_name = parts[1] if len(parts) > 1 else ""
+                            # Normalize to canonical university name (prevent 东京/東京 split)
+                            try:
+                                _uni_r = supabase.table("universities").select("name").or_(
+                                    f"name.ilike.%{uni_name}%,name_jp.ilike.%{uni_name}%").limit(1).execute()
+                                if _uni_r.data:
+                                    uni_name = _uni_r.data[0]["name"]
+                            except Exception:
+                                pass
                             full_name = f"{uni_name} {gs_name}" if gs_name else uni_name
                             jlpt = parts[2] if len(parts) > 2 else ""
                             eng = parts[3] if len(parts) > 3 else ""
