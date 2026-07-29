@@ -1882,19 +1882,29 @@ async def generate_checklist(user_id: str = Depends(get_user_id)):
             if date_str:
                 items.append({"item": d.get("name", "期限"), "detail": date_str[:10] if len(date_str)>=10 else date_str, "required": True, "category": "deadline"})
 
-        # LLM generates school-specific document list (not hardcoded)
+        # Search actual 募集要項 for school-specific requirements
         try:
-            llm_prompt = f"「{sname}」の修士課程出願に必要な書類・手続きを簡潔にリストアップしてください。既知: JLPT={school.jlpt_min or '不要'}, 英語={eng}, 試験={school.exam or '不明'}。各項目を「・項目名: 説明」形式で。8行以内。"
-            resp = chat_model.invoke(llm_prompt)
-            llm_text = resp.content if hasattr(resp, "content") else str(resp)
-            for line in llm_text.strip().split("\n"):
-                line = line.strip().lstrip("・- ").strip()
-                if line and len(line) > 3:
-                    parts = line.split(":", 1)
-                    if len(parts) == 2:
-                        items.append({"item": parts[0].strip(), "detail": parts[1].strip(), "required": True, "category": "llm"})
-                    else:
-                        items.append({"item": line, "detail": "", "required": True, "category": "llm"})
+            from rag.rag_service import RagSummarizeService
+            rag = RagSummarizeService()
+            search_query = f"{sname} 修士課程 出願書類 必要"
+            web_text = rag.search_with_fallback(search_query)
+            if web_text and not web_text.startswith("未找到"):
+                # Ask LLM to extract structured doc list from search results
+                extract_prompt = f"""以下は「{sname}」の募集要項に関する検索結果です。出願に必要な書類・手続きをリストアップしてください。
+各項目を「・項目名: 説明」形式で。不明な項目は含めないでください。8行以内。
+
+{web_text[:1500]}"""
+                resp = chat_model.invoke(extract_prompt)
+                llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                for line in llm_text.strip().split("\n"):
+                    line = line.strip().lstrip("・- ").strip()
+                    if line and len(line) > 3:
+                        parts = line.split(":", 1)
+                        name = parts[0].strip()
+                        detail = parts[1].strip() if len(parts) > 1 else ""
+                        # Skip duplicates with structured items
+                        if not any(i["item"] == name for i in items):
+                            items.append({"item": name, "detail": detail, "required": True, "category": "web_search"})
         except Exception:
             pass
 
