@@ -376,7 +376,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     top_count = min(len(matches), 8)
                     top_names = [m.school_name for m in matches[:top_count]]
                     actions.append({"type": "suggested_schools", "schools": top_names})
-                    actions.append({"type": "nav_plaza", "filter": q_major or "", "prompt": f"去广场查看{len(top_names)}所{q_major or ''}方向学校"})
                     # Build school cards with match status (same as qa intent)
                     for m in matches[:8]:
                         full = next((s for s in SCHOOL_CATALOG if s.get("name") == m.school_name), {})
@@ -409,11 +408,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     logger.info(f"Auto-ingested {len(new_names)} schools from web")
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
+                    profile_ctx = f"JLPT {profile.jlpt_level or '未知'}、GPA {profile.gpa}、英语 {profile.english_score or '未知'}"
+                    if profile.research_area: profile_ctx += f"、研究方向 {profile.research_area}"
+                    if profile.undergraduate_school: profile_ctx += f"、本科 {profile.undergraduate_school}"
                     prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。
-学生背景：JLPT{profile.jlpt_level}、GPA{profile.gpa}。
+学生完整背景：{profile_ctx}。
 数据库匹配到{len(top_names)}所学校：{', '.join(top_names[:5])}。
 {"这些是该方向在数据库中的结果。以下匹配的学校卡片已展示给学生。数据库覆盖有限，你自己的知识请务必补充——这个领域日本的顶尖院校有哪些、方向怎么分类、申请路径怎么选。" if len(top_names) < 5 else ""}
-要求：2-3段自然回复，先领域分析再结合匹配结果。如果有研究科名对不上专业方向的情况（如情报理工匹配到地震），诚实指出并纠正。不要反复喊学生去广场。"""
+请务必结合学生的具体研究细分方向和英语成绩做针对性点评（如托业分数够不够、地震勘探对应哪些实验室）。2-3段自然回复，先背景诊断再领域分析再申请路径建议。诚实指出卡片中数据错位的问题（如某校卡片里混入了其他学校的链接）。"""
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
@@ -489,8 +491,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
                     if cards:
                         actions.append({"type": "school_cards", "cards": cards})
-                        actions.append({"type": "nav_plaza", "filter": q_major or "",
-                                        "prompt": f"去广场查看{len(cards)}所{q_major or ''}方向学校"})
                         prompt += f"下方卡片展示了{len(cards)}所匹配学校的入学条件和差距。请提供：1)背景评估（优势/短板）2)该方向在日本的前沿院校和实验室（即使不在卡片里也请补充）3)具体的申请路径建议。要有可操作性，不要笼统建议。"
                         # Fire-and-forget: enrich skeletons in background
                         from threading import Thread
@@ -585,7 +585,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         if extra_schools:
                             schools_context += f"\n【相关领域】还发现{len(extra_schools)}所相关学校"
                         actions.append({"type": "school_cards", "cards": school_cards_data})
-                        actions.append({"type": "nav_plaza", "filter": q_major or "", "prompt": f"去广场查看{len(school_cards_data)}所匹配学校"})
 
                         logger.info(f"School cards before enrichment: {len(school_cards_data)}")
                         # Web search enrichment + auto-ingest into DB
