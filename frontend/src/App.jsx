@@ -1145,7 +1145,7 @@ export default function App() {
                     {msg.schoolCards.map((card, i) => {
                       const trackedNames = (stage?.applications || []).map(a => a.school);
                       return (
-                        <SchoolCard key={i} school={card} compact
+                        <SchoolCard key={i} school={card} compact profile={profile}
                           status={card.status_label ? { status_label: card.status_label, gaps: card.gaps || [] } : null}
                           alreadyTracked={trackedNames.includes(card.name)}
                           onTrack={async () => {

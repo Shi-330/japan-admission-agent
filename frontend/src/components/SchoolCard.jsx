@@ -42,8 +42,24 @@ function cleanNotes(raw, schoolName) {
   return { text, tags };
 }
 
-export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, compact }) {
+// Compute match score 0-100 based on JLPT + English + GPA requirements
+function computeScore(school, profile) {
+  if (!profile) return null;
+  let total = 0, met = 0;
+  const jlpt = school.jlpt_min || school.jlpt;
+  if (jlpt) { total++; const userJ = profile.jlpt_level || 'N5'; const order = ['N5','N4','N3','N2','N1']; if (order.indexOf(userJ) >= order.indexOf(jlpt)) met++; }
+  if (school.english_req?.required) { total++; if (profile.english_score && profile.english_score !== '无') met++; }
+  if (school.gpa_min > 0 && profile.gpa) { total++; if (parseFloat(profile.gpa) >= school.gpa_min) met++; }
+  if (total === 0) return null;
+  const score = Math.round((met / total) * 100);
+  return { score, met, total };
+}
+
+export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, compact, profile }) {
   const { text: cleanNote, tags: noteTags } = cleanNotes(s.notes, s.name);
+  const matchScore = computeScore(s, profile);
+  const scoreColor = !matchScore ? '' : matchScore.score >= 80 ? 'text-green-600' : matchScore.score >= 50 ? 'text-amber-600' : 'text-red-600';
+  const scoreLabel = !matchScore ? '' : matchScore.score >= 80 ? '稳妥' : matchScore.score >= 50 ? '冲刺' : '差距较大';
   const typeBadge = s.type && (
     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
       s.type === '国立' ? 'bg-blue-50 text-blue-600' :
@@ -62,6 +78,7 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
         <div className="flex items-center justify-between mb-1">
           <h4 className="text-sm font-semibold truncate flex-1">
             {s.name} {typeBadge}
+            {matchScore && <span className={`ml-1 text-[10px] font-normal ${scoreColor}`}>{scoreLabel} {matchScore.score}%</span>}
           </h4>
           {onTrack && !alreadyTracked && (
             <Button onClick={onTrack} size="sm" className="text-xs px-2 py-1 h-auto ml-2 shrink-0">
