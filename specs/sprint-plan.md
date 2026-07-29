@@ -1,113 +1,117 @@
-# Sprint Plan — 2026-07-13
+# Sprint Plan — 2026-07-27
 
 ## Goal
 
-实现 Agent 主动照顾学生的三层操作能力：画像驱动生成、状态机追踪+倒计时、主动提醒。后端已有完整支撑（state_machine / matching_engine / greeting 端点），只做浏览器可验收的前端功能。
+Improve the two core user-facing surfaces — chat and application tracking — by adding live urgency visualization, richer chat rendering, interactive calendar controls, and end-to-end eval coverage.
 
 ---
 
-### Sprint 1: 画像驱动看板 (Profile-Driven Dashboard)
+### Sprint 1: Countdown + Urgency Visualization on Tracking Cards
 
-- **Scope**: 在 `frontend/src/App.jsx` 新增一个主页/看板视图，聚合画像完整性、个性化建议、下一步行动。配合 `backend/api/server.py` 小改，让 `/v1/greeting` 返回结构化数据（不再仅是一条文本）。
+- **Scope**: `frontend/src/App.jsx` lines 705-931 (sidebar per-school cards) and `frontend/src/components/DashboardView.jsx` lines 94-108 (nearest deadline), lines 243-272 (deadline card). `frontend/src/components/CalendarView.jsx` lines 107-118 (deadline dots).
+
 - **Deliverables**:
-  1. 新增 `frontend/src/components/DashboardView.jsx` -- 主页看板组件，含：
-     - 画像完整度指示器（进度条 + 已填/必填字段数）
-     - 基于 `/v1/greeting` 消息的个性化建议区（高亮显示最高优先级的行动项）
-     - 按 `applications.stage` 归类的各校状态一览（准备中 / 套磁中 / 出愿中 / 考试 / 等结果 / 已确定）
-     - 距最近截止日的倒计时（天），无截止日时显示"暂未设定截止日"
-  2. `App.jsx` 新增"首页"Tab（Tabs 顺序：首页 > 对话 > 广场 > 日历），切换 Tab 时自动刷新 greeting
-  3. `backend/api/server.py` 改造 `/v1/greeting` 返回结构化 JSON：`{ message, has_reminders, profile_completeness, next_actions, counts: { total_apps, overdue_profs, upcoming_deadlines } }`
-  4. 画像空状态：当 profile 全空时展示引导卡片（"填写背景信息，开启个性化推荐"）
+  1. Replace raw deadline date text in sidebar cards (App.jsx lines 792-820) with live countdown labels: "X 天后 / 已过期 X 天" computed client-side from the ISO date string. Apply urgency color classes:
+     - `>14 days`: `text-muted-foreground` grey
+     - `7-14 days`: `text-urgency-medium` amber
+     - `0-7 days`: `text-urgency-high` red + framer-motion `animate-pulse`
+     - `expired`: `text-urgency-high` red + italic + "已过期 X 天"
+  2. Add professor overdue banner (`>=14 days no reply`) directly on the specific sidebar card (App.jsx, after the professors section around line 768), not just in the global reminders section at the bottom. Banner copy: "教授 {name} {days} 天未回复，建议跟进" with a click handler that opens the OutreachDraft dialog.
+  3. In DashboardView's nearest deadline card (lines 243-272): replace the static progress bar with a live countdown ticker that recalculates every 60 seconds using `setInterval` + `useEffect`, showing remaining days decreasing in real time.
+  4. In DashboardView's KPI deadline card (lines 140-153): add a "已过期 X 个" counter alongside "最近: X 天后" when deadlines are past due.
+
 - **Acceptance Criteria**:
-  - 登录后默认显示首页看板，问候语 + 建议 + 进度一览可见
-  - 每项建议点击后跳转到对应 Tab（如"去选校广场"切换到广场页）
-  - 画像完成度百分比随着 profile 字段填充实时更新
-  - 各校状态卡片可点击展开/收起查看详情
-  - 所有 UI 文本不含 emoji
-  - 切换 Tab 回首页时 greeting 刷新，反映最新状态机变化
+  - Every deadline shown in a sidebar school card displays a client-side computed countdown ("15 天后", "已过期 3 天"), not the raw ISO date
+  - Countdown colors match the urgency bands (grey >14d, amber 7-14d, red <7d, red+italic expired)
+  - Professor overdue banner appears on the specific school card whose professor has >=14 days no reply, with action button to open outreach draft
+  - DashboardView nearest deadline countdown updates visibly within 60s without page refresh
+  - All countdowns survive tab switches (computed fresh on mount via `useEffect`)
+  - No emoji in any label text
+
 - **Priority**: P0
 
 ---
 
-### Sprint 2: 倒计时可视化 + 时间线增强 (Countdown & Timeline)
+### Sprint 2: Chat Output Enrichment + Suggested Follow-ups
 
-- **Scope**: `frontend/src/App.jsx`（各校申请卡片）和 `frontend/src/components/CalendarView.jsx` -- 让截止日和阶段倒计时变得醒目、可感知。
+- **Scope**: `frontend/src/App.jsx` lines 1085-1192 (chat message rendering), `frontend/src/App.jsx` around lines 437-559 (`sendMessage` flow for follow-up extraction), `agent/intent_layer.py` lines 47-111 (classify prompt for suggested_actions).
+
 - **Deliverables**:
-  1. 各校卡片上的 deadline 标签改为 `X 天后` / `已过期 X 天` 格式，带颜色编码：
-     - >14 天：灰色
-     - 7-14 天：琥珀色
-     - 0-7 天：红色 + 闪烁动效（framer-motion pulse）
-     - 已过期：红色 + "已过期 X 天" + 斜体
-  2. 各校卡片 timeline 从 `<details>` 中取出，改为内联可视进度条（横轴，显示已完成/当前/未来阶段），当前阶段用实心高亮，未来阶段用灰色占位
-  3. `CalendarView.jsx` 改造：
-     - 截止日标签改为圆点 + 计数字条，hover 显示详情
-     - 本月的截止日用红色圆点，下月用黄色，更远用灰色
-     - 添加 "X 天后" 文字标注在截止日后方
-     - 增加 "+ 添加截止日" 按钮直接在当前日历添加 deadline（调 `/v1/applications`）
-  4. 教授超期未回（14+ 天无回复）在各校卡片上显示警告横幅，带"已 X 天未回复，建议跟进"字样
+  1. Replace the simple regex-based markdown renderer (App.jsx lines 1094-1099) with a dedicated `ChatMessage` component in `frontend/src/components/ChatMessage.jsx` that renders:
+     - Bold / italic / inline code / blockquote via regex (current approach but extended to cover `|` tables as simple horizontal layout)
+     - Bullet and numbered lists as `<ul>` / `<ol>` with proper indentation (currently all rendered as `<span>` with `· ` prefix)
+     - Inline `[学校名](plaza:{filter})` links that the user can click to navigate to plaza with that filter pre-applied
+  2. After each assistant streaming response completes (App.jsx lines 598-627 in the `done` event handler), inject a row of 2-3 contextual suggestion chips below the last assistant bubble:
+     - Chips are derived from `next_actions` in the greeting data: e.g., "设定研究方向", "去广场浏览学校", "查看临近截止日"
+     - Chips render as small `<button>` pills below the message, clicking calls the corresponding tab navigation
+     - If no suggested actions from greeting, fall back to static defaults: "去广场看看" / "查看申请进度"
+  3. Add a `/v1/chat/suggest` endpoint or reuse the `intent` classification to return suggested follow-up questions for the current conversational context, returned as an SSE `suggested_questions` array in the final done event. Limit to 3 suggestions, max 30 chars each. The frontend renders them as clickable chips that auto-fill the input box.
+
 - **Acceptance Criteria**:
-  - 每张 deadline 标签显示剩余天数，颜色随紧迫度自动变化
-  - 日历页按月份排列的 deadline 标记可读、颜色可区分
-  - 已过期截止日显示负天数（"已过期 3 天"）
-  - 教授无回复警告在卡片顶部可见，不影响其他操作
-  - 时间线进度条交互无闪烁，数据及时刷新（API 调用后自动更新）
-  - 数字刷新逻辑使用客户端实时计算（不依赖轮询 API），保障秒级响应
+  - Lists in assistant messages render as proper indented list items, not flat "· " spans
+  - `[xxx](plaza:yyy)` links in any assistant response render as clickable chips that navigate to plaza with filter "yyy"
+  - After each complete assistant response, 2-3 suggestion chips appear below the message
+  - Clicking a suggestion chip navigates to the correct tab or fills the input box
+  - The `/v1/chat/suggest` fallback returns reasonable options even when greeting data is empty
+  - Zero console errors after a full chat session of 10+ messages
+  - No emoji in chip labels
+
 - **Priority**: P0
 
 ---
 
-### Sprint 3: 主动提醒中心 (Proactive Reminder Hub)
+### Sprint 3: Calendar Interaction + Inline Timeline
 
-- **Scope**: `frontend/src/App.jsx` 增加持久化通知系统，配合 `backend/api/server.py` 新增一个聚合提醒端点 `/v1/reminders`，用于周期性获取和标记已读。
+- **Scope**: `frontend/src/components/CalendarView.jsx` (entire file), `frontend/src/App.jsx` lines 915-927 (timeline `<details>`), `backend/api/server.py` `POST /v1/applications` endpoint (lines 1337-1345) for calendar-sourced deadline creation.
+
 - **Deliverables**:
-  1. 新增 `frontend/src/components/ReminderBell.jsx` -- 顶部导航铃铛图标，显示未读提醒数量 badge（红点 + 数字）
-  2. 新增 `frontend/src/components/ReminderDrawer.jsx` -- 右侧滑出抽屉，列出所有提醒（按紧急度排序），支持单条"忽略"/"标记已读"
-  3. `backend/api/server.py` 新增 `GET /v1/reminders` 端点，返回聚合提醒列表：
-     ```json
-     [
-       {
-         "id": "prof_no_reply_xxx",
-         "type": "professor_no_reply",
-         "school": "京都大学 情报理工",
-         "professor": "田中太郎",
-         "message": "田中太郎 20 天未回复，建议发跟进邮件或换教授",
-         "days": 20,
-         "severity": "high",
-         "created_at": "2026-07-01T00:00:00",
-         "acknowledged": false
-       }
-     ]
-     ```
-  4. 前端定时轮询（每 120 秒） `/v1/reminders`，新增提醒时弹出 sonner toast
-  5. 页面获得焦点（visibilitychange / focus 事件）时立即刷新一次提醒
-  6. 各提醒类型点击跳转：教授超期 -> 切换到对话页并自动填入建议 prompt；截止日临近 -> 切换到日历页定位到月份
+  1. **Calendar month navigation** (CalendarView.jsx lines 9-16 `getMonths()`): replace the fixed 10-month view with an interactive left/right arrow navigation that shifts the visible 3-month window. Add "今天" button to jump back to current month. The visible range is stored as `[startMonth, startYear]` in component state.
+  2. **Color-coded deadline dots** (CalendarView.jsx lines 107-118): change dot background color by proximity:
+     - Current month and days <= 30: `bg-urgency-high/15 text-urgency-high` red
+     - Next month: `bg-urgency-medium/15 text-urgency-medium` amber
+     - Beyond 2 months: `bg-muted text-muted-foreground` grey
+  3. **Days-remaining label on each dot**: Append " (X 天后)" or " (已过期 X 天)" to the dot label tooltip. For visible inline text, show countdown only for <= 30 days.
+  4. **Add deadline from calendar**: Add a "+" button at the top-right of each school row in the calendar that opens a small inline form (school pre-filled, deadline name + date input) and calls `POST /v1/applications` with the new deadline. On success, refresh the calendar data.
+  5. **Replace timeline `<details>` in sidebar** (App.jsx lines 915-927): render an inline horizontal progress bar showing all 6 stages (preparing→contacting→applying→exam→waiting→decided) with the current stage highlighted in the stage colour and completed stages in muted fill. Use a 6-segment `<div>` bar with CSS `flex`, not a `<details>` collapse.
+
 - **Acceptance Criteria**:
-  - 铃铛 badge 数字随提醒状态实时更新
-  - 新提醒出现时显示 sonner toast（仅限此前未显示的提醒）
-  - 标记已读后再次刷新不再出现
-  - 忽略的提醒 24 小时内不再重复推送
-  - 抽屉内提醒按紧急度排序（high > medium > low），同级别按时间降序
-  - 所有操作（标记已读、忽略、点击跳转）顺利执行，无页面 crash
+  - Calendar shows 3 months at a time, left/right arrows shift the window by 1 month
+  - "今天" button resets to the current month window
+  - Deadline dots are colored by proximity: red (<=30d), amber (31-60d), grey (>60d) — verified by mocking a deadline in each range
+  - Deadlines show "(X 天后)" suffix for <=30d, "(已过期 X 天)" for past-due
+  - "+" button in calendar adds a deadline via API and the new dot appears immediately
+  - Sidebar timeline is rendered as a 6-segment inline bar, current stage visually distinct, completed stages filled at reduced opacity
+  - All UI text uses Chinese, no emoji
+
 - **Priority**: P1
 
 ---
 
-### Sprint 4: Playwright 评估 + 边界打磨 (Eval & Polish)
+### Sprint 4: Eval + Edge Case Polish
 
-- **Scope**: Playwright 端到端测试脚本覆盖三层功能，修复测试中发现的问题。
+- **Scope**: Create `critiques/eval_sprint_tracking.js` covering all new features. Fix bugs found during eval. Target `frontend/src/App.jsx`, `frontend/src/components/DashboardView.jsx`, `frontend/src/components/CalendarView.jsx`, `frontend/src/components/ChatMessage.jsx`.
+
 - **Deliverables**:
-  1. 创建 `critiques/eval_sprint_proactive.js` -- Playwright 测试文件，覆盖：
-     - 首页看板渲染 + 画像完整度显示
-     - 倒计时标签颜色正确性（mock 一个距截止 3 天的日期）
-     - 提醒铃铛 + 抽屉打开/关闭/标记已读
-     - 教授超期警告的出现和消失
-     - 日历 deadline 颜色编码
-  2. 修复测试中发现的 bug（如 loading 状态缺失、空数据 crash、计时不准）
-  3. 补充各空状态占位符：无学校追踪时显示引导文案 + 跳转广场按钮
-  4. 确认所有 console.warn / console.error 在正常操作下为零
+  1. Create `critiques/eval_sprint_tracking.js` — Playwright test file covering:
+     - Login and home tab renders with dashboard data
+     - Sidebar school card shows countdown labels on deadlines, not raw dates
+     - Deadline countdown color reflects urgency band (mock a deadline 3 days away → red)
+     - Professor overdue banner visible on card when >=14 days no reply
+     - Calendar month navigation arrows work and change visible months
+     - Calendar deadline dot colors differ by proximity
+     - "Add deadline" form in calendar creates a new deadline (verify via API re-read)
+     - Chat messages with list markdown render as proper HTML lists
+     - Suggestion chips appear below the last assistant message
+     - Suggested question chips fill the input on click
+  2. Fix all bugs revealed during eval: countdown off-by-one, overflow text clipping, missing loading states for calendar deadline add, console errors from `map` on null arrays.
+  3. Fill empty states: no applications + no deadlines → DashboardView shows "暂无截止日" not crash; CalendarView with no deadlines → shows friendly empty state with link to plaza; ChatMessage component when content is null → renders nothing not "undefined".
+  4. Confirm zero `console.warn` / `console.error` during nominal flow: login, load dashboard, open 2 sidebar cards, send 3 chat messages, open reminder drawer, browse 2 calendar months.
+
 - **Acceptance Criteria**:
-  - Playwright 测试通过率 >= 90%（<= 10% 因环境差异导致的误报）
-  - 所有预期功能在测试中均有断言覆盖
-  - 空数据状态显示友好提示而非白屏或报错
-  - 已修复的 bug 不再重现
+  - Playwright test pass rate >= 90% (<=10% flaky due to timing/environment)
+  - All empty states render a visible placeholder with a CTA button, never a blank screen or error boundary
+  - Zero console.warn or console.error on the nominal flow (verified by Playwright `page.on('console')` filter)
+  - Fixed bugs from eval do not regress
+  - 15+ assertions across the 3 feature sprints
+
 - **Priority**: P2

@@ -1,0 +1,102 @@
+[
+  {
+    "query": "我想学地震学",
+    "description": "地震学方向，应匹配到地球物理/灾害相关研究科",
+    "expect_any_school": true,
+    "expect_tags": ["地球物理", "地震", "災害", "環境"],
+    "forbid_in_notes": ["東京大学大学院情報理工", "システム情報学専攻"],
+    "expect_jlpt_range": ["N1", "N2", ""]
+  },
+  {
+    "query": "情报理工 人工智能",
+    "description": "AI方向匹配",
+    "expect_any_school": true,
+    "expect_tags": ["情報", "AI", "人工知能"],
+    "expect_majors_contain": ["情報", "知能", "人工知能", "コンピュータ", "データ"]
+  },
+  {
+    "query": "我想去东京的国立大学",
+    "description": "地域+类型组合筛选",
+    "expect_any_school": true,
+    "expect_university_type": "国立",
+    "expect_university_location": "東京"
+  },
+  {
+    "query": "不要日语的英文项目",
+    "description": "日语不要求 + 英语项目",
+    "expect_any_school": true,
+    "expect_jlpt_max": "N3"
+  },
+  {
+    "query": "京都大学 情报学研究科",
+    "description": "精确研究科查询，不应出现其他大学的数据",
+    "expect_exact_school": "京都大学 情報学研究科",
+    "forbid_university": ["東京大学", "大阪大学", "北海道大学"],
+    "forbid_in_notes": ["東京大学", "大阪大学"]
+  },
+  {
+    "query": "北海道大学 地震 火山",
+    "description": "专业+大学组合",
+    "expect_university": "北海道大学",
+    "expect_tags": ["地球物理", "地震", "火山", "環境", "地質"]
+  },
+  {
+    "query": "教授内诺不要 英语不要",
+    "description": "不需要套磁+不需要英语的双重否定筛选",
+    "expect_any_school": true,
+    "expect_english_required": false,
+    "expect_no_tags": ["教授内諾必須", "事前連絡必須", "英語必要"]
+  },
+  {
+    "query": "国立大学 筆記試験なし",
+    "description": "国立+无笔试",
+    "expect_any_school": true,
+    "expect_university_type": "国立",
+    "expect_tags": ["書類選考", "筆記なし可能"],
+    "forbid_tags": ["筆記"]
+  },
+  {
+    "query": "GPA 3.5 N1 TOEFL 90 能考什么学校",
+    "description": "高配学生匹配",
+    "expect_any_school": true,
+    "expect_jlpt_range": ["N1", "N2", ""]
+  },
+  {
+    "query": "我想学人工智能，JLPT N4，托业750，GPA 3.5",
+    "description": "学生完整背景匹配，N4限制应标出差距",
+    "expect_any_school": true,
+    "expect_tags": ["情報", "AI", "人工知能"],
+    "expect_jlpt_gap_detected": true
+  },
+  {
+    "query": "九州大学 システム情報科学府",
+    "description": "精确查询，卡片不应出现其他大学的入学数据",
+    "expect_exact_school": "九州大学 システム情報科学府",
+    "forbid_in_notes": ["東京大学", "京都大学", "北海道大学", "名古屋大学"]
+  },
+  {
+    "query": "早稻田大学 情报理工",
+    "description": "私立大学情报方向",
+    "expect_university": "早稲田大学",
+    "expect_tags": ["情報"]
+  },
+  {
+    "query": "社会学研究科 东京",
+    "description": "地域+专业",
+    "expect_any_school": true,
+    "expect_university_location": "東京",
+    "expect_majors_contain": ["社会", "社会学"]
+  },
+  {
+    "query": "不要去偏远地区的学校",
+    "description": "排除偏远地区",
+    "expect_any_school": true,
+    "forbid_university_location": ["北海道", "沖縄"]
+  },
+  {
+    "query": "有SGU英文项目的学校",
+    "description": "英文项目标签",
+    "expect_any_school": true,
+    "expect_tags": ["SGU", "英語", "国際", "英語コース"]
+  }
+]
