@@ -399,7 +399,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                 found = list(set(re.findall(
                                     r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
                                 existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                                new_names = [n for n in found[:5] if n not in existing]
+                                new_names = [n for n in found[:5] if n not in existing and "大学" in n and any(kw in n for kw in ["研究科","学府","学院","研究院"]) and not any(kw in n for kw in ["日本大学院","修士课程","博士课程"])]
                                 if new_names:
                                     from demo.school_database import upsert_school, School
                                     for n in new_names:
@@ -465,29 +465,33 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                 "exam": "", "notes": note,
                                 "status_label": "参考", "gaps": [],
                             })
-                            # Auto-ingest into DB (service key) + in-memory catalog
-                            import os as _os
-                            _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
-                            try:
-                                _sk.table("graduate_schools").upsert({
-                                    "name_jp": full_name, "majors": [],
-                                    "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
-                                    "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
-                                    "exam_type": "", "notes": note, "tags": [],
-                                    "deadlines": [], "source": "llm_suggestion", "verified": False,
-                                "enrichment_status": "skeleton",
-                                }, on_conflict="name_jp").execute()
-                                logger.info(f"Auto-ingested: {full_name}")
-                            except Exception as e3:
-                                logger.warning(f"Auto-ingest DB failed for {full_name}: {e3}")
-                            # Always update in-memory catalog
-                            SCHOOL_CATALOG.append({
-                                "name": full_name, "type": uni_type, "majors": [],
-                                "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
-                                "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
-                                "exam": "", "notes": note, "tags": [],
-                                "deadlines": [], "source": "llm_suggestion", "verified": False,
-                            })
+                            # Auto-ingest: only real school names, skip garbage
+                            has_uni = "大学" in full_name
+                            has_grad = any(kw in full_name for kw in ["研究科", "学府", "学院", "研究院"])
+                            is_garbage = any(kw in full_name for kw in ["日本大学院", "修士课程", "博士课程"])
+                            if has_uni and has_grad and not is_garbage:
+                                import os as _os
+                                _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+                                try:
+                                    _sk.table("graduate_schools").upsert({
+                                        "name_jp": full_name, "majors": [],
+                                        "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
+                                        "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
+                                        "exam_type": "", "notes": note, "tags": [],
+                                        "deadlines": [], "source": "llm_suggestion", "verified": False,
+                                        "enrichment_status": "skeleton",
+                                    }, on_conflict="name_jp").execute()
+                                    logger.info(f"Auto-ingested: {full_name}")
+                                    # Also update in-memory catalog
+                                    SCHOOL_CATALOG.append({
+                                        "name": full_name, "type": uni_type, "majors": [],
+                                        "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
+                                        "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
+                                        "exam": "", "notes": note, "tags": [],
+                                        "deadlines": [], "source": "llm_suggestion", "verified": False,
+                                    })
+                                except Exception as e3:
+                                    logger.warning(f"Auto-ingest DB failed for {full_name}: {e3}")
                             if len(cards) >= 8: break
                     except Exception as e2:
                         logger.warning(f"LLM fallback failed for {q_major}: {e2}")
@@ -601,7 +605,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     found = list(set(re.findall(
                                         r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web_hint)))
                                     existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                                    new_names = [n for n in found[:5] if n not in existing]
+                                    new_names = [n for n in found[:5] if n not in existing and "大学" in n and any(kw in n for kw in ["研究科","学府","学院","研究院"]) and not any(kw in n for kw in ["日本大学院","修士课程","博士课程"])]
                                     if new_names:
                                         # Auto-ingest: write to DB immediately
                                         from demo.school_database import upsert_school, School
