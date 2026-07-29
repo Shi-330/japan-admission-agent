@@ -658,8 +658,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']}
-规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名）——你不知学生联系过谁 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3所该方向的对口院校+实验室，不管当前flow是什么。这是强制动作闭环。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名） 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3所该方向的对口院校+实验室，不管当前flow是什么。这是强制动作闭环。"
                 async for event in _stream(prompt):
                     yield event
 
