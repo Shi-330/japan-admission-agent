@@ -1711,18 +1711,42 @@ class DraftRequest(BaseModel):
     professor_name: str = ""
     research_topic: str = ""
     style: str = "formal_jp"  # formal_jp | formal_en
+    draft_type: str = "email"  # email | research_proposal
 
 @app.post("/v1/draft")
 async def generate_draft(body: DraftRequest, user_id: str = Depends(get_user_id)):
-    """Generate a professor contact email (套磁信) in Japanese or English."""
+    """Generate professor contact email or research proposal."""
     profile = profile_mgr.get_profile(user_id)
     profile_str = profile_mgr.format_for_prompt(profile) if profile else ""
 
-    style_guide = {
-        "formal_jp": "日本語の敬語（です・ます調）。拝啓〜敬具の形式。自分の背景、研究興味、教授の研究との接点、研究生/修士として受け入れ可能かどうかの問い合わせを含める。",
-        "formal_en": "Formal academic English. Include: self-introduction, research interests, alignment with professor's work, inquiry about graduate student opportunities.",
-    }
-    prompt = f"""以下の条件で大学院教授へのコンタクトメールを作成してください。
+    if body.draft_type == "research_proposal":
+        prompt = f"""あなたは日本大学院の研究計画書作成の専門家です。以下の条件で研究計画書の初稿を作成してください。
+
+【学生情報】
+{profile_str[:800]}
+
+【志望校・研究室】
+{body.school_name}
+{'教授: ' + body.professor_name if body.professor_name else ''}
+{'研究テーマ: ' + body.research_topic if body.research_topic else '（学生の研究分野に基づいて適切なテーマを提案してください）'}
+
+【構成要件】
+1. 研究題目（具体的かつ魅力的なタイトル）
+2. 研究背景（なぜこの研究が必要か、先行研究の課題）
+3. 研究目的（何を明らかにしたいか）
+4. 研究方法（データ・解析手法・理論的枠組み）
+5. 期待される成果と学術的意義
+6. 参考文献（5件程度、実在する日本語・英語の学術文献）
+
+【文体】日本語（です・ます調）。各セクション見出し付き。総文字数1500-2000字。
+
+【出力形式】JSON: {{"title":"研究題目","sections":[{{"heading":"見出し","body":"本文"}}...],"references":["著者 (年) タイトル. 雑誌."]}}"""
+    else:
+        style_guide = {
+            "formal_jp": "日本語の敬語（です・ます調）。拝啓〜敬具の形式。自分の背景、研究興味、教授の研究との接点、研究生/修士として受け入れ可能かどうかの問い合わせを含める。",
+            "formal_en": "Formal academic English. Include: self-introduction, research interests, alignment with professor's work, inquiry about graduate student opportunities.",
+        }
+        prompt = f"""以下の条件で大学院教授へのコンタクトメールを作成してください。
 
 【学生情報】
 {profile_str[:600]}
@@ -1738,13 +1762,14 @@ async def generate_draft(body: DraftRequest, user_id: str = Depends(get_user_id)
 【出力形式】
 JSON形式: {{"subject":"件名","body":"本文"}}
 件名は簡潔に。本文は400-800字程度。"""
+
     try:
         resp = chat_model.invoke(prompt)
         text = resp.content if hasattr(resp, "content") else str(resp)
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
             data = json.loads(m.group(0))
-            return {"ok": True, "draft": data}
+            return {"ok": True, "draft": data, "type": body.draft_type}
         return {"ok": False, "error": "LLM parse failed"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
