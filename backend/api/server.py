@@ -1721,6 +1721,19 @@ async def generate_draft(body: DraftRequest, user_id: str = Depends(get_user_id)
     profile_str = profile_mgr.format_for_prompt(profile) if profile else ""
 
     if body.draft_type == "research_proposal":
+        # Fetch school context from DB for grounded proposal
+        school_ctx = ""
+        try:
+            from demo.school_database import get_all_schools
+            schools = {s.name: s for s in get_all_schools()}
+            school = schools.get(body.school_name)
+            if school:
+                parts = [f"試験形式: {school.exam}" if school.exam else "",
+                         f"タグ: {', '.join(school.tags)}" if school.tags else "",
+                         f"専攻: {', '.join(school.majors)}" if school.majors else ""]
+                school_ctx = " | ".join(p for p in parts if p)
+        except Exception: pass
+
         prompt = f"""あなたは日本大学院の研究計画書作成の専門家です。以下の条件で研究計画書の初稿を作成してください。
 
 【学生情報】
@@ -1730,14 +1743,15 @@ async def generate_draft(body: DraftRequest, user_id: str = Depends(get_user_id)
 {body.school_name}
 {'教授: ' + body.professor_name if body.professor_name else ''}
 {'研究テーマ: ' + body.research_topic if body.research_topic else '（学生の研究分野に基づいて適切なテーマを提案してください）'}
+{'【研究室の特徴】' + school_ctx if school_ctx else ''}
 
-【構成要件】
-1. 研究題目（具体的かつ魅力的なタイトル）
-2. 研究背景（なぜこの研究が必要か、先行研究の課題）
-3. 研究目的（何を明らかにしたいか）
-4. 研究方法（データ・解析手法・理論的枠組み）
+【構成要件 - 厳守】
+1. 研究題目（具体的かつ魅力的なタイトル。上記の研究室特徴を反映すること）
+2. 研究背景（なぜこの研究が必要か、先行研究の課題。可能であれば上記の専攻分野に関連付ける）
+3. 研究目的（何を明らかにしたいか。上記の試験形式・タグから推測される研究手法を参照）
+4. 研究方法（データ・解析手法・理論的枠組み。可能であれば研究室の専門分野に合わせる）
 5. 期待される成果と学術的意義
-6. 参考文献（5件程度、実在する日本語・英語の学術文献）
+6. 参考文献（5件程度、実在する日本語・英語の学術文献。可能であれば上記専攻分野に関連するもの）
 
 【文体】日本語（です・ます調）。各セクション見出し付き。総文字数1500-2000字。
 

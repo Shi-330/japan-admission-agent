@@ -42,6 +42,25 @@ function cleanNotes(raw, schoolName) {
   return { text, tags };
 }
 
+// Compute deadline warnings from school.deadlines array
+function deadlineWarnings(deadlines) {
+  if (!deadlines || !Array.isArray(deadlines)) return [];
+  const now = new Date();
+  const warnings = [];
+  for (const d of deadlines) {
+    const dateStr = d.date || d.start || '';
+    if (!dateStr || dateStr.length < 10) continue;
+    const dDate = new Date(dateStr.slice(0, 10));
+    const daysLeft = Math.ceil((dDate - now) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) {
+      warnings.push({ label: d.name || '期限', date: dateStr.slice(0, 10), urgent: true, msg: '已截止' });
+    } else if (daysLeft <= 30) {
+      warnings.push({ label: d.name || '期限', date: dateStr.slice(0, 10), urgent: false, msg: `剩余${daysLeft}天` });
+    }
+  }
+  return warnings;
+}
+
 // Compute match score 0-100 based on JLPT + English + GPA requirements
 function computeScore(school, profile) {
   if (!profile) return null;
@@ -214,12 +233,24 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
           </div>
         </details>
 
+        {(() => { const warns = deadlineWarnings(s.deadlines); if (!warns.length) return null; return (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {warns.map((w, i) => <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${w.urgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{w.label}: {w.msg}</span>)}
+          </div>
+        ); })()}
         {noteTags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {noteTags.map((t, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{t.key}: {t.val}</span>)}
           </div>
         )}
         {cleanNote && <div className="text-xs text-gray-400 mt-1">{cleanNote}</div>}
+        <div className="text-[10px] text-gray-400 mt-2 flex items-center gap-3">
+          {s.website ? (
+            <a href={s.website} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">{'官网 →'}</a>
+          ) : (
+            <a href={`https://www.google.com/search?q=${encodeURIComponent(s.name + ' site:ac.jp')}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:underline">{'搜索官网'}</a>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
