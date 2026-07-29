@@ -394,16 +394,18 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         logger.info(f"search_schools: only {len(matches)} matches, triggering web search")
                         try:
                             from rag.rag_service import RagSummarizeService as R
-                                                        web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
-                                if web and not web.startswith("未找到"):
-                                    llm_prompt = f"以下web搜索结果中提到了哪些日本大学院？每行一个：大学名 | 研究科名。只列日本国内大学。
-
-{web[:1200]}"
-                                    resp = chat_model.invoke(llm_prompt)
-                                    llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                                                # Fire-and-forget: web search + LLM extract + auto-ingest in background
+                            def _background_auto_ingest(query, q_major):
+                                try:
+                                    from rag.rag_service import RagSummarizeService as R2
+                                    web = R2().search_with_fallback(f"{query} 日本 大学院 {q_major} 研究科")
+                                    if not web or web.startswith("未找到"): return
+                                    llm_p = f"以下web搜索结果中提到了哪些日本大学院？每行一个：大学名 | 研究科名。只列日本国内大学。\n\n{web[:1200]}"
+                                    resp = chat_model.invoke(llm_p)
+                                    text = resp.content if hasattr(resp, "content") else str(resp)
                                     existing_names = {s.get("name","") for s in SCHOOL_CATALOG}
-                                    ingested = 0
-                                    for line in llm_text.strip().split("\n"):
+                                    count = 0
+                                    for line in text.strip().split("\n"):
                                         line = line.strip().lstrip("0123456789.-) ").strip()
                                         parts = [p.strip() for p in line.split("|")]
                                         if len(parts) < 2: continue
@@ -413,10 +415,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                             from demo.school_database import upsert_school, School
                                             upsert_school(School(name=full_name, source="web_search", verified=False))
                                             existing_names.add(full_name)
-                                            ingested += 1
+                                            count += 1
                                         except: pass
-                                    if ingested:
-                                        logger.info(f"Auto-ingested {ingested} schools from web")
+                                    if count:
+                                        logger.info(f"Background auto-ingested {count} schools for {q_major}")
+                                except Exception as e:
+                                    logger.warning(f"Background auto-ingest failed: {e}")
+                            from threading import Thread
+                            Thread(target=_background_auto_ingest, args=(body.query, q_major), daemon=True).start()
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
                     profile_ctx = f"JLPT {profile.jlpt_level or '未知'}、GPA {profile.gpa}、英语 {profile.english_score or '未知'}"
