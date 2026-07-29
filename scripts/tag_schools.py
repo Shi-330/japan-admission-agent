@@ -8,6 +8,11 @@ Usage:
   venv/Scripts/python.exe scripts/tag_schools.py --limit 20  # test first 20
 """
 import os, sys, json, time
+# Force UTF-8 on Windows
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
