@@ -98,5 +98,27 @@
     "description": "英文项目标签",
     "expect_any_school": true,
     "expect_tags": ["SGU", "英語", "国際", "英語コース"]
+  },
+  {
+    "query": "東京大学 情報理工学系研究科",
+    "description": "精确查询应有官网链接和截止日期",
+    "expect_exact_school": "東京大学 情報理工学系研究科",
+    "expect_has_website": true,
+    "expect_has_deadlines": true
+  },
+  {
+    "query": "京都大学 情报学研究科",
+    "description": "京都大学精确查询，应有deadline和官网",
+    "expect_exact_school": "京都大学 情報学研究科",
+    "expect_has_website": true,
+    "expect_has_deadlines": true,
+    "forbid_in_notes": ["東京大学", "大阪大学"]
+  },
+  {
+    "query": "GPA 3.8 JLPT N1 TOEFL 100 AI方向",
+    "description": "高配学生匹配，match score应≥80%",
+    "expect_any_school": true,
+    "expect_tags": ["情報", "AI"],
+    "expect_match_score_min": 80
   }
 ]

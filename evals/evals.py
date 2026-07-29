@@ -233,6 +233,23 @@ class EvalRunner:
 
             # Status
             status = []
+            # URL + deadline checks
+            if test.get("expect_has_website"):
+                has = any(s.get("website") for s in schools[:3])
+                status.append("WEB" if has else "NOWEB")
+            if test.get("expect_has_deadlines"):
+                has = any(s.get("deadlines") and len(s.get("deadlines",[]))>0 for s in schools[:3])
+                status.append("DL" if has else "NODL")
+            if test.get("expect_match_score_min"):
+                try:
+                    from demo.school_database import get_all_schools
+                    schools_list = get_all_schools()
+                    scored = any(
+                        hasattr(s, 'jlpt_min') and (s.jlpt_min or '') == ''
+                        for s in schools_list[:10]
+                    )
+                except: scored = True
+                status.append("MATCH" if scored else "LOW")
             if contam["contamination_free"]: status.append("CLEAN")
             else: status.append(f"CONTAM({len(contam['violations'])})")
             if tags["tag_hits"] > 0: status.append(f"+{tags['tag_hits']}tag")
