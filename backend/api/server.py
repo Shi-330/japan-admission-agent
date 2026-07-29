@@ -413,9 +413,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     if profile.undergraduate_school: profile_ctx += f"、本科 {profile.undergraduate_school}"
                     prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。
 学生完整背景：{profile_ctx}。
-数据库匹配到{len(top_names)}所学校：{', '.join(top_names[:5])}。
-{"这些是该方向在数据库中的结果。以下匹配的学校卡片已展示给学生。数据库覆盖有限，你自己的知识请务必补充——这个领域日本的顶尖院校有哪些、方向怎么分类、申请路径怎么选。" if len(top_names) < 5 else ""}
-请务必结合学生的具体研究细分方向和英语成绩做针对性点评（如托业分数够不够、地震勘探对应哪些实验室）。使用 Markdown ### 标题分段（如 ### 背景诊断、### 领域与院校分析、### 申请路径建议），段落之间空一行。诚实指出卡片中数据错位的问题（如某校卡片里混入了其他学校的链接）。"""
+已筛选出{len(top_names)}所匹配院校（已为学生展示）。{'匹配较少，请用你的领域知识补充该方向在日本的核心院校和方向分类。' if len(top_names) < 5 else ''}
+对话规则：
+1. 严禁提及"卡片"、"数据库"、"系统匹配"、"界面"等元词汇——你是顾问不是系统。
+2. 如果{('学生的研究方向是' + profile.research_area) if profile.research_area else ''}方向很宽泛（如"地震学"涵盖理学/工学/勘探多个分支），先简短回问学生的具体偏好（≤150字），再展开分析。不要一次性灌1500字。
+3. 如果学生有明确的细分方向（如"地震勘探"），优先围绕该方向点评院校和实验室。
+4. 用###标题分段，回复控制在400字以内。把提问权交还学生。"""
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
@@ -491,14 +494,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
                     if cards:
                         actions.append({"type": "school_cards", "cards": cards})
-                        prompt += f"""下方卡片展示了{len(cards)}所匹配学校的入学条件和差距。
-请提供：1)背景评估（优势/短板）2)该方向在日本的前沿院校和实验室（即使不在卡片里也请补充）3)具体的申请路径建议。要有可操作性，不要笼统建议。
-回复末尾请用【参考院校】标记列出你提到的其他日本大学（每行：大学名 | 研究科名 | 一句话特点）。这些院校将自动生成可追踪卡片。"""
+                        prompt += f"""已为学生展示{len(cards)}所匹配院校的入学要求。
+请：1)点评学生的背景优势与短板 2)补充该方向在日本的顶尖院校和实验室 3)给申请路径建议。要有可操作性。
+回复末尾用【参考院校】列出你提到的其他大学（每行：大学名 | 研究科名 | 一句话特点）。"""
                         # Fire-and-forget: enrich skeletons in background
                         from threading import Thread
                         Thread(target=_enrich_skeletons, args=(cards,), daemon=True).start()
                     else:
-                        prompt += "数据库暂无匹配。请用你的领域知识分析这个专业方向在日本的情况，包括：方向分类、核心院校、申请路径。不要空泛建议——给出具体的大学和研究科名。"
+                        prompt += "请用你的领域知识分析这个方向在日本的情况：方向分类、核心院校、申请路径。给出具体的大学和研究科名，不要空泛建议。先简短回问学生偏好，再展开。"
                 # Cache the search result for future identical queries
                 _search_cache[sk] = (cards, actions, time.time())
                 if len(_search_cache) > 100:
@@ -613,16 +616,16 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 except Exception as e:
                     logger.warning(f"School matching in qa failed: {e}")
 
-                prompt = f"""你是日本升学顾问。你有强大的日本大学院领域知识，同时可以访问数据库中的入学硬指标。
+                prompt = f"""你是日本升学顾问。你有日本大学院的领域知识，也能查到各研究科的入学硬指标。
 对话规则：
-1. 先用自己的知识帮学生理清方向（如专业分类、顶尖院校、申请路径），再引用数据库中的入学条件做硬校验。
-2. 如果数据库匹配结果少于5所，用你自身知识补充该领域在日本的其他核心院校和方向分类。明确区分"数据库有一手入学数据"和"以下是根据领域常识推荐的院校，具体条件请查官网"。
-3. 不要建议学生使用本系统没有的功能（如"查看学长学姐经验"、"往年录取案例"、"前辈分享"等不存在的内容）。
-4. 不要反复push学生去广场——广场只是备选，你作为顾问应该直接给出答案。
-5. 2-3段自然语言回复，不用markdown表格。
+1. 先用自己的知识帮学生理清方向（专业分类、顶尖院校、申请路径），再引用入学条件做硬校验。
+2. 匹配院校较少时补充该领域在日本的其他核心院校。明确区分"有入学数据"和"领域常识推荐，请查官网确认"。
+3. 不要说"卡片"、"数据库"、"系统匹配"等元词汇——你是顾问，不是系统说明书。
+4. 不要建议不存在于本系统的功能（"学长学姐经验""往年录取案例"等）。
+5. 如果学生方向宽泛，先简短回问偏好（≤100字），再展开分析。不要一次性灌长篇。回复控制在300字以内，把提问权交还学生。
 
-【数据库匹配结果】
-{schools_context if schools_context else "该方向暂无匹配的入学数据库条目。请用自身知识回答。"}
+【匹配院校】
+{schools_context if schools_context else ""}
 
 【知识库资料】{ctx[:800] if ctx else "无"}
 【学生背景】{profile_str}
