@@ -644,6 +644,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 3. 不要说"卡片"、"数据库"、"系统匹配"等元词汇——你是顾问，不是系统说明书。
 4. 不要建议不存在于本系统的功能（"学长学姐经验""往年录取案例"等）。
 5. 如果学生方向宽泛，先简短回问偏好（≤100字），再展开分析。不要一次性灌长篇。回复控制在300字以内，把提问权交还学生。
+6. 严禁虚构教授姓名（如山田花子、田中太郎等日本常见占位名）——你不知道学生联系过谁。
+7. 【强制动作闭环】当学生明确指定细分研究方向后，必须推荐2-3所该方向的对口院校和实验室。不管当前对话处在什么阶段，都不能只聊学术不推学校。
 
 【匹配院校】
 {schools_context if schools_context else ""}
@@ -656,7 +658,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown 3. 不要说卡片/数据库等元词汇 4. 当学生提到具体专业方向且讨论深入时，主动询问是否要匹配学校——但不是每次对话都问。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']}
+规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名）——你不知学生联系过谁 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3所该方向的对口院校+实验室，不管当前flow是什么。这是强制动作闭环。"
                 async for event in _stream(prompt):
                     yield event
 
