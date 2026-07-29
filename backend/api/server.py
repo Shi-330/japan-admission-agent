@@ -352,16 +352,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 # ── Cache check for repeated searches ──
                 sk = _cache_key(user_id, body.query, profile_hash)
                 cached = _search_cache.get(sk)
-                if cached:
-                    cards, cached_actions, ts = cached
-                    if time.time() - ts < _CACHE_TTL:
-                        logger.info(f"Search cache HIT for: {body.query[:30]}")
-                        yield f"data: {json.dumps({'content': f'为你匹配了{len(cards)}所学校：', 'is_status': False})}\n\n"
-                        yield f"data: {json.dumps({'content': '', 'is_status': False, 'done': True, 'school_cards': cards, **{k:v for k,v in cached_actions.items() if v}})}\n\n"
-                        return
-                    del _search_cache[sk]
-
-                # Use matching engine to find schools, then render as actionable cards
+                # Always re-match and re-stream LLM (cache was causing stale one-liners)
                 from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
                 # Extract intended major from query — not from profile (user may ask about a different field)
                 from utils.cn2jp import normalize as cn2jp_norm
