@@ -418,7 +418,11 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     logger.info(f"Auto-ingested {len(new_names)} schools from web")
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
-                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），数据库匹配到{len(top_names)}所学校：{', '.join(top_names[:5])}。{'如果匹配较少，请用你的领域知识补充该方向在日本的其他核心院校和方向分类。' if len(top_names) < 5 else ''}请1-2句自然回复，不要push广场——直接给答案或建议下一步。"
+                    prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。
+学生背景：JLPT{profile.jlpt_level}、GPA{profile.gpa}。
+数据库匹配到{len(top_names)}所学校：{', '.join(top_names[:5])}。
+{"这些是该方向在数据库中的结果。以下匹配的学校卡片已展示给学生。数据库覆盖有限，你自己的知识请务必补充——这个领域日本的顶尖院校有哪些、方向怎么分类、申请路径怎么选。" if len(top_names) < 5 else ""}
+要求：2-3段自然回复，先领域分析再结合匹配结果。如果有研究科名对不上专业方向的情况（如情报理工匹配到地震），诚实指出并纠正。不要反复喊学生去广场。"""
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
