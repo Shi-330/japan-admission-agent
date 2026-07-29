@@ -293,6 +293,8 @@ def get_schools_by_major(major: str) -> list[School]:
 def upsert_school(s: School):
     """Upsert a school into graduate_schools. Maps School fields to DB column names."""
     data = s.model_dump()
+    # Strip derived fields not in graduate_schools table
+    data.pop("type", None)
     # Map School.exam → DB column exam_type
     if "exam" in data:
         data["exam_type"] = data.pop("exam")
