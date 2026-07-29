@@ -647,6 +647,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 3. 不要说"卡片"、"数据库"、"系统匹配"等元词汇——你是顾问，不是系统说明书。
 4. 不要建议不存在于本系统的功能（"学长学姐经验""往年录取案例"等）。
 5. 如果学生方向宽泛则先简短回问偏好（≤100字）再展开。如果学生方向具体（如"FWI反演"），向下挖深——拆分子方向、推荐具体实验室/教授名、推荐技能树（数学/编程/经典教材），回复500字以内。
+6. 每次回复末尾用[!]标记附上：「以上信息基于大学官网网页检索，具体出愿要求请务必点击官网链接确认。」
 6. 严禁虚构教授姓名（如山田花子、田中太郎等日本常见占位名）——你不知道学生联系过谁。
 7. 【强制动作闭环】当学生明确指定细分研究方向后，必须推荐2-3所该方向的对口院校和实验室。不管当前对话处在什么阶段，都不能只聊学术不推学校。
 
@@ -661,7 +662,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名） 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3个该方向的具体实验室/教授（不是泛泛的研究科），拆分子方向，给出技能准备建议。这是强制动作闭环。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字 3. 指定细分方向时推2-3个实验室/教授 4. 如果回复涉及学校/教授/出愿信息，在末尾加一句「具体条件请以学校官网募集要项为准」"
                 async for event in _stream(prompt):
                     yield event
 
