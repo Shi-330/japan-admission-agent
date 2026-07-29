@@ -1345,7 +1345,19 @@ def _load_school_catalog() -> list[dict]:
         logger.warning(f"Failed to load school catalog: {e}")
         return []
 
+def _warmup_models():
+    """Preload embedding model and BM25 index at startup (avoids 20s cold-start)."""
+    try:
+        from model.factory import embed_model
+        _ = embed_model  # trigger lazy load
+        from rag.vector_store import get_vector_store
+        get_vector_store()  # trigger BM25 build
+        logger.info("Models warmed up")
+    except Exception as e:
+        logger.warning(f"Model warmup failed (non-fatal): {e}")
+
 SCHOOL_CATALOG = _load_school_catalog()
+_warmup_models()
 
 # ── Intent layer engine ──
 intent_engine = IntentLayerEngine(SCHOOL_CATALOG)

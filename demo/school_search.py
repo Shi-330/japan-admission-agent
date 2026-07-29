@@ -6,7 +6,7 @@ by indexing school descriptions as documents with metadata tags.
 """
 from typing import Optional
 from demo.school_database import School, get_all_schools, _row_to_school
-from rag.vector_store import VectorStoreService
+from rag.vector_store import VectorStoreService, get_vector_store
 from utils.supabase_client import supabase
 
 
@@ -37,7 +37,7 @@ def index_schools(clear_first: bool = True):
         print("No schools found in database.")
         return
 
-    vs = VectorStoreService()
+    vs = get_vector_store()
 
     if clear_first:
         try:
@@ -115,7 +115,7 @@ def hybrid_search_schools(
 
     Returns [{school_name, similarity, school}].
     """
-    vs = VectorStoreService()
+    vs = get_vector_store()
     filter_meta = {"type": SCHOOL_DOC_TYPE}
     if degree:
         filter_meta["degree"] = degree

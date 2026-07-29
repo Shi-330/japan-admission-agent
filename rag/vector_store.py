@@ -12,6 +12,16 @@ import os
 from utils.supabase_client import supabase
 
 
+_vs_instance = None
+
+def get_vector_store() -> "VectorStoreService":
+    """Singleton accessor — BM25 index built once and reused."""
+    global _vs_instance
+    if _vs_instance is None:
+        _vs_instance = VectorStoreService()
+    return _vs_instance
+
+
 class VectorStoreService:
     def __init__(self):
         self.vector_store = SupabaseVectorStore(
