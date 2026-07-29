@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 
 // ── UniGroup: collapsible university group ──
@@ -86,8 +86,9 @@ function FilterChip({ active, color, children, ...props }) {
 
 // ── PlazaView exported component ──
 // Props: catalog, stage, token, apiCall, setStage, showToast, profile
-export default function PlazaView({ catalog, stage, token, apiCall, setStage, showToast, profile }) {
-  const [filter, setFilter] = useState('');
+export default function PlazaView({ catalog, stage, token, apiCall, setStage, showToast, profile, initialFilter }) {
+  const [filter, setFilter] = useState(initialFilter || '');
+  useEffect(() => { if (initialFilter) setFilter(initialFilter); }, [initialFilter]);
   const [eng, setEng] = useState(null);    // null=all, true=required, false=not
   const [jpn, setJpn] = useState(null);
   const [contact, setContact] = useState(false);

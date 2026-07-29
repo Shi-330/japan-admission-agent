@@ -524,6 +524,9 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     else:
                         prompt += "请用你的领域知识分析这个方向在日本的情况：方向分类、核心院校、申请路径。给出具体的大学和研究科名，不要空泛建议。先简短回问学生偏好，再展开。"
                 # Cache the search result for future identical queries
+                # Pass search term to plaza silently (no popup, pre-fills filter)
+                if q_major:
+                    final_event["plaza_context"] = {"filter": q_major}
                 _search_cache[sk] = (cards, actions, time.time())
                 if len(_search_cache) > 100:
                     oldest = min(_search_cache, key=lambda k: _search_cache[k][2])

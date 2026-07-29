@@ -293,12 +293,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // home | chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
+  const [chatPlazaFilter, setChatPlazaFilter] = useState(''); // silent cross-tab context
   const [normalizedTerms, setNormalizedTerms] = useState([]);
-  const [filterEnglish, setFilterEnglish] = useState(null);
-  const [filterJapanese, setFilterJapanese] = useState(null);
-  const [filterContact, setFilterContact] = useState(false);
-  const [filterExam, setFilterExam] = useState([]);
-  const [filterType, setFilterType] = useState([]);
   // Auto-set plaza filter from profile research_area on first visit
   useEffect(() => {
     if (activeTab === 'plaza' && !plazaFilter && profile?.research_area) {
@@ -472,8 +468,8 @@ export default function App() {
             if (parsed.discovered_schools) {
               pendingDiscovered = parsed.discovered_schools;
             }
-            if (parsed.nav_suggestion) {
-              // Suppressed — cards render directly, no separate nav bubble
+            if (parsed.plaza_context) {
+              setChatPlazaFilter(parsed.plaza_context.filter || '');
             }
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
@@ -1207,6 +1203,7 @@ export default function App() {
           setStage={setStage}
           showToast={showToast}
           profile={profile}
+          initialFilter={chatPlazaFilter}
         />
         ) : activeTab === 'documents' ? (
         /* Documents view */
