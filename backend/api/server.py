@@ -656,7 +656,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown 3. 不要建议不存在于本系统中的功能（如学长学姐经验等）。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown 3. 不要说卡片/数据库等元词汇 4. 当学生提到具体专业方向且讨论深入时，主动询问是否要匹配学校——但不是每次对话都问。"
                 async for event in _stream(prompt):
                     yield event
 
