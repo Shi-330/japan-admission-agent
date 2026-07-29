@@ -491,6 +491,32 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
                     if cards:
                         actions.append({"type": "school_cards", "cards": cards})
+                        # When DB matches are few, supplement with LLM domain knowledge
+                        if len(cards) < 5:
+                            try:
+                                llm_prompt = f"列出日本有{q_major}相关研究科的{5 - len(cards)}所大学。每行：大学名 | 研究科名 | 一句话特点。只列日本国内大学，不要解释。"
+                                resp = chat_model.invoke(llm_prompt)
+                                llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                                existing_names = {c["school_name"].split(" ")[-1] for c in cards if c.get("school_name")}
+                                ref_cards = []
+                                for line in llm_text.strip().split("\n"):
+                                    line = line.strip().lstrip("0123456789.-) ").strip()
+                                    parts = [p.strip() for p in line.split("|")]
+                                    if len(parts) < 2: continue
+                                    uni, gs = parts[0], parts[1]
+                                    if any(gs in e or e in gs for e in existing_names): continue
+                                    ref_cards.append({
+                                        "school_name": f"{uni} {gs}",
+                                        "type": "", "majors": [q_major] if q_major else [],
+                                        "tags": ["LLM补充"],
+                                        "jlpt_min": "", "english_req": {}, "exam": "", "notes": parts[2] if len(parts) > 2 else "",
+                                        "status_label": "参考", "gaps": [],
+                                    })
+                                    existing_names.add(gs)
+                                if ref_cards:
+                                    actions.append({"type": "school_cards", "cards": ref_cards})
+                                    prompt += f"\n另外你自身知识补充了{len(ref_cards)}所院校（见下方\"参考\"卡片）。请告诉学生这些是领域常识推荐，具体入学条件需查官网。"
+                            except Exception: pass
                         prompt += f"下方卡片展示了{len(cards)}所匹配学校的入学条件和差距。请提供：1)背景评估（优势/短板）2)该方向在日本的前沿院校和实验室（即使不在卡片里也请补充）3)具体的申请路径建议。要有可操作性，不要笼统建议。"
                         # Fire-and-forget: enrich skeletons in background
                         from threading import Thread
