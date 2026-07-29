@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
@@ -293,6 +293,11 @@ export default function App() {
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
   const [normalizedTerms, setNormalizedTerms] = useState([]);
+  const [filterEnglish, setFilterEnglish] = useState(null);
+  const [filterJapanese, setFilterJapanese] = useState(null);
+  const [filterContact, setFilterContact] = useState(false);
+  const [filterExam, setFilterExam] = useState([]);
+  const [filterType, setFilterType] = useState([]);
   // Auto-set plaza filter from profile research_area on first visit
   useEffect(() => {
     if (activeTab === 'plaza' && !plazaFilter && profile?.research_area) {
@@ -1193,33 +1198,70 @@ export default function App() {
           <div className="max-w-5xl mx-auto">
             <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
             <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
-            <div className="flex items-center gap-2 mb-4">
-              <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
-                placeholder="筛选专业，如：情报理工、NLP..."
-                className="flex-1 max-w-md p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              {plazaFilter && (
-                <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full whitespace-nowrap">
-                  {catalog.length} 条结果
-                  <Button onClick={() => setPlazaFilter('')} className="ml-1 text-gray-400 hover:text-gray-600">&times;</Button>
-                </span>
-              )}
+            <div className="space-y-2 mb-5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
+                  placeholder="搜索专业，如：情报理工、NLP..."
+                  className="flex-1 max-w-xs p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <button onClick={() => setFilterEnglish(filterEnglish === null ? true : filterEnglish === true ? false : null)}
+                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterEnglish === true ? 'bg-red-50 border-red-300 text-red-600' : filterEnglish === false ? 'bg-green-50 border-green-300 text-green-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                  英语{filterEnglish === true ? ':要' : filterEnglish === false ? ':不要' : ''}
+                </button>
+                <button onClick={() => setFilterJapanese(filterJapanese === null ? true : filterJapanese === true ? false : null)}
+                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterJapanese === true ? 'bg-red-50 border-red-300 text-red-600' : filterJapanese === false ? 'bg-green-50 border-green-300 text-green-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                  日语{filterJapanese === true ? ':要' : filterJapanese === false ? ':不要' : ''}
+                </button>
+                <button onClick={() => setFilterContact(!filterContact)}
+                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterContact ? 'bg-amber-50 border-amber-300 text-amber-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                  套磁{filterContact ? ':必须' : ''}
+                </button>
+                {(plazaFilter || filterEnglish !== null || filterJapanese !== null || filterContact || filterExam.length > 0 || filterType.length > 0) ? (
+                  <button onClick={() => { setPlazaFilter(''); setFilterEnglish(null); setFilterJapanese(null); setFilterContact(false); setFilterExam([]); setFilterType([]); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline">清除</button>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {['筆記','面接','書類選考'].map(t => (
+                  <button key={t} onClick={() => setFilterExam(filterExam.includes(t) ? filterExam.filter(x => x !== t) : [...filterExam, t])}
+                    className={`text-[11px] px-2 py-1 rounded-full border transition ${filterExam.includes(t) ? 'bg-indigo-50 border-indigo-300 text-indigo-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{t}</button>
+                ))}
+                <span className="text-gray-200 mx-0.5">|</span>
+                {['国立','公立','私立'].map(t => (
+                  <button key={t} onClick={() => setFilterType(filterType.includes(t) ? filterType.filter(x => x !== t) : [...filterType, t])}
+                    className={`text-[11px] px-2 py-1 rounded-full border transition ${filterType.includes(t) ? 'bg-blue-50 border-blue-300 text-blue-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{t}</button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
-                // When user has research_area but filter not yet applied, show matching hint instead of all 33 schools
+                // Client-side filtering
+                let filteredCatalog = catalog;
+                if (!plazaFilter) filteredCatalog = filteredCatalog.filter(s => s.majors?.length > 0 || s.exam || s.notes || s.jlpt_min);
+                if (plazaFilter) {
+                  const q = plazaFilter.toLowerCase();
+                  filteredCatalog = filteredCatalog.filter(s => [s.name, ...(s.majors||[]), ...(s.tags||[]), s.notes||''].join(' ').toLowerCase().includes(q));
+                }
+                if (filterEnglish === true) filteredCatalog = filteredCatalog.filter(s => s.english_req?.required);
+                if (filterEnglish === false) filteredCatalog = filteredCatalog.filter(s => !s.english_req?.required);
+                if (filterJapanese === true) filteredCatalog = filteredCatalog.filter(s => s.jlpt_min || s.jlpt);
+                if (filterJapanese === false) filteredCatalog = filteredCatalog.filter(s => !s.jlpt_min && !s.jlpt);
+                if (filterContact) filteredCatalog = filteredCatalog.filter(s => (s.tags||[]).some(t => t.includes('内諾') || t.includes('連絡') || t.includes('事前')));
+                if (filterExam.length) filteredCatalog = filteredCatalog.filter(s => filterExam.some(e => (s.tags||[]).includes(e) || (s.exam||'').includes(e)));
+                if (filterType.length) filteredCatalog = filteredCatalog.filter(s => filterType.includes(s.type));
+                // When user has research_area but filter not yet applied, show matching hint instead of all schools
                 const hasResearch = profile?.research_area && profile.research_area.trim();
                 if (!plazaFilter && hasResearch && normalizedTerms.length === 0) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-sm">正在匹配「{profile.research_area}」方向…</p>
                   </div>;
                 }
-                if (catalog.length === 0 && plazaFilter) {
+                if (filteredCatalog.length === 0 && (plazaFilter || filterEnglish !== null || filterJapanese !== null || filterContact || filterExam.length > 0 || filterType.length > 0)) {
                   return <div className="col-span-2 text-center py-12 text-gray-400">
                     <p className="text-lg mb-2">没有完全匹配的学校</p>
                     <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
                   </div>;
                 }
-                return catalog.map((s, i) => {
+                return filteredCatalog.map((s, i) => {
                   const trackedSchools = (stage?.applications || []).map(a => a.school);
                   const alreadyTracked = trackedSchools.includes(s.name);
                   return (

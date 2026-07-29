@@ -415,8 +415,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     for n in new_names:
                                         try: upsert_school(School(name=n, source="web_search", verified=False))
                                         except: pass
-                                    actions.append({"type": "discovered_schools",
-                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
                                     logger.info(f"Auto-ingested {len(new_names)} schools from web")
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
@@ -471,14 +469,14 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             import os as _os
                             _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
                             try:
-                                _sk.table("schools").upsert({
-                                    "name": full_name, "type": uni_type, "majors": [],
+                                _sk.table("graduate_schools").upsert({
+                                    "name_jp": full_name, "majors": [],
                                     "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
                                     "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
-                                    "exam": "", "notes": note, "tags": ["llm_suggestion"],
+                                    "exam_type": "", "notes": note, "tags": [],
                                     "deadlines": [], "source": "llm_suggestion", "verified": False,
                                 "enrichment_status": "skeleton",
-                                }, on_conflict="name").execute()
+                                }, on_conflict="name_jp").execute()
                                 logger.info(f"Auto-ingested: {full_name}")
                             except Exception as e3:
                                 logger.warning(f"Auto-ingest DB failed for {full_name}: {e3}")
@@ -487,7 +485,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                 "name": full_name, "type": uni_type, "majors": [],
                                 "jlpt_min": jlpt if jlpt and jlpt != "要確認" else "",
                                 "english_req": {"type": eng, "required": bool(eng and eng != "要確認")} if eng and eng != "要確認" else {},
-                                "exam": "", "notes": note, "tags": ["llm_suggestion"],
+                                "exam": "", "notes": note, "tags": [],
                                 "deadlines": [], "source": "llm_suggestion", "verified": False,
                             })
                             if len(cards) >= 8: break
@@ -613,9 +611,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                                 upsert_school(School(name=n, source="web_search", verified=False))
                                             except Exception:
                                                 pass
-                                        # Still show as discovered cards for context
-                                        actions.append({"type": "discovered_schools",
-                                                        "schools": [{"name": n, "source": "web_search"} for n in new_names]})
                                         logger.info(f"Auto-ingested {len(new_names)} schools from web search")
                             except Exception:
                                 pass
@@ -1250,7 +1245,7 @@ def _enrich_skeletons(cards: list[dict]):
             update = {"enrichment_status": "completed", "verified": True}
             if data.get("jlpt_min"): update["jlpt_min"] = data["jlpt_min"]
             if data.get("english_req"): update["english_req"] = _json.dumps(data["english_req"], ensure_ascii=False)
-            if data.get("exam"): update["exam"] = data["exam"]
+            if data.get("exam"): update["exam_type"] = data["exam"]
             if data.get("deadlines"): update["deadlines"] = _json.dumps(data["deadlines"], ensure_ascii=False)
             if data.get("notes"): update["notes"] = data["notes"]
             _sk = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
@@ -1268,7 +1263,7 @@ def _enrich_skeletons(cards: list[dict]):
                         update["pdf_url"] = storage_url
                 except Exception:
                     pass  # keep original URL if storage upload fails
-            _sk.table("schools").update(update).eq("name", name).execute()
+            _sk.table("graduate_schools").update(update).eq("name_jp", name).execute()
             logger.info(f"Enriched: {name}")
         except Exception as e:
             logger.warning(f"Enrich failed for {name}: {e}")
@@ -1276,23 +1271,13 @@ def _enrich_skeletons(cards: list[dict]):
 
 # ── School catalog loaded from Supabase at startup ──
 def _load_school_catalog() -> list[dict]:
-    """Load school catalog from Supabase via _row_to_school for consistent V2 field handling."""
+    """Load school catalog at startup — delegates to cached get_all_schools()."""
     try:
-        from demo.school_database import _row_to_school
-        res = supabase.table("schools").select("*").order("id").execute()
-        catalog = []
-        for row in res.data:
-            school_obj = _row_to_school(row)
-            if school_obj:
-                d = school_obj.model_dump()
-                # Preserve extra fields not in School model but useful for frontend
-                for extra in ("website", "jlpt", "english", "type"):
-                    if extra in row:
-                        d[extra] = row.get(extra, "")
-                catalog.append(d)
-        return catalog
+        from demo.school_database import get_all_schools
+        schools = get_all_schools()
+        return [s.model_dump() for s in schools]
     except Exception as e:
-        logger.warning(f"Failed to load school catalog from Supabase: {e}")
+        logger.warning(f"Failed to load school catalog: {e}")
         return []
 
 SCHOOL_CATALOG = _load_school_catalog()

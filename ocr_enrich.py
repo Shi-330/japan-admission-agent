@@ -143,18 +143,18 @@ def enrich_from_pdf(school_name: str, pdf_url: str):
     update = {"enrichment_status": "completed", "verified": True}
     if data.get("jlpt_min"): update["jlpt_min"] = data["jlpt_min"]
     if data.get("english_req"): update["english_req"] = json.dumps(data["english_req"], ensure_ascii=False)
-    if data.get("exam"): update["exam"] = data["exam"]
+    if data.get("exam"): update["exam_type"] = data["exam"]
     if data.get("deadlines"): update["deadlines"] = json.dumps(data["deadlines"], ensure_ascii=False)
     if data.get("notes"): update["notes"] = data["notes"]
 
-    supabase.table("schools").update(update).eq("name", school_name).execute()
+    supabase.table("graduate_schools").update(update).eq("name", school_name).execute()
     print(f"    OK: {json.dumps({k:v for k,v in update.items() if k != 'enrichment_status'}, ensure_ascii=False)[:150]}")
     return True
 
 
 def run_batch():
     """Process all schools that have a pdf_url set (from previous enrichment)."""
-    res = supabase.table("schools").select("name,pdf_url").not_.is_("pdf_url", "null").limit(20).execute()
+    res = supabase.table("graduate_schools").select("name,pdf_url").not_.is_("pdf_url", "null").limit(20).execute()
     schools = [(r["name"], r["pdf_url"]) for r in res.data if r.get("pdf_url") and "http" in str(r["pdf_url"])]
     if not schools:
         print("No schools with PDF URLs found. Run enrichment first to populate pdf_url.")

@@ -8,7 +8,7 @@ from supabase import create_client
 from collections import Counter
 
 s = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
-r = s.table("schools").select("*").execute()
+r = s.table("graduate_schools").select("*").execute()
 rows = r.data
 print(f"Total schools: {len(rows)}")
 
@@ -21,7 +21,7 @@ for k, v in sorted(status.items()):
 # 2. Data quality
 has_jlpt = sum(1 for r in rows if r.get("jlpt_min"))
 has_english = sum(1 for r in rows if r.get("english_req") and r["english_req"].get("required"))
-has_exam = sum(1 for r in rows if r.get("exam"))
+has_exam = sum(1 for r in rows if r.get("exam_type") or r.get("exam"))
 has_notes = sum(1 for r in rows if r.get("notes"))
 print(f"\n--- Fields ---")
 print(f"  JLPT:    {has_jlpt}/{len(rows)}")
@@ -30,7 +30,7 @@ print(f"  Exam:    {has_exam}/{len(rows)}")
 print(f"  Notes:   {has_notes}/{len(rows)}")
 
 # 3. Duplicates
-names = [r["name"] for r in rows]
+names = [r.get("name_jp") or r.get("name", "") for r in rows]
 dupes = {n: c for n, c in Counter(names).items() if c > 1}
 if dupes:
     print(f"\n--- Duplicates ({len(dupes)}) ---")

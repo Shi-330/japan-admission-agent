@@ -1,6 +1,7 @@
 """
-学校数据库：从 Supabase 读写学校数据。
-School 改为 Pydantic BaseModel，字段与 schools 表新 schema 一一对应。
+学校数据库：从 Supabase 读写学校数据（graduate_schools 表）。
+School Pydantic BaseModel —— 字段映射 graduate_schools 列（含 enrichment 扩展列）。
+继承结构：universities → graduate_schools（单表承载全部入学运营数据）
 """
 import json
 import re
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from utils.supabase_client import supabase
 from utils.logger_handler import logger
 
-TABLE = "schools"
+TABLE = "graduate_schools"
 
 
 class School(BaseModel):
@@ -62,10 +63,17 @@ def _row_to_school(row: dict) -> Optional[School]:
     也需要反序列化。
     """
     try:
-        # 生产兼容：结构化 deadlines 存在 deadlines_v2 新列（老列保留 dict 供生产老代码用）。
-        # 新代码优先读 deadlines_v2，缺失时回退老列（老文本格式由下方 fallback 解析）。
-        if row.get("deadlines_v2"):
-            row = {**row, "deadlines": row["deadlines_v2"]}
+        # Column mapping: graduate_schools → School model fields
+        row = dict(row)
+        # name: prefer name_jp (Japanese name is canonical for grad schools)
+        if row.get("name_jp"):
+            row.setdefault("name", row["name_jp"])
+        # exam_type → exam
+        if row.get("exam_type") and not row.get("exam"):
+            row["exam"] = row["exam_type"]
+        # deadlines: already structured JSONB column
+        if row.get("deadlines") and isinstance(row.get("deadlines"), list):
+            pass  # already structured, no conversion needed
 
         # Filter to only known model fields, fill missing with defaults
         known_fields = set(School.model_fields.keys())
@@ -196,20 +204,58 @@ def _row_to_school(row: dict) -> Optional[School]:
         return None
 
 
-def get_all_schools() -> list[School]:
-    """读取全部学校。失败返回空列表。"""
-    try:
-        res = supabase.table(TABLE).select("*").execute()
-        schools = []
-        for r in res.data:
-            s = _row_to_school(r)
-            if s:
-                schools.append(s)
-        logger.info(f"已加载 {len(schools)} 所学校 (共 {len(res.data)} 行)")
-        return schools
-    except Exception as e:
-        logger.warning(f"读取学校数据失败 (可能表不存在): {e}")
-        return []
+_school_cache: list[School] | None = None
+_university_cache: dict[str, str] | None = None  # {id: name_jp}
+
+
+def invalidate_school_cache():
+    """Clear cached school data (call after writes)."""
+    global _school_cache, _university_cache
+    _school_cache = None
+    _university_cache = None
+
+
+def get_all_schools(enriched_only: bool = False) -> list[School]:
+    """读取全部学校（缓存），自动拼接大学名 → 研究科名。
+
+    Args:
+        enriched_only: 只返回有实质数据的研究科（过滤空壳目录）。
+    """
+    global _school_cache, _university_cache
+    if _school_cache is not None:
+        schools = _school_cache
+    else:
+        try:
+            # Batch-load universities for name prefix (also cached)
+            if _university_cache is None:
+                uni_res = supabase.table("universities").select("id,name_jp").execute()
+                _university_cache = {u["id"]: u["name_jp"] for u in uni_res.data}
+
+            res = supabase.table(TABLE).select("*").execute()
+            schools = []
+            for r in res.data:
+                r = dict(r)
+                uni_name = _university_cache.get(r.get("university_id", ""), "")
+                gs_name = r.get("name_jp") or r.get("name", "")
+                if uni_name and gs_name and not gs_name.startswith(uni_name):
+                    r["name"] = f"{uni_name} {gs_name}"
+                else:
+                    r["name"] = gs_name or uni_name
+
+                s = _row_to_school(r)
+                if s:
+                    schools.append(s)
+            _school_cache = schools
+            logger.info(f"已加载 {len(schools)} 所学校 (共 {len(res.data)} 行)")
+        except Exception as e:
+            logger.warning(f"读取学校数据失败 (可能表不存在): {e}")
+            return []
+
+    if enriched_only:
+        return [s for s in (_school_cache or []) if (
+            (s.majors and len(s.majors) > 0) or s.exam or s.notes or s.jlpt_min
+        )]
+    return _school_cache or []
 
 
 def get_schools_by_major(major: str) -> list[School]:
@@ -238,12 +284,23 @@ def get_schools_by_major(major: str) -> list[School]:
 
 
 def upsert_school(s: School):
-    """写入/更新一所学校。on_conflict='name'，自动更新 updated_at。"""
+    """Upsert a school into graduate_schools. Maps School fields to DB column names."""
     data = s.model_dump()
-    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Map School.exam → DB column exam_type
+    if "exam" in data:
+        data["exam_type"] = data.pop("exam")
+    # updated_at doesn't exist on graduate_schools, use created_at as marker
+    # Instead, just upsert by name (graduate_schools has unique constraint on name)
     try:
-        supabase.table(TABLE).upsert(data, on_conflict="name").execute()
-        logger.info(f"已保存学校: {s.name}")
+        # Check if exists
+        existing = supabase.table(TABLE).select("id").eq("name_jp", s.name).execute()
+        if existing.data:
+            supabase.table(TABLE).update(data).eq("id", existing.data[0]["id"]).execute()
+            logger.info(f"已更新学校: {s.name}")
+        else:
+            supabase.table(TABLE).insert(data).execute()
+            logger.info(f"已插入学校: {s.name}")
+        invalidate_school_cache()
     except Exception as e:
         logger.error(f"保存失败 {s.name}: {e}")
         raise

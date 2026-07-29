@@ -11,6 +11,13 @@ Usage:
   python enrich_schools.py --loop 300   # run every 300s (daemon mode)
 """
 import os, sys, json, re, time
+
+# Force UTF-8 output on Windows (prevents GBK UnicodeEncodeError)
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -28,7 +35,7 @@ def enrich_school(school: dict) -> bool:
     print(f"\n  Enriching: {name}")
 
     # Mark as enriching
-    supabase.table("schools").update({"enrichment_status": "enriching"}).eq("name", name).execute()
+    supabase.table("graduate_schools").update({"enrichment_status": "enriching"}).eq("name", name).execute()
 
     try:
         # Step 0: Search Bing for PDF URLs directly
@@ -56,7 +63,7 @@ def enrich_school(school: dict) -> bool:
             query2 = f"{name} 大学院 入試要項 PDF"
             web_text = rag.search_with_fallback(query2)
         if not web_text or web_text.startswith("未找到"):
-            supabase.table("schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
             print(f"    No web results")
             return False
 
@@ -76,7 +83,7 @@ def enrich_school(school: dict) -> bool:
         # Parse JSON from LLM response
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if not json_match:
-            supabase.table("schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
             print(f"    LLM returned no JSON")
             return False
 
@@ -86,12 +93,14 @@ def enrich_school(school: dict) -> bool:
         update = {"enrichment_status": "completed", "verified": True}
         if data.get("jlpt_min"): update["jlpt_min"] = data["jlpt_min"]
         if data.get("english_req"): update["english_req"] = data["english_req"]
-        if data.get("exam"): update["exam"] = data["exam"]
+        if data.get("exam"): update["exam_type"] = data["exam"]
         if data.get("deadlines"): update["deadlines"] = data["deadlines"]
-        if data.get("notes"): update["notes"] = (school.get("notes","") + " | " + data["notes"]).strip(" |")
-        # Use LLM-found PDF URL or dedicated-search-found URL
+        if data.get("notes") and not school.get("notes"): update["notes"] = data["notes"]
+        # Save LLM-found PDF URL directly (even if download fails later)
         _final_pdf = data.get("pdf_url") or pdf_url
-        # PDF download + upload to Supabase Storage
+        if _final_pdf:
+            update["pdf_url"] = _final_pdf
+        # Attempt PDF download + upload to Supabase Storage
         if _final_pdf:
             try:
                 import requests as _req
@@ -104,15 +113,15 @@ def enrich_school(school: dict) -> bool:
                     storage_url = supabase.storage.from_("pdfs").get_public_url(storage_path)
                     update["pdf_url"] = storage_url
             except Exception:
-                pass  # keep original URL if storage upload fails
+                pass  # keep LLM-found URL if storage upload fails
 
-        supabase.table("schools").update(update).eq("name", name).execute()
+        supabase.table("graduate_schools").update(update).eq("name", name).execute()
         print(f"    OK: {json.dumps({k:v for k,v in update.items() if k != 'enrichment_status'}, ensure_ascii=False)[:120]}")
         return True
 
     except Exception as e:
         try:
-            supabase.table("schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
         except Exception:
             pass
         print(f"    FAIL: {e}")
@@ -124,7 +133,7 @@ def run(batch_size=5):
     import time as _time
     for attempt in range(3):
         try:
-            res = supabase.table("schools").select("name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
+            res = supabase.table("graduate_schools").select("name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
             pending = res.data
             break
         except Exception:
@@ -139,7 +148,7 @@ def run(batch_size=5):
 
     if not pending:
         # Also retry failed ones
-        res = supabase.table("schools").select("name,notes").eq("enrichment_status", "failed").limit(batch_size).execute()
+        res = supabase.table("graduate_schools").select("name,notes").eq("enrichment_status", "failed").limit(batch_size).execute()
         pending = res.data
     if not pending:
         print("No pending schools to enrich")
@@ -161,7 +170,7 @@ if __name__ == "__main__":
     if "--school" in sys.argv:
         idx = sys.argv.index("--school")
         name = sys.argv[idx + 1]
-        school = supabase.table("schools").select("name,notes").eq("name", name).execute()
+        school = supabase.table("graduate_schools").select("name,notes").eq("name", name).execute()
         if school.data:
             enrich_school(school.data[0])
         else:
