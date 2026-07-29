@@ -65,7 +65,7 @@ CLASSIFY_PROMPT = """你是一个日本升学顾问系统的意图分析引擎�
 {school_names}
 
 ## 输出格式（严格JSON，不要```json```代码块）
-{{"intent":"chat|qa|search_schools|match|report","flow":"school_search|professor_contact|application|exam_prep|general","depth":0|1|2,"prompt":"根据flow+depth的简短引导语（≤50字）","actions":[{{"type":"nav_plaza","filter":"标签1 标签2","prompt":"去广场筛选一下？"}},{{"type":"track_school","name":"学校完整名称"}},{{"type":"remind_prof","school":"学校名","professor":"教授名","days_since_contact":天数}},{{"type":"suggest_report"}}]}}
+{{"intent":"chat|qa|search_schools|match|report","flow":"school_search|professor_contact|application|exam_prep|general","depth":0|1|2,"prompt":"根据flow+depth的简短引导语（≤50字）","actions":[{{"type":"track_school","name":"学校完整名称"}},{{"type":"remind_prof","school":"学校名","professor":"教授名","days_since_contact":天数}},{{"type":"suggest_report"}}]}}
 
 ## 规则
 ### intent

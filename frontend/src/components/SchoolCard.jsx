@@ -11,7 +11,28 @@ import { Card, CardContent } from '@/components/ui/card';
  *   onTrack: async callback
  *   compact: bool — thinner layout for inline chat rendering
  */
+// Clean raw enrichment notes: strip URLs, extract structured tags
+function cleanNotes(raw) {
+  if (!raw) return { text: '', tags: [] };
+  let text = raw;
+  // Strip URLs
+  text = text.replace(/https?:\/\/[^\s）)】。]+/g, '');
+  // Extract 【keyword】content  patterns as tags
+  const tags = [];
+  text = text.replace(/【(.+?)】\s*([^【]*?)(?=\s*【|$)/g, (_, key, val) => {
+    const cleanVal = val.trim().replace(/[|｜]\s*$/, '');
+    if (cleanVal && cleanVal.length < 40) {
+      tags.push({ key, val: cleanVal });
+    }
+    return '';
+  });
+  // Clean up: remove leading/trailing separators and extra whitespace
+  text = text.replace(/^[|｜\s]+/, '').replace(/[|｜\s]+$/, '').replace(/\s{2,}/g, ' ').trim();
+  return { text, tags };
+}
+
 export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, compact }) {
+  const { text: cleanNote, tags: noteTags } = cleanNotes(s.notes);
   const typeBadge = s.type && (
     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
       s.type === '国立' ? 'bg-blue-50 text-blue-600' :
@@ -73,8 +94,13 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
             JLPT: {s.jlpt_min || s.jlpt || '-'} | 英语: {englishText} | 考试: {s.exam || '-'}
           </div>
         )}
-        {s.notes && (
-          <div className="text-[10px] text-muted-foreground mt-1 italic">{s.notes}</div>
+        {noteTags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {noteTags.map((t, i) => <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-amber-50 text-amber-700">{t.key}: {t.val}</span>)}
+          </div>
+        )}
+        {cleanNote && (
+          <div className="text-[10px] text-muted-foreground mt-1">{cleanNote}</div>
         )}
       </div>
     );
@@ -160,7 +186,12 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
           </div>
         </details>
 
-        {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
+        {noteTags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {noteTags.map((t, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{t.key}: {t.val}</span>)}
+          </div>
+        )}
+        {cleanNote && <div className="text-xs text-gray-400 mt-1">{cleanNote}</div>}
       </CardContent>
     </Card>
   );

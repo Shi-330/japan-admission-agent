@@ -473,8 +473,7 @@ export default function App() {
               pendingDiscovered = parsed.discovered_schools;
             }
             if (parsed.nav_suggestion) {
-              suggested = [{ type: 'nav', ...parsed.nav_suggestion }];
-              break;
+              // Suppressed — cards render directly, no separate nav bubble
             }
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
@@ -515,12 +514,18 @@ export default function App() {
         }
       }
 
-      // School cards from matching engine
+      // School cards from matching engine — merge into last assistant bubble
       if (pendingSchoolCards && pendingSchoolCards.length > 0) {
-        setMessages(prev => [...prev, {
-          role: 'assistant', content: '',
-          schoolCards: pendingSchoolCards,
-        }]);
+        setMessages(prev => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = { ...updated[lastIdx], schoolCards: pendingSchoolCards };
+          } else {
+            updated.push({ role: 'assistant', content: '', schoolCards: pendingSchoolCards });
+          }
+          return updated;
+        });
       }
       // Discovered schools from web search
       if (pendingDiscovered && pendingDiscovered.length > 0) {
