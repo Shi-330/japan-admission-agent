@@ -11,12 +11,23 @@ import { Card, CardContent } from '@/components/ui/card';
  *   onTrack: async callback
  *   compact: bool — thinner layout for inline chat rendering
  */
-// Clean raw enrichment notes: strip URLs, extract structured tags
-function cleanNotes(raw) {
+// Clean raw enrichment notes: strip URLs, extract structured tags, remove cross-school contamination
+function cleanNotes(raw, schoolName) {
   if (!raw) return { text: '', tags: [] };
   let text = raw;
   // Strip URLs
   text = text.replace(/https?:\/\/[^\s）)】。]+/g, '');
+  // Strip cross-school contamination: sentences mentioning other universities not in this school's name
+  if (schoolName) {
+    const ownUni = schoolName.split(' ')[0]; // e.g. "関西大学" from "関西大学 情報科学研究科"
+    const knownUnis = ['東京大学', '京都大学', '大阪大学', '東北大学', '九州大学', '北海道大学', '名古屋大学', '早稲田大学', '慶應義塾大学', '筑波大学', '東京工業大学', '東京科学大学', '一橋大学', '横浜国立大学', '神戸大学', '広島大学'];
+    for (const uni of knownUnis) {
+      if (uni !== ownUni && text.includes(uni)) {
+        // Remove sentences containing other university names
+        text = text.replace(new RegExp(`[^。.]*${uni}[^。.]*[。.]?`, 'g'), '');
+      }
+    }
+  }
   // Extract 【keyword】content  patterns as tags
   const tags = [];
   text = text.replace(/【(.+?)】\s*([^【]*?)(?=\s*【|$)/g, (_, key, val) => {
@@ -26,13 +37,13 @@ function cleanNotes(raw) {
     }
     return '';
   });
-  // Clean up: remove leading/trailing separators and extra whitespace
+  // Clean up
   text = text.replace(/^[|｜\s]+/, '').replace(/[|｜\s]+$/, '').replace(/\s{2,}/g, ' ').trim();
   return { text, tags };
 }
 
 export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, compact }) {
-  const { text: cleanNote, tags: noteTags } = cleanNotes(s.notes);
+  const { text: cleanNote, tags: noteTags } = cleanNotes(s.notes, s.name);
   const typeBadge = s.type && (
     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
       s.type === '国立' ? 'bg-blue-50 text-blue-600' :

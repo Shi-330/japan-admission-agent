@@ -69,7 +69,8 @@ def enrich_school(school: dict) -> bool:
 
         # Step 2: LLM extract structured fields
         pdf_hint = f"\n\n【PDF URL】{pdf_url}" if pdf_url else ""
-        prompt = f"""以下は日本大学院の募集要項に関するWeb検索結果です。この学校の修士課程入試情報を抽出してください。
+        prompt = f"""以下は日本大学院の募集要項に関するWeb検索結果です。「{name}」の修士課程入試情報のみを抽出してください。
+**重要：他の大学（東京大学、京都大学など）の情報が混ざっている場合は厳格に除外すること。{name}に関係ない情報は一切含めないでください。**
 入学試験情報は必ずPDFに記載があるので、PDFがあれば優先して参照してください。{pdf_hint}
 
 {web_text[:1500]}
