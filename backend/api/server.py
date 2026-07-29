@@ -394,18 +394,29 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         logger.info(f"search_schools: only {len(matches)} matches, triggering web search")
                         try:
                             from rag.rag_service import RagSummarizeService as R
-                            web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
-                            if web and not web.startswith("未找到"):
-                                found = list(set(re.findall(
-                                    r'([一-鿿]{2,6}(?:大学|大学院)[一-鿿]*)', web)))
-                                existing = {s.get("name","") for s in SCHOOL_CATALOG}
-                                new_names = [n for n in found[:5] if n not in existing and "大学" in n and any(kw in n for kw in ["研究科","学府","学院","研究院"]) and not any(kw in n for kw in ["日本大学院","修士课程","博士课程"])]
-                                if new_names:
-                                    from demo.school_database import upsert_school, School
-                                    for n in new_names:
-                                        try: upsert_school(School(name=n, source="web_search", verified=False))
+                                                        web = R().search_with_fallback(f"{body.query} 日本 大学院 {q_major} 研究科")
+                                if web and not web.startswith("未找到"):
+                                    llm_prompt = f"以下web搜索结果中提到了哪些日本大学院？每行一个：大学名 | 研究科名。只列日本国内大学。
+
+{web[:1200]}"
+                                    resp = chat_model.invoke(llm_prompt)
+                                    llm_text = resp.content if hasattr(resp, "content") else str(resp)
+                                    existing_names = {s.get("name","") for s in SCHOOL_CATALOG}
+                                    ingested = 0
+                                    for line in llm_text.strip().split("\n"):
+                                        line = line.strip().lstrip("0123456789.-) ").strip()
+                                        parts = [p.strip() for p in line.split("|")]
+                                        if len(parts) < 2: continue
+                                        full_name = f"{parts[0]} {parts[1]}"
+                                        if "大学" not in full_name or full_name in existing_names: continue
+                                        try:
+                                            from demo.school_database import upsert_school, School
+                                            upsert_school(School(name=full_name, source="web_search", verified=False))
+                                            existing_names.add(full_name)
+                                            ingested += 1
                                         except: pass
-                                    logger.info(f"Auto-ingested {len(new_names)} schools from web")
+                                    if ingested:
+                                        logger.info(f"Auto-ingested {ingested} schools from web")
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
                     profile_ctx = f"JLPT {profile.jlpt_level or '未知'}、GPA {profile.gpa}、英语 {profile.english_score or '未知'}"
