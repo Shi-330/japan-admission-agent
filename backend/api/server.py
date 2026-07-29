@@ -1836,6 +1836,79 @@ async def generate_timeline(user_id: str = Depends(get_user_id)):
     }
 
 
+# ── Application checklist generator ──
+@app.get("/v1/checklist")
+async def generate_checklist(user_id: str = Depends(get_user_id)):
+    """Generate per-school application checklist with required documents and deadlines."""
+    profile = profile_mgr.get_profile(user_id)
+    if not profile or not profile.applications:
+        return {"ok": False, "error": "还未追踪任何学校"}
+
+    from demo.school_database import get_all_schools
+    all_schools = {s.name: s for s in get_all_schools()}
+    checklists = []
+
+    for app in profile.applications:
+        sname = app.get("school", "")
+        school = all_schools.get(sname)
+        if not school: continue
+
+        items = []
+        # JLPT certificate
+        if school.jlpt_min:
+            items.append({"item": "日本語能力証明書", "detail": f"{school.jlpt_min}以上", "required": True, "category": "language"})
+        else:
+            items.append({"item": "日本語能力証明書", "detail": "不要または任意", "required": False, "category": "language"})
+
+        # English score
+        eng = school.english_req or {}
+        if eng.get("required"):
+            items.append({"item": "英語スコア", "detail": f"{eng.get('type','TOEFL/TOEIC/IELTS')} {eng.get('min_score','')}".strip(), "required": True, "category": "language"})
+        else:
+            items.append({"item": "英語スコア", "detail": "不要または任意", "required": False, "category": "language"})
+
+        # Exam
+        if school.exam:
+            items.append({"item": "入学試験", "detail": school.exam, "required": True, "category": "exam"})
+
+        # Common required docs
+        items.append({"item": "卒業証明書 / 成績証明書", "detail": "出身大学発行（英訳付）", "required": True, "category": "document"})
+        items.append({"item": "研究計画書", "detail": "2000字程度、志望教授の研究と関連付ける", "required": True, "category": "document"})
+        items.append({"item": "推薦書", "detail": "指導教員2通（大学院による）", "required": True, "category": "document"})
+
+        # Professor approval
+        if school.tags and any("内諾" in t for t in school.tags):
+            items.append({"item": "教授内諾", "detail": "出願前に志望教授の承諾を得ること", "required": True, "category": "contact"})
+
+        # Deadlines
+        deadlines = school.deadlines or []
+        for d in deadlines:
+            date_str = d.get("date") or d.get("start") or d.get("raw", "")
+            if date_str:
+                items.append({"item": d.get("name", "期限"), "detail": date_str[:10] if len(date_str)>=10 else date_str, "required": True, "category": "deadline"})
+
+        # LLM-generated notes for school-specific quirks
+        try:
+            llm_prompt = f"日本の大学院「{sname}」の修士課程出願に必要な書類を1行1つ、簡潔に列挙してください。既知の情報: JLPT={school.jlpt_min or '不要'}, 英語={eng}, 試験={school.exam or '不明'}。出力は各項目を「・」で始めてください。5行以内。"
+            resp = chat_model.invoke(llm_prompt)
+            llm_text = resp.content if hasattr(resp, "content") else str(resp)
+            for line in llm_text.strip().split("\n"):
+                line = line.strip().lstrip("・- ").strip()
+                if line and len(line) > 3 and "研究計画書" not in line:
+                    items.append({"item": line, "detail": "", "required": True, "category": "llm"})
+        except Exception:
+            pass
+
+        checklists.append({
+            "school": sname,
+            "items": items,
+            "deadline_count": sum(1 for i in items if i["category"] == "deadline"),
+            "required_count": sum(1 for i in items if i["required"]),
+        })
+
+    return {"ok": True, "checklists": checklists}
+
+
 # ── Serve React frontend (production build) ──
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.isdir(FRONTEND_DIR):
