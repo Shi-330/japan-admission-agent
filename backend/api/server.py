@@ -434,8 +434,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 对话规则：
 1. 严禁提及"卡片"、"数据库"、"系统匹配"、"界面"等元词汇——你是顾问不是系统。
 2. 如果{('学生的研究方向是' + profile.research_area) if profile.research_area else ''}方向很宽泛（如"地震学"涵盖理学/工学/勘探多个分支），先简短回问学生的具体偏好（≤150字），再展开分析。不要一次性灌1500字。
-3. 如果学生有明确的细分方向（如"地震勘探"），优先围绕该方向点评院校和实验室。
-4. 用###标题分段，回复控制在400字以内。把提问权交还学生。"""
+3. 如果学生有明确的细分方向（如"地震反演"、"FWI"），请向下挖深——拆分子方向（如全波形反演 vs 震源破裂反演 vs 环境噪声成像）、推荐具体实验室/教授名字（如东大地震研川胜团队）、推荐准备技能树（数学工具、编程语言、经典教材）。不要只列研究科名。
+4. 用###标题分段，回复控制在500字以内。回复末尾用【参考院校】列出你提到的实验室（每行：大学名 | 研究科名 | 实验室/教授 | 一句话特点）。把提问权交还学生。"""
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
@@ -646,7 +646,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 2. 匹配院校较少时补充该领域在日本的其他核心院校。明确区分"有入学数据"和"领域常识推荐，请查官网确认"。
 3. 不要说"卡片"、"数据库"、"系统匹配"等元词汇——你是顾问，不是系统说明书。
 4. 不要建议不存在于本系统的功能（"学长学姐经验""往年录取案例"等）。
-5. 如果学生方向宽泛，先简短回问偏好（≤100字），再展开分析。不要一次性灌长篇。回复控制在300字以内，把提问权交还学生。
+5. 如果学生方向宽泛则先简短回问偏好（≤100字）再展开。如果学生方向具体（如"FWI反演"），向下挖深——拆分子方向、推荐具体实验室/教授名、推荐技能树（数学/编程/经典教材），回复500字以内。
 6. 严禁虚构教授姓名（如山田花子、田中太郎等日本常见占位名）——你不知道学生联系过谁。
 7. 【强制动作闭环】当学生明确指定细分研究方向后，必须推荐2-3所该方向的对口院校和实验室。不管当前对话处在什么阶段，都不能只聊学术不推学校。
 
@@ -661,7 +661,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名） 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3所该方向的对口院校+实验室，不管当前flow是什么。这是强制动作闭环。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字（如山田花子、田中太郎等占位名） 3. 当学生明确指定细分方向（如反演/FWI/地下成像），必须推荐2-3个该方向的具体实验室/教授（不是泛泛的研究科），拆分子方向，给出技能准备建议。这是强制动作闭环。"
                 async for event in _stream(prompt):
                     yield event
 
@@ -709,14 +709,17 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     parts = [p.strip() for p in line.split("|")]
                     if len(parts) < 2: continue
                     uni, gs = parts[0], parts[1]
+                    lab = parts[2] if len(parts) > 2 else ""
+                    note = parts[3] if len(parts) > 3 else (parts[2] if len(parts) == 3 else "领域常识推荐，入学条件请查官网")
                     if any(gs in e or e in gs for e in existing_names): continue
-                    ref_cards.append({
+                    card = {
                         "school_name": f"{uni} {gs}",
                         "type": "", "majors": [], "tags": ["参考"],
                         "jlpt_min": "", "english_req": {}, "exam": "", "deadlines": [],
-                        "notes": parts[2] if len(parts) > 2 else "领域常识推荐，入学条件请查官网",
+                        "notes": f"{lab}: {note}" if lab else note,
                         "status_label": "参考", "gaps": [],
-                    })
+                    }
+                    ref_cards.append(card)
                     existing_names.add(gs)
                 if ref_cards:
                     actions.append({"type": "school_cards", "cards": ref_cards})
