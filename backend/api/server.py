@@ -491,12 +491,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         actions.append({"type": "school_cards", "cards": cards})
                         actions.append({"type": "nav_plaza", "filter": q_major or "",
                                         "prompt": f"去广场查看{len(cards)}所{q_major or ''}方向学校"})
-                        prompt += f"为你找到{len(cards)}所{q_major or '相关'}方向的学校（见下方卡片）。1句话简介即可，具体信息在卡片里。"
+                        prompt += f"下方卡片展示了{len(cards)}所匹配学校的入学条件和差距。请提供：1)背景评估（优势/短板）2)该方向在日本的前沿院校和实验室（即使不在卡片里也请补充）3)具体的申请路径建议。要有可操作性，不要笼统建议。"
                         # Fire-and-forget: enrich skeletons in background
                         from threading import Thread
                         Thread(target=_enrich_skeletons, args=(cards,), daemon=True).start()
                     else:
-                        prompt += "1句话建议学生手动搜索或换个专业方向试试。"
+                        prompt += "数据库暂无匹配。请用你的领域知识分析这个专业方向在日本的情况，包括：方向分类、核心院校、申请路径。不要空泛建议——给出具体的大学和研究科名。"
                 # Cache the search result for future identical queries
                 _search_cache[sk] = (cards, actions, time.time())
                 if len(_search_cache) > 100:
