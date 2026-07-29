@@ -16,7 +16,8 @@ TABLE = "graduate_schools"
 
 class School(BaseModel):
     """学校数据模型 — V2 统一 schema"""
-    name: str                                    # 唯一键（upsert on_conflict）
+    name: str                                    # 显示名（大学名 + 研究科名）
+    type: str = ""                               # 国立/公立/私立（继承自 universities）
     degree: str = "修士"
     majors: list = Field(default_factory=list)   # 展示 + 搜索 + 匹配
     tags: list = Field(default_factory=list)     # 展示 + 搜索
@@ -205,7 +206,7 @@ def _row_to_school(row: dict) -> Optional[School]:
 
 
 _school_cache: list[School] | None = None
-_university_cache: dict[str, str] | None = None  # {id: name_jp}
+_university_cache: dict[str, dict] | None = None  # {id: {name, type}}
 
 
 def invalidate_school_cache():
@@ -228,14 +229,20 @@ def get_all_schools(enriched_only: bool = False) -> list[School]:
         try:
             # Batch-load universities for name prefix (also cached)
             if _university_cache is None:
-                uni_res = supabase.table("universities").select("id,name_jp").execute()
-                _university_cache = {u["id"]: u["name_jp"] for u in uni_res.data}
+                uni_res = supabase.table("universities").select("id,name_jp,type").execute()
+                _university_cache = {u["id"]: {"name": u["name_jp"], "type": u.get("type", "")} for u in uni_res.data}
 
             res = supabase.table(TABLE).select("*").execute()
             schools = []
             for r in res.data:
                 r = dict(r)
-                uni_name = _university_cache.get(r.get("university_id", ""), "")
+                ui = _university_cache.get(r.get("university_id", ""), {})
+                if isinstance(ui, dict):
+                    uni_name = ui.get("name", "")
+                    if ui.get("type") and not r.get("type"):
+                        r["type"] = ui["type"]
+                else:
+                    uni_name = ui  # old string-only cache
                 gs_name = r.get("name_jp") or r.get("name", "")
                 if uni_name and gs_name and not gs_name.startswith(uni_name):
                     r["name"] = f"{uni_name} {gs_name}"

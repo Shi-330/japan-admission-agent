@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, User, Bot, Loader2, LogOut, Settings, LayoutGrid, MessageCircle, Calendar, Search, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import PlazaView from '@/components/PlazaView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -1193,155 +1194,15 @@ export default function App() {
         </div>
         </>
         ) : activeTab === 'plaza' ? (
-        /* Plaza view */
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-lg font-bold text-gray-800 mb-1">学校广场</h2>
-            <p className="text-sm text-gray-400 mb-4">浏览学校信息，找到感兴趣的加入追踪</p>
-            <div className="space-y-2 mb-5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Input value={plazaFilter} onChange={e => setPlazaFilter(e.target.value)}
-                  placeholder="搜索专业，如：情报理工、NLP..."
-                  className="flex-1 max-w-xs p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                <button onClick={() => setFilterEnglish(filterEnglish === null ? true : filterEnglish === true ? false : null)}
-                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterEnglish === true ? 'bg-red-50 border-red-300 text-red-600' : filterEnglish === false ? 'bg-green-50 border-green-300 text-green-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
-                  英语{filterEnglish === true ? ':要' : filterEnglish === false ? ':不要' : ''}
-                </button>
-                <button onClick={() => setFilterJapanese(filterJapanese === null ? true : filterJapanese === true ? false : null)}
-                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterJapanese === true ? 'bg-red-50 border-red-300 text-red-600' : filterJapanese === false ? 'bg-green-50 border-green-300 text-green-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
-                  日语{filterJapanese === true ? ':要' : filterJapanese === false ? ':不要' : ''}
-                </button>
-                <button onClick={() => setFilterContact(!filterContact)}
-                  className={`text-xs px-2.5 py-1.5 rounded-full border transition ${filterContact ? 'bg-amber-50 border-amber-300 text-amber-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
-                  套磁{filterContact ? ':必须' : ''}
-                </button>
-                {(plazaFilter || filterEnglish !== null || filterJapanese !== null || filterContact || filterExam.length > 0 || filterType.length > 0) ? (
-                  <button onClick={() => { setPlazaFilter(''); setFilterEnglish(null); setFilterJapanese(null); setFilterContact(false); setFilterExam([]); setFilterType([]); }}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline">清除</button>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {['筆記','面接','書類選考'].map(t => (
-                  <button key={t} onClick={() => setFilterExam(filterExam.includes(t) ? filterExam.filter(x => x !== t) : [...filterExam, t])}
-                    className={`text-[11px] px-2 py-1 rounded-full border transition ${filterExam.includes(t) ? 'bg-indigo-50 border-indigo-300 text-indigo-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{t}</button>
-                ))}
-                <span className="text-gray-200 mx-0.5">|</span>
-                {['国立','公立','私立'].map(t => (
-                  <button key={t} onClick={() => setFilterType(filterType.includes(t) ? filterType.filter(x => x !== t) : [...filterType, t])}
-                    className={`text-[11px] px-2 py-1 rounded-full border transition ${filterType.includes(t) ? 'bg-blue-50 border-blue-300 text-blue-600' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>{t}</button>
-                ))}
-              </div>
-            </div>
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(() => {
-                // Client-side filtering
-                let filteredCatalog = catalog;
-                if (!plazaFilter) filteredCatalog = filteredCatalog.filter(s => s.majors?.length > 0 || s.exam || s.notes || s.jlpt_min);
-                if (plazaFilter) {
-                  const q = plazaFilter.toLowerCase();
-                  filteredCatalog = filteredCatalog.filter(s => [s.name, ...(s.majors||[]), ...(s.tags||[]), s.notes||''].join(' ').toLowerCase().includes(q));
-                }
-                if (filterEnglish === true) filteredCatalog = filteredCatalog.filter(s => s.english_req?.required);
-                if (filterEnglish === false) filteredCatalog = filteredCatalog.filter(s => !s.english_req?.required);
-                if (filterJapanese === true) filteredCatalog = filteredCatalog.filter(s => s.jlpt_min || s.jlpt);
-                if (filterJapanese === false) filteredCatalog = filteredCatalog.filter(s => !s.jlpt_min && !s.jlpt);
-                if (filterContact) filteredCatalog = filteredCatalog.filter(s => (s.tags||[]).some(t => t.includes('内諾') || t.includes('連絡') || t.includes('事前')));
-                if (filterExam.length) filteredCatalog = filteredCatalog.filter(s => filterExam.some(e => (s.tags||[]).includes(e) || (s.exam||'').includes(e)));
-                if (filterType.length) filteredCatalog = filteredCatalog.filter(s => filterType.includes(s.type));
-                // When user has research_area but filter not yet applied, show matching hint instead of all schools
-                const hasResearch = profile?.research_area && profile.research_area.trim();
-                if (!plazaFilter && hasResearch && normalizedTerms.length === 0) {
-                  return <div className="col-span-2 text-center py-12 text-gray-400">
-                    <p className="text-sm">正在匹配「{profile.research_area}」方向…</p>
-                  </div>;
-                }
-                if (filteredCatalog.length === 0 && (plazaFilter || filterEnglish !== null || filterJapanese !== null || filterContact || filterExam.length > 0 || filterType.length > 0)) {
-                  return <div className="col-span-2 text-center py-12 text-gray-400">
-                    <p className="text-lg mb-2">没有完全匹配的学校</p>
-                    <p className="text-sm">试试换个说法，或者 <Button onClick={() => setPlazaFilter('')} className="text-indigo-500 underline">清除筛选</Button> 查看全部</p>
-                  </div>;
-                }
-                return filteredCatalog.map((s, i) => {
-                  const trackedSchools = (stage?.applications || []).map(a => a.school);
-                  const alreadyTracked = trackedSchools.includes(s.name);
-                  return (
-                <Card key={i} data-testid="school-card">
-<CardContent className="p-5">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-800 school-name">
-                      {s.name}
-                      {s.type && (
-                        <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium align-middle ${
-                          s.type === '国立' ? 'bg-blue-50 text-blue-600' :
-                          s.type === '公立' ? 'bg-emerald-50 text-emerald-600' :
-                          'bg-purple-50 text-purple-600'
-                        }`}>{s.type}</span>
-                      )}
-                    </h3>
-                    <Button onClick={async () => {
-                      if (alreadyTracked) return;
-                      try {
-                        await apiCall('/v1/applications', token, { method: 'POST', body: { school: s.name, major: s.majors?.[0] || '', official_deadlines: s.deadlines, notes: s.notes } });
-                        const updated = await apiCall('/v1/stage', token);
-                        setStage(updated);
-                        showToast(`已添加「${s.name}」`, 'success');
-                      } catch (err) { showToast(`添加失败: ${err.message}`); }
-                    }}
-                      disabled={alreadyTracked}
-                      className={`text-xs px-2.5 py-1 rounded-lg transition font-medium shrink-0 ${alreadyTracked ? 'bg-gray-100 text-gray-400' : 'bg-primary/10 hover:bg-indigo-100 text-primary'}`}>
-                      {alreadyTracked ? '已追踪' : '追踪'}
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mb-2 school-majors">
-                    {s.majors?.map(m => (
-                      <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{m}</span>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-1 mb-2 school-tags">
-                    {s.tags?.map(t => (
-                      <span key={t} className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">{t}</span>
-                    ))}
-                  </div>
-                  <div className="text-xs text-gray-400 space-y-0.5 mb-2">
-                    <div>JLPT: {s.jlpt_min || s.jlpt || '不要求'} | 英语: {s.english_req ? (s.english_req.required ? (s.english_req.min ? s.english_req.type+' '+s.english_req.min : s.english_req.type || '必要') : '不要求') : s.english || '-'} | 考试: {s.exam}</div>
-                  </div>
-                  <details className="text-xs">
-                    <summary className="text-gray-400 cursor-pointer">截止日期</summary>
-                    <div className="mt-1 space-y-0.5 text-gray-500">
-                      {Array.isArray(s.deadlines) ? (
-                        s.deadlines.map((item, idx) => (
-                          <div key={idx} className="flex justify-between">
-                            <span>{item.name}</span>
-                            <span>{item.date || (item.start && item.end ? `${item.start.slice(0,10)} ~ ${item.end.slice(0,10)}` : item.raw || '')}</span>
-                          </div>
-                        ))
-                      ) : (
-                        Object.entries(s.deadlines || {}).map(([k, v]) => (
-                          <div key={k} className="flex justify-between"><span>{k}</span><span>{v}</span></div>
-                        ))
-                      )}
-                    </div>
-                  </details>
-                  {s.notes && <div className="text-xs text-gray-400 mt-2 italic">{s.notes}</div>}
-                  <div className="text-[10px] text-gray-400 mt-2 flex items-center justify-between">
-                    {s.website ? (
-                      <a href={s.website} target="_blank" rel="noopener noreferrer"
-                        className="text-indigo-500 hover:underline truncate max-w-[180px]"
-                        onClick={e => e.stopPropagation()}>
-                        官网 →
-                      </a>
-                    ) : <span />}
-                    {s.updated_at && (
-                      <span className="tabular-nums">更新: {s.updated_at.slice(0, 10)}</span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-              )});
-              })()}
-            </div>
-          </div>
-        </div>
+        <PlazaView
+          catalog={catalog}
+          stage={stage}
+          token={token}
+          apiCall={apiCall}
+          setStage={setStage}
+          showToast={showToast}
+          profile={profile}
+        />
         ) : activeTab === 'documents' ? (
         /* Documents view */
         <DocumentsView
