@@ -418,7 +418,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     logger.info(f"Auto-ingested {len(new_names)} schools from web")
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
-                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），为他匹配了{len(top_names)}所学校。请1句话告诉学生已匹配，然后建议去广场查看更多。"
+                    prompt = f"学生正在找{q_major or '合适'}方向的学校。根据背景（JLPT{profile.jlpt_level}、GPA{profile.gpa}），数据库匹配到{len(top_names)}所学校：{', '.join(top_names[:5])}。{'如果匹配较少，请用你的领域知识补充该方向在日本的其他核心院校和方向分类。' if len(top_names) < 5 else ''}请1-2句自然回复，不要push广场——直接给答案或建议下一步。"
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
@@ -617,18 +617,26 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 except Exception as e:
                     logger.warning(f"School matching in qa failed: {e}")
 
-                prompt = f"""你是日本升学顾问。
-【资料】{ctx[:800] if ctx else "无"}
-{schools_context}
-【学生】{profile_str}
+                prompt = f"""你是日本升学顾问。你有强大的日本大学院领域知识，同时可以访问数据库中的入学硬指标。
+对话规则：
+1. 先用自己的知识帮学生理清方向（如专业分类、顶尖院校、申请路径），再引用数据库中的入学条件做硬校验。
+2. 如果数据库匹配结果少于5所，用你自身知识补充该领域在日本的其他核心院校和方向分类。明确区分"数据库有一手入学数据"和"以下是根据领域常识推荐的院校，具体条件请查官网"。
+3. 不要建议学生使用本系统没有的功能（如"查看学长学姐经验"、"往年录取案例"、"前辈分享"等不存在的内容）。
+4. 不要反复push学生去广场——广场只是备选，你作为顾问应该直接给出答案。
+5. 2-3段自然语言回复，不用markdown表格。
+
+【数据库匹配结果】
+{schools_context if schools_context else "该方向暂无匹配的入学数据库条目。请用自身知识回答。"}
+
+【知识库资料】{ctx[:800] if ctx else "无"}
+【学生背景】{profile_str}
 {stage_ctx}
-【问题】{body.query}
-{detail_instruction}资料为空则说明暂无相关内容。"""
+【问题】{body.query}"""
                 async for event in _stream(prompt):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown。"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复 2. 纯文本不用markdown 3. 不要建议不存在于本系统中的功能（如学长学姐经验等）。"
                 async for event in _stream(prompt):
                     yield event
 
