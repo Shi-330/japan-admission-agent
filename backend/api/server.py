@@ -1705,6 +1705,112 @@ async def health_check():
     return {"status": "healthy"}
 
 
+# ── Outreach draft generator ──
+class DraftRequest(BaseModel):
+    school_name: str
+    professor_name: str = ""
+    research_topic: str = ""
+    style: str = "formal_jp"  # formal_jp | formal_en
+
+@app.post("/v1/draft")
+async def generate_draft(body: DraftRequest, user_id: str = Depends(get_user_id)):
+    """Generate a professor contact email (套磁信) in Japanese or English."""
+    profile = profile_mgr.get_profile(user_id)
+    profile_str = profile_mgr.format_for_prompt(profile) if profile else ""
+
+    style_guide = {
+        "formal_jp": "日本語の敬語（です・ます調）。拝啓〜敬具の形式。自分の背景、研究興味、教授の研究との接点、研究生/修士として受け入れ可能かどうかの問い合わせを含める。",
+        "formal_en": "Formal academic English. Include: self-introduction, research interests, alignment with professor's work, inquiry about graduate student opportunities.",
+    }
+    prompt = f"""以下の条件で大学院教授へのコンタクトメールを作成してください。
+
+【学生情報】
+{profile_str[:600]}
+
+【志望校・教授】
+{body.school_name}
+{'教授: ' + body.professor_name if body.professor_name else ''}
+{'研究テーマ: ' + body.research_topic if body.research_topic else ''}
+
+【文体要件】
+{style_guide.get(body.style, style_guide['formal_jp'])}
+
+【出力形式】
+JSON形式: {{"subject":"件名","body":"本文"}}
+件名は簡潔に。本文は400-800字程度。"""
+    try:
+        resp = chat_model.invoke(prompt)
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        m = re.search(r'\{.*\}', text, re.DOTALL)
+        if m:
+            data = json.loads(m.group(0))
+            return {"ok": True, "draft": data}
+        return {"ok": False, "error": "LLM parse failed"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Timeline generator ──
+@app.get("/v1/timeline")
+async def generate_timeline(user_id: str = Depends(get_user_id)):
+    """Generate a chronological timeline from tracked schools' deadlines."""
+    profile = profile_mgr.get_profile(user_id)
+    events = []
+    tracked_schools = set()
+
+    for app in (profile.applications or []):
+        school_name = app.get("school", "")
+        if not school_name: continue
+        tracked_schools.add(school_name)
+
+        deadlines = app.get("deadlines") or app.get("official_deadlines") or []
+        if isinstance(deadlines, dict):
+            deadlines = [{"name": k, "raw": v} for k, v in deadlines.items()]
+
+        for d in (deadlines or []):
+            date_str = ""
+            if d.get("date"): date_str = d["date"]
+            elif d.get("start"): date_str = d["start"]
+            elif d.get("raw"): date_str = d["raw"]
+
+            if date_str:
+                events.append({
+                    "date": date_str[:10] if len(date_str) >= 10 else date_str,
+                    "school": school_name,
+                    "event": d.get("name", "期限"),
+                    "type": "deadline"
+                })
+
+    # Also pull deadlines from graduate_schools table for tracked schools
+    if tracked_schools:
+        from demo.school_database import get_all_schools
+        all_schools = {s.name: s for s in get_all_schools()}
+        for sname in tracked_schools:
+            school = all_schools.get(sname)
+            if school and school.deadlines:
+                for d in school.deadlines:
+                    date_str = d.get("date") or d.get("start") or d.get("raw", "")
+                    if date_str and len(date_str) >= 10:
+                        events.append({
+                            "date": date_str[:10],
+                            "school": sname,
+                            "event": d.get("name", "期限"),
+                            "type": "deadline"
+                        })
+
+    # Sort chronologically, warn for imminent deadlines
+    events.sort(key=lambda e: e["date"])
+    today = datetime.now().strftime("%Y-%m-%d")
+    warnings = [f"{e['school']}: {e['event']} - {e['date']}" for e in events if e["date"] < today]
+
+    return {
+        "ok": True,
+        "events": events,
+        "warnings": warnings,
+        "tracked_schools": list(tracked_schools),
+    }
+
+
 # ── Serve React frontend (production build) ──
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.isdir(FRONTEND_DIR):

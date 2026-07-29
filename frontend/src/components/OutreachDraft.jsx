@@ -31,19 +31,24 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
     setLoading(false);
   }, [school, professorName]);
 
+  const [style, setStyle] = useState('formal_jp');
+
   // Generate draft on demand (not auto, user clicks button)
   const generateDraft = async () => {
     setLoading(true);
     setError(null);
     setDraft(null);
     try {
-      const data = await apiCall('/v1/draft/outreach', token, {
+      const data = await apiCall('/v1/draft', token, {
         method: 'POST',
-        body: { school, professor_name: professorName },
+        body: { school_name: school, professor_name: professorName, style },
       });
-      setDraft(data);
-      setBodyJa(data.body_ja || '');
-      setBodyZh(data.body_zh || '');
+      if (data.ok) {
+        setDraft(data.draft);
+        setBodyJa(data.draft.body || '');
+      } else {
+        setError(data.error || '生成失败');
+      }
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
@@ -64,7 +69,11 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
         <div className="space-y-4">
           {/* Initial state: generate button */}
           {!draft && !loading && !error && (
-            <div className="text-center py-8">
+            <div className="text-center py-8 space-y-3">
+              <div className="flex items-center justify-center gap-2">
+                <button onClick={() => setStyle('formal_jp')} className={`text-xs px-2 py-1 rounded ${style === 'formal_jp' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>日文敬語</button>
+                <button onClick={() => setStyle('formal_en')} className={`text-xs px-2 py-1 rounded ${style === 'formal_en' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>English</button>
+              </div>
               <Button onClick={generateDraft}
                 className="bg-primary text-primary-foreground hover:bg-indigo-700 px-6">
                 生成套磁邮件草稿
