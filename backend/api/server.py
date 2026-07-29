@@ -1871,31 +1871,30 @@ async def generate_checklist(user_id: str = Depends(get_user_id)):
         if school.exam:
             items.append({"item": "入学試験", "detail": school.exam, "required": True, "category": "exam"})
 
-        # Common required docs
-        items.append({"item": "卒業証明書 / 成績証明書", "detail": "出身大学発行（英訳付）", "required": True, "category": "document"})
-        items.append({"item": "研究計画書", "detail": "2000字程度、志望教授の研究と関連付ける", "required": True, "category": "document"})
-        items.append({"item": "推薦書", "detail": "指導教員2通（大学院による）", "required": True, "category": "document"})
+        # Professor approval (only if tagged)
+        if school.tags and any("内諾" in t or "連絡" in t for t in school.tags):
+            items.append({"item": "教授内諾/事前連絡", "detail": "出願前に志望教授の承諾を得ること", "required": True, "category": "contact"})
 
-        # Professor approval
-        if school.tags and any("内諾" in t for t in school.tags):
-            items.append({"item": "教授内諾", "detail": "出願前に志望教授の承諾を得ること", "required": True, "category": "contact"})
-
-        # Deadlines
+        # Deadlines from structured data
         deadlines = school.deadlines or []
         for d in deadlines:
             date_str = d.get("date") or d.get("start") or d.get("raw", "")
             if date_str:
                 items.append({"item": d.get("name", "期限"), "detail": date_str[:10] if len(date_str)>=10 else date_str, "required": True, "category": "deadline"})
 
-        # LLM-generated notes for school-specific quirks
+        # LLM generates school-specific document list (not hardcoded)
         try:
-            llm_prompt = f"日本の大学院「{sname}」の修士課程出願に必要な書類を1行1つ、簡潔に列挙してください。既知の情報: JLPT={school.jlpt_min or '不要'}, 英語={eng}, 試験={school.exam or '不明'}。出力は各項目を「・」で始めてください。5行以内。"
+            llm_prompt = f"「{sname}」の修士課程出願に必要な書類・手続きを簡潔にリストアップしてください。既知: JLPT={school.jlpt_min or '不要'}, 英語={eng}, 試験={school.exam or '不明'}。各項目を「・項目名: 説明」形式で。8行以内。"
             resp = chat_model.invoke(llm_prompt)
             llm_text = resp.content if hasattr(resp, "content") else str(resp)
             for line in llm_text.strip().split("\n"):
                 line = line.strip().lstrip("・- ").strip()
-                if line and len(line) > 3 and "研究計画書" not in line:
-                    items.append({"item": line, "detail": "", "required": True, "category": "llm"})
+                if line and len(line) > 3:
+                    parts = line.split(":", 1)
+                    if len(parts) == 2:
+                        items.append({"item": parts[0].strip(), "detail": parts[1].strip(), "required": True, "category": "llm"})
+                    else:
+                        items.append({"item": line, "detail": "", "required": True, "category": "llm"})
         except Exception:
             pass
 
