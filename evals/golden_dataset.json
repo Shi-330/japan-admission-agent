@@ -120,5 +120,12 @@
     "expect_any_school": true,
     "expect_tags": ["情報", "AI"],
     "expect_match_score_min": 80
+  },
+  {
+    "query": "帮我找东京大学情报理工的研究科",
+    "description": "chat应返回可操作的卡片（带追踪/套磁/广场按钮）",
+    "expect_exact_school": "東京大学 情報理工学系研究科",
+    "expect_any_school": true,
+    "expect_has_action_buttons": true
   }
 ]

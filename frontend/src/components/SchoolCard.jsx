@@ -74,7 +74,7 @@ function computeScore(school, profile) {
   return { score, met, total };
 }
 
-export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, compact, profile }) {
+export default function SchoolCard({ school: s, status, alreadyTracked, onTrack, onDraft, onSearchPlaza, compact, profile }) {
   const { text: cleanNote, tags: noteTags } = cleanNotes(s.notes, s.name);
   const matchScore = computeScore(s, profile);
   const scoreColor = !matchScore ? '' : matchScore.score >= 80 ? 'text-green-600' : matchScore.score >= 50 ? 'text-amber-600' : 'text-red-600';
@@ -148,6 +148,12 @@ export default function SchoolCard({ school: s, status, alreadyTracked, onTrack,
         )}
         {cleanNote && (
           <div className="text-[10px] text-muted-foreground mt-1">{cleanNote}</div>
+        )}
+        {(onDraft || onSearchPlaza) && (
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+            {onDraft && <button onClick={(e) => { e.stopPropagation(); onDraft(); }} className="text-[10px] text-indigo-500 hover:underline">写套磁信</button>}
+            {onSearchPlaza && <button onClick={(e) => { e.stopPropagation(); onSearchPlaza(); }} className="text-[10px] text-gray-400 hover:underline">广场查看</button>}
+          </div>
         )}
       </div>
     );

@@ -294,6 +294,7 @@ export default function App() {
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
   const [chatPlazaFilter, setChatPlazaFilter] = useState(''); // silent cross-tab context
+  const [draftTarget, setDraftTarget] = useState(null); // {school, professor} for OutreachDraft
   const [normalizedTerms, setNormalizedTerms] = useState([]);
   // Auto-set plaza filter from profile research_area on first visit
   useEffect(() => {
@@ -1156,6 +1157,8 @@ export default function App() {
                               showToast(`已添加「${card.name}」`, 'success');
                             } catch (err) { showToast(`添加失败: ${err.message}`); }
                           }}
+                          onDraft={() => setSelectedProf({ school: card.name, professorName: '' })}
+                          onSearchPlaza={() => { setChatPlazaFilter(card.name); setActiveTab('plaza'); }}
                         />
                       );
                     })}
