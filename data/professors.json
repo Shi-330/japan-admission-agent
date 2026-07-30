@@ -1,0 +1,132 @@
+[
+  {
+    "name_jp": "辻健",
+    "name_en": "Takeshi Tsuji",
+    "university": "東京大学",
+    "department": "工学系研究科 システム創成学専攻",
+    "lab_url": "https://www.sys.t.u-tokyo.ac.jp/",
+    "research_keywords": ["反射地震学", "FWI 全波形反演", "海底資源探査", "CCS モニタリング", "断層イメージング"],
+    "recent_papers": [
+      "Tsuji et al. (2024) Full-waveform inversion for crustal structure imaging using OBS data. Geophysical Journal International.",
+      "Tsuji et al. (2023) Seismic monitoring of CO2 storage using time-lapse FWI. International Journal of Greenhouse Gas Control."
+    ],
+    "notes": "2022年九州大学から東大へ異動。英語対応可。研究生受入実績あり。"
+  },
+  {
+    "name_jp": "山岡耕春",
+    "name_en": "Koshun Yamaoka",
+    "university": "名古屋大学",
+    "department": "環境学研究科 地球環境科学専攻",
+    "lab_url": "https://www.env.nagoya-u.ac.jp/",
+    "research_keywords": ["地震学", "DAS 光ファイバーセンシング", "アクティブ震源探査", "地下構造イメージング"],
+    "recent_papers": [
+      "Yamaoka et al. (2024) Active source seismic imaging using DAS in urban areas. Earth, Planets and Space.",
+      "Yamaoka et al. (2023) Crustal structure beneath the Nankai Trough region from wide-angle seismic data. Tectonophysics."
+    ],
+    "notes": "DAS（分布型音響センシング）の第一人者。英語論文多数。留学生受け入れ積極的。"
+  },
+  {
+    "name_jp": "池田達紀",
+    "name_en": "Tatsunori Ikeda",
+    "university": "九州大学",
+    "department": "工学府 地球資源システム工学専攻",
+    "lab_url": "https://www.kyushu-u.ac.jp/",
+    "research_keywords": ["物理探査", "地震波干渉法", "地下イメージング", "地熱探査", "弾性波伝播"],
+    "recent_papers": [
+      "Ikeda et al. (2024) Seismic interferometry for geothermal reservoir characterization. Geothermics.",
+      "Ikeda et al. (2023) Surface-wave tomography using ambient noise for shallow subsurface imaging. Exploration Geophysics."
+    ],
+    "notes": "辻健氏の東大異動後、九大の物理探査を引き継ぐ。留学生歓迎。英語指導可。"
+  },
+  {
+    "name_jp": "古村孝志",
+    "name_en": "Takashi Furumura",
+    "university": "東京大学",
+    "department": "地震研究所 (ERI)",
+    "lab_url": "https://www.eri.u-tokyo.ac.jp/",
+    "research_keywords": ["強震動シミュレーション", "地震波伝播", "震源過程", "スーパーコンピューティング"],
+    "recent_papers": [
+      "Furumura et al. (2024) Large-scale ground motion simulation for the Nankai Trough megathrust earthquake. BSSA.",
+      "Furumura et al. (2023) High-performance computing for seismic wave propagation in 3D heterogeneous media. Computers & Geosciences."
+    ],
+    "notes": "東大地震研の重鎮。HPC（スパコン）を使った大規模計算が専門。留学生受入あり。"
+  },
+  {
+    "name_jp": "後藤忠徳",
+    "name_en": "Tada-nori Goto",
+    "university": "京都大学",
+    "department": "工学研究科 社会基盤工学専攻",
+    "lab_url": "https://www.kyoto-u.ac.jp/",
+    "research_keywords": ["物理探査", "電磁探査", "地熱開発", "地下水モニタリング", "MT法"],
+    "recent_papers": [
+      "Goto et al. (2024) Magnetotelluric imaging of geothermal reservoirs in western Japan. Geothermics.",
+      "Goto et al. (2023) Integrated geophysical exploration for groundwater resource assessment. Exploration Geophysics."
+    ],
+    "notes": "電磁探査（MT法）の専門家。物理探査学会理事。英語論文多数。"
+  },
+  {
+    "name_jp": "中島淳一",
+    "name_en": "Junichi Nakajima",
+    "university": "東京大学",
+    "department": "理学系研究科 地球惑星科学専攻",
+    "lab_url": "https://www.eps.s.u-tokyo.ac.jp/",
+    "research_keywords": ["地震波トモグラフィー", "地球内部構造", "沈み込み帯", "スラブ構造"],
+    "recent_papers": [
+      "Nakajima et al. (2024) High-resolution seismic tomography of the Japan subduction zone. JGR.",
+      "Nakajima et al. (2023) Seismic evidence for slab dehydration beneath NE Japan. Nature Geoscience."
+    ],
+    "notes": "地震波トモグラフィーの世界的権威。東大教授。英語対応可。"
+  },
+  {
+    "name_jp": "松島信一",
+    "name_en": "Shinichi Matsushima",
+    "university": "京都大学",
+    "department": "防災研究所 (DPRI)",
+    "lab_url": "https://www.dpri.kyoto-u.ac.jp/",
+    "research_keywords": ["強震動予測", "地震防災", "地盤震動", "マイクロゾーニング"],
+    "recent_papers": [
+      "Matsushima et al. (2024) Site-specific strong motion prediction for the Kyoto basin. BSSA.",
+      "Matsushima et al. (2023) Microtremor array measurements for shallow S-wave velocity structure. Exploration Geophysics."
+    ],
+    "notes": "京大防災研。実務的な地震防災研究が中心。留学生対応可。"
+  },
+  {
+    "name_jp": "蓬田清",
+    "name_en": "Kiyoshi Yomogida",
+    "university": "北海道大学",
+    "department": "理学研究院 地球惑星科学部門",
+    "lab_url": "https://www.sci.hokudai.ac.jp/",
+    "research_keywords": ["地震波散乱", "不均質媒質", "火山体構造", "理論地震学"],
+    "recent_papers": [
+      "Yomogida et al. (2023) Seismic wave scattering in heterogeneous volcanic structures. GJI.",
+      "Yomogida et al. (2022) Theoretical study of seismic wave propagation in random media. Physics of the Earth and Planetary Interiors."
+    ],
+    "notes": "理論地震学の大家。北大名誉教授に近いが、大学院生指導継続中。英語可。"
+  },
+  {
+    "name_jp": "三浦哲",
+    "name_en": "Satoshi Miura",
+    "university": "東北大学",
+    "department": "理学研究科 地球物理学専攻",
+    "lab_url": "https://www.tohoku.ac.jp/",
+    "research_keywords": ["GPS地殻変動", "スロー地震", "プレート境界", "GNSS"],
+    "recent_papers": [
+      "Miura et al. (2024) Slow slip events along the Japan Trench detected by seafloor GNSS. Science Advances.",
+      "Miura et al. (2023) Crustal deformation associated with the 2011 Tohoku-oki earthquake from GPS data. JGR."
+    ],
+    "notes": "GPS/GNSS観測の専門家。S-net海域観測網との連携。英語可。"
+  },
+  {
+    "name_jp": "橋本学",
+    "name_en": "Manabu Hashimoto",
+    "university": "京都大学",
+    "department": "防災研究所 (DPRI)",
+    "lab_url": "https://www.dpri.kyoto-u.ac.jp/",
+    "research_keywords": ["地殻変動", "InSAR", "地震サイクル", "断層モデリング"],
+    "recent_papers": [
+      "Hashimoto et al. (2024) InSAR observations of the 2024 Noto Peninsula earthquake sequence. EPS.",
+      "Hashimoto et al. (2023) Interseismic strain accumulation along the Nankai Trough from GNSS data. JDR."
+    ],
+    "notes": "InSARの第一人者。京大防災研教授。留学生受け入れ可。英語対応。"
+  }
+]

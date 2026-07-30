@@ -1933,6 +1933,39 @@ async def generate_checklist(user_id: str = Depends(get_user_id)):
     return {"ok": True, "checklists": checklists}
 
 
+# ── Professor database (curated, zero-hallucination) ──
+import json as _json
+import os as _os
+
+_PROFESSOR_DB = None
+
+def _load_professors():
+    global _PROFESSOR_DB
+    if _PROFESSOR_DB is None:
+        path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "professors.json")
+        with open(path, "r", encoding="utf-8") as f:
+            _PROFESSOR_DB = _json.load(f)
+    return _PROFESSOR_DB
+
+
+@app.get("/v1/professors")
+async def search_professors(q: str = "", university: str = "", keyword: str = ""):
+    """Search curated professor database. Zero LLM hallucination."""
+    profs = _load_professors()
+    results = profs
+    if q:
+        ql = q.lower()
+        results = [p for p in results
+                   if ql in p["name_jp"].lower() or ql in p["name_en"].lower()
+                   or ql in p["department"].lower()
+                   or any(ql in kw.lower() for kw in p["research_keywords"])]
+    if university:
+        results = [p for p in results if university in p["university"]]
+    if keyword:
+        results = [p for p in results if keyword in " ".join(p["research_keywords"])]
+    return {"ok": True, "professors": results, "total": len(results)}
+
+
 # ── Serve React frontend (production build) ──
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.isdir(FRONTEND_DIR):
