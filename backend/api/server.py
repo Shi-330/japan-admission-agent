@@ -648,7 +648,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 4. 不要建议不存在于本系统的功能（"学长学姐经验""往年录取案例"等）。
 5. 如果学生方向宽泛则先简短回问偏好（≤100字）再展开。如果学生方向具体（如"FWI反演"），向下挖深——拆分子方向、推荐具体实验室/教授名、推荐技能树（数学/编程/经典教材），回复500字以内。
 6. 每次回复末尾用[!]标记附上：「以上信息基于大学官网网页检索，具体出愿要求请务必点击官网链接确认。」
-6. 严禁虚构教授姓名（如山田花子、田中太郎等日本常见占位名）——你不知道学生联系过谁。
+6. 严禁虚构教授姓名——所有提及的教授全名必须附带可验证的官网URL或KAKEN/ORCID链接。无法提供来源的，必须明确标注[未核实]并建议学生自行查询。这是防幻觉铁律。
 7. 【强制动作闭环】当学生明确指定细分研究方向后，必须推荐2-3所该方向的对口院校和实验室。不管当前对话处在什么阶段，都不能只聊学术不推学校。
 
 【匹配院校】
@@ -662,7 +662,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 严禁虚构教授名字 3. 指定细分方向时推2-3个实验室/教授 4. 如果回复涉及学校/教授/出愿信息，在末尾加一句「具体条件请以学校官网募集要项为准」"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 所有教授全名必须附带官网/KAKEN/ORCID链接，无法提供则标注[未核实] 3. 指定细分方向时推2-3个实验室/教授 4. 涉及出愿信息末尾加「具体条件请以学校官网募集要项为准」"
                 async for event in _stream(prompt):
                     yield event
 
@@ -1963,7 +1963,15 @@ async def search_professors(q: str = "", university: str = "", keyword: str = ""
         results = [p for p in results if university in p["university"]]
     if keyword:
         results = [p for p in results if keyword in " ".join(p["research_keywords"])]
-    return {"ok": True, "professors": results, "total": len(results)}
+    # Add confidence metadata
+    enriched = []
+    for p in results:
+        has_source = bool(p.get("sources") and len(p["sources"]) > 0)
+        enriched.append({**p,
+            "confidence": "verified" if has_source else "unverified",
+            "has_source": has_source,
+        })
+    return {"ok": True, "professors": enriched, "total": len(enriched)}
 
 
 # ── Serve React frontend (production build) ──
