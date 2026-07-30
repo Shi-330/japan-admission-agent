@@ -29,14 +29,17 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 from model.factory import chat_model
 
 
+def _update(sid, data):
+    """Update a school by UUID primary key. Avoids cross-write on non-unique name."""
+    supabase.table("graduate_schools").update(data).eq("id", sid).execute()
+
 def enrich_school(school: dict) -> bool:
     """Try to hydrate one skeleton school. Returns True on success."""
     name = school.get("name", "")
-    sid = school.get("id")  # Use UUID primary key, not non-unique name
+    sid = school.get("id")
     print(f"\n  Enriching: {name}")
 
-    # Mark as enriching
-    supabase.table("graduate_schools").update({"enrichment_status": "enriching"}).eq("id", sid).execute()
+    _update(sid, {"enrichment_status": "enriching"})
 
     try:
         # Step 0: Search Bing for PDF URLs directly
@@ -64,7 +67,7 @@ def enrich_school(school: dict) -> bool:
             query2 = f"{name} 大学院 入試要項 PDF"
             web_text = rag.search_with_fallback(query2)
         if not web_text or web_text.startswith("未找到"):
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
+            _update(sid, {"enrichment_status": "failed"})
             print(f"    No web results")
             return False
 
@@ -85,7 +88,7 @@ def enrich_school(school: dict) -> bool:
         # Parse JSON from LLM response
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if not json_match:
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
+            _update(sid, {"enrichment_status": "failed"})
             print(f"    LLM returned no JSON")
             return False
 
@@ -117,15 +120,13 @@ def enrich_school(school: dict) -> bool:
             except Exception:
                 pass  # keep LLM-found URL if storage upload fails
 
-        supabase.table("graduate_schools").update(update).eq("id", sid).execute()
+        _update(sid, update)
         print(f"    OK: {json.dumps({k:v for k,v in update.items() if k != 'enrichment_status'}, ensure_ascii=False)[:120]}")
         return True
 
     except Exception as e:
-        try:
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
-        except Exception:
-            pass
+        try: _update(sid, {"enrichment_status": "failed"})
+        except: pass
         print(f"    FAIL: {e}")
         return False
 

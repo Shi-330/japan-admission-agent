@@ -293,7 +293,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home'); // home | chat | plaza | calendar
   const [catalog, setCatalog] = useState([]);
   const [plazaFilter, setPlazaFilter] = useState('');
-  const [chatPlazaFilter, setChatPlazaFilter] = useState(''); // silent cross-tab context
   const [draftTarget, setDraftTarget] = useState(null); // {school, professor} for OutreachDraft
   const [normalizedTerms, setNormalizedTerms] = useState([]);
   // Auto-set plaza filter from profile research_area on first visit
@@ -470,7 +469,7 @@ export default function App() {
               pendingDiscovered = parsed.discovered_schools;
             }
             if (parsed.plaza_context) {
-              setChatPlazaFilter(parsed.plaza_context.filter || '');
+              setPlazaFilter(parsed.plaza_context.filter || '');
             }
             if (parsed.suggested_schools) {
               suggested = parsed.suggested_schools;
@@ -1158,7 +1157,7 @@ export default function App() {
                             } catch (err) { showToast(`添加失败: ${err.message}`); }
                           }}
                           onDraft={() => setSelectedProf({ school: card.name, professorName: '' })}
-                          onSearchPlaza={() => { setChatPlazaFilter(card.name); setActiveTab('plaza'); }}
+                          onSearchPlaza={() => { setPlazaFilter(card.name); setActiveTab('plaza'); }}
                         />
                       );
                     })}
@@ -1206,7 +1205,6 @@ export default function App() {
           setStage={setStage}
           showToast={showToast}
           profile={profile}
-          initialFilter={chatPlazaFilter}
         />
         ) : activeTab === 'documents' ? (
         /* Documents view */

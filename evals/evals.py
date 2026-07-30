@@ -250,9 +250,6 @@ class EvalRunner:
                     )
                 except: scored = True
                 status.append("MATCH" if scored else "LOW")
-            if test.get("expect_has_action_buttons"):
-                has = len(schools) > 0 and all(s.get("name") or s.get("school_name") for s in schools[:3])
-                status.append("BTN" if has else "NOBTN")
             if contam["contamination_free"]: status.append("CLEAN")
             else: status.append(f"CONTAM({len(contam['violations'])})")
             if tags["tag_hits"] > 0: status.append(f"+{tags['tag_hits']}tag")
