@@ -32,10 +32,11 @@ from model.factory import chat_model
 def enrich_school(school: dict) -> bool:
     """Try to hydrate one skeleton school. Returns True on success."""
     name = school.get("name", "")
+    sid = school.get("id")  # Use UUID primary key, not non-unique name
     print(f"\n  Enriching: {name}")
 
     # Mark as enriching
-    supabase.table("graduate_schools").update({"enrichment_status": "enriching"}).eq("name", name).execute()
+    supabase.table("graduate_schools").update({"enrichment_status": "enriching"}).eq("id", sid).execute()
 
     try:
         # Step 0: Search Bing for PDF URLs directly
@@ -63,7 +64,7 @@ def enrich_school(school: dict) -> bool:
             query2 = f"{name} 大学院 入試要項 PDF"
             web_text = rag.search_with_fallback(query2)
         if not web_text or web_text.startswith("未找到"):
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
             print(f"    No web results")
             return False
 
@@ -84,7 +85,7 @@ def enrich_school(school: dict) -> bool:
         # Parse JSON from LLM response
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if not json_match:
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
             print(f"    LLM returned no JSON")
             return False
 
@@ -116,13 +117,13 @@ def enrich_school(school: dict) -> bool:
             except Exception:
                 pass  # keep LLM-found URL if storage upload fails
 
-        supabase.table("graduate_schools").update(update).eq("name", name).execute()
+        supabase.table("graduate_schools").update(update).eq("id", sid).execute()
         print(f"    OK: {json.dumps({k:v for k,v in update.items() if k != 'enrichment_status'}, ensure_ascii=False)[:120]}")
         return True
 
     except Exception as e:
         try:
-            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("name", name).execute()
+            supabase.table("graduate_schools").update({"enrichment_status": "failed"}).eq("id", sid).execute()
         except Exception:
             pass
         print(f"    FAIL: {e}")
@@ -134,7 +135,7 @@ def run(batch_size=5):
     import time as _time
     for attempt in range(3):
         try:
-            res = supabase.table("graduate_schools").select("name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
+            res = supabase.table("graduate_schools").select("id,name,notes").eq("enrichment_status", "skeleton").limit(batch_size).execute()
             pending = res.data
             break
         except Exception:
@@ -149,7 +150,7 @@ def run(batch_size=5):
 
     if not pending:
         # Also retry failed ones
-        res = supabase.table("graduate_schools").select("name,notes").eq("enrichment_status", "failed").limit(batch_size).execute()
+        res = supabase.table("graduate_schools").select("id,name,notes").eq("enrichment_status", "failed").limit(batch_size).execute()
         pending = res.data
     if not pending:
         print("No pending schools to enrich")
@@ -171,7 +172,7 @@ if __name__ == "__main__":
     if "--school" in sys.argv:
         idx = sys.argv.index("--school")
         name = sys.argv[idx + 1]
-        school = supabase.table("graduate_schools").select("name,notes").eq("name", name).execute()
+        school = supabase.table("graduate_schools").select("id,name,notes").ilike("name_jp", f"%{name}%").execute()
         if school.data:
             enrich_school(school.data[0])
         else:
