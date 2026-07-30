@@ -32,8 +32,8 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
   }, [school, professorName]);
 
   const [style, setStyle] = useState('formal_jp');
+  const [draftType, setDraftType] = useState('email'); // email | research_proposal
 
-  // Generate draft on demand (not auto, user clicks button)
   const generateDraft = async () => {
     setLoading(true);
     setError(null);
@@ -41,7 +41,7 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
     try {
       const data = await apiCall('/v1/draft', token, {
         method: 'POST',
-        body: { school_name: school, professor_name: professorName, style },
+        body: { school_name: school, professor_name: professorName, style, draft_type: draftType },
       });
       if (data.ok) {
         setDraft(data.draft);
@@ -62,21 +62,24 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
       <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            套磁邮件草稿 — {school} / {professorName}
-          </DialogTitle>
-        </DialogHeader>
+          {draftType === 'email' ? '套磁邮件草稿' : '研究計画書草稿'} — {school}{professorName ? ' / ' + professorName : ''}
+        </DialogTitle>
+      </DialogHeader>
 
         <div className="space-y-4">
           {/* Initial state: generate button */}
           {!draft && !loading && !error && (
             <div className="text-center py-8 space-y-3">
-              <div className="flex items-center justify-center gap-2">
-                <button onClick={() => setStyle('formal_jp')} className={`text-xs px-2 py-1 rounded ${style === 'formal_jp' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>日文敬語</button>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <button onClick={() => setDraftType('email')} className={`text-xs px-2 py-1 rounded ${draftType === 'email' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>套磁信</button>
+                <button onClick={() => setDraftType('research_proposal')} className={`text-xs px-2 py-1 rounded ${draftType === 'research_proposal' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>研究計画書</button>
+                <span className="text-gray-300">|</span>
+                <button onClick={() => setStyle('formal_jp')} className={`text-xs px-2 py-1 rounded ${style === 'formal_jp' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>日文</button>
                 <button onClick={() => setStyle('formal_en')} className={`text-xs px-2 py-1 rounded ${style === 'formal_en' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>English</button>
               </div>
               <Button onClick={generateDraft}
                 className="bg-primary text-primary-foreground hover:bg-indigo-700 px-6">
-                生成套磁邮件草稿
+                {draftType === 'email' ? '生成套磁邮件草稿' : '生成研究計画書草稿'}
               </Button>
             </div>
           )}
@@ -101,7 +104,29 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
           )}
 
           {/* Draft loaded */}
-          {draft && (
+          {draft && (draft.type === 'research_proposal' || draft.sections) ? (
+            <div className="space-y-3">
+              <div className="bg-muted border border-border rounded p-3">
+                <h3 className="text-base font-bold mb-2">{draft.title}</h3>
+                {(draft.sections || []).map((sec, i) => (
+                  <div key={i} className="mb-3">
+                    <h4 className="text-sm font-semibold text-gray-700">{sec.heading}</h4>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{sec.body}</p>
+                  </div>
+                ))}
+              </div>
+              {(draft.references || []).length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">参考文献</label>
+                  <div className="bg-muted border border-border rounded p-2 text-xs space-y-0.5">
+                    {(draft.references || []).map((r, i) => <div key={i}>{r}</div>)}
+                  </div>
+                </div>
+              )}
+              <Button onClick={() => copyText(JSON.stringify(draft, null, 2))}
+                className="text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 px-3 py-1 h-auto">复制全文</Button>
+            </div>
+          ) : draft ? (
             <>
               {/* Subject */}
               <div>
@@ -116,7 +141,6 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
                   <span className="inline-block w-3 h-3 bg-yellow-200 rounded-sm border border-yellow-400"></span>
                   黄色部分为占位符，需自行填写教授相关内容
                 </div>
-                {/* Highlighted preview (read-only, visual reference) */}
                 <div
                   className="w-full min-h-[120px] p-2 border border-border rounded text-sm leading-relaxed whitespace-pre-wrap overflow-auto mb-1 bg-card"
                   dangerouslySetInnerHTML={{ __html: highlightPlaceholders(bodyJa) }}
@@ -167,7 +191,7 @@ export default function OutreachDraft({ open, onClose, school, professorName, to
                 </div>
               </div>
             </>
-          )}
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

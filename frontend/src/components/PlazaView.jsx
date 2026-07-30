@@ -88,7 +88,7 @@ function FilterChip({ active, color, children, ...props }) {
 // Props: catalog, stage, token, apiCall, setStage, showToast, profile
 export default function PlazaView({ catalog, stage, token, apiCall, setStage, showToast, profile, initialFilter }) {
   const [filter, setFilter] = useState(initialFilter || '');
-  useEffect(() => { if (initialFilter) setFilter(initialFilter); }, [initialFilter]);
+  useEffect(() => { if (initialFilter) { setFilter(initialFilter); setEng(null); setJpn(null); setContact(false); setExam([]); setInstType([]); } }, [initialFilter]);
   const [eng, setEng] = useState(null);    // null=all, true=required, false=not
   const [jpn, setJpn] = useState(null);
   const [contact, setContact] = useState(false);
