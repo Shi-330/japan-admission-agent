@@ -120,12 +120,16 @@ export default function PlazaView({ catalog, stage, token, apiCall, setStage, sh
   };
 
   // ── Filter logic ──
+  // CN→JP normalization for university/school names
+  const cn2jp = {'东':'東','电':'電','气':'気','情':'情報','计':'計','算':'算','机':'機','学':'学','大':'大','研':'研','究':'究','科':'科','专':'専','攻':'攻','门':'門','医':'医','药':'薬','农':'農','艺':'芸','术':'術','经':'経','济':'済','法':'法','文':'文','理':'理','工':'工','综':'総','合':'合','社':'社','会':'会','国':'国','际':'際','关':'関','西':'西','北':'北','海':'海','道':'道','九':'九','州':'州','名':'名','古':'古','屋':'屋','神':'神','户':'戸','广':'広','岛':'島','筑':'筑','波':'波','横':'横','滨':'浜','早':'早','稻':'稲','田':'田','庆':'慶','応':'應','义':'義','塾':'塾','立':'立','教':'教'};
+  const toJP = (s) => { let r=''; for(const c of s){ r+=cn2jp[c]||c; } return r; };
+
   let list = catalog;
   if (!filter) {
     list = list.filter(s => s.majors?.length > 0 || s.exam || s.notes || s.jlpt_min);
   } else {
-    const q = filter.toLowerCase();
-    list = list.filter(s => [s.name, ...(s.majors||[]), ...(s.tags||[]), s.notes||''].join(' ').toLowerCase().includes(q));
+    const q = toJP(filter).toLowerCase();
+    list = list.filter(s => toJP([s.name, ...(s.majors||[]), ...(s.tags||[]), s.notes||''].join(' ')).toLowerCase().includes(q));
   }
   if (eng === true) list = list.filter(s => s.english_req?.required);
   if (eng === false) list = list.filter(s => !s.english_req?.required);
