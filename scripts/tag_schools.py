@@ -97,6 +97,10 @@ def tag_school(school: dict) -> list[str]:
 
 
 def main():
+    # Force UTF-8 inside function body too (Windows GBK workaround)
+    if sys.platform == "win32":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     dry_run = "--dry-run" in sys.argv
     limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else 0
 
