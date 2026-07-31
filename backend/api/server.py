@@ -26,20 +26,15 @@ from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
 from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_hash
 
-# Monkey-patch: trace all LLM calls with metadata
+# Wrapper: trace all LLM calls without monkey-patching (Pydantic blocks it)
 _orig_invoke = chat_model.invoke
 _orig_stream = chat_model.stream
 
-def _traced_invoke(prompt, **kwargs):
+def trace_invoke(prompt: str, **kwargs) -> str:
     return _llm_trace(_orig_invoke, prompt, intent="", query="", user_id="")
 
-def _traced_stream(prompt, **kwargs):
-    # Stream doesn't return a single response — log at chunk level
-    # For tracing, capture the assembled prompt at stream start
+def trace_stream(prompt: str, **kwargs):
     return _orig_stream(prompt, **kwargs)
-
-chat_model.invoke = _traced_invoke
-chat_model.stream = _traced_stream
 
 # ── Constants ──
 OUTREACH_DRAFTS_KEY = "outreach_drafts"
@@ -328,7 +323,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
         async def _stream(prompt: str):
             """Stream LLM response as SSE content chunks."""
             nonlocal assistant_text
-            for chunk in chat_model.stream(prompt):
+            for chunk in trace_stream(prompt):
                 c = chunk.content if hasattr(chunk, "content") else str(chunk)
                 if c:
                     assistant_text += c
@@ -417,7 +412,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                                     web = R2().search_with_fallback(f"{query} 日本 大学院 {q_major} 研究科")
                                     if not web or web.startswith("未找到"): return
                                     llm_p = f"以下web搜索结果中提到了哪些日本大学院？每行一个：大学名 | 研究科名。只列日本国内大学。\n\n{web[:1200]}"
-                                    resp = chat_model.invoke(llm_p)
+                                    resp = trace_invoke(llm_p)
                                     text = resp.content if hasattr(resp, "content") else str(resp)
                                     existing_names = {s.get("name","") for s in SCHOOL_CATALOG}
                                     count = 0
@@ -463,7 +458,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                             f"重要：只列日本国内的大学（日本の大学のみ），不要列中国或欧美的大学。"
                             f"JLPT/英语如不确定写'要確認'。不要其他解释。"
                         )
-                        resp = chat_model.invoke(llm_prompt)
+                        resp = trace_invoke(llm_prompt)
                         llm_text = resp.content if hasattr(resp, "content") else str(resp)
                         logger.info(f"LLM school suggestion for {q_major}: {llm_text[:200]}")
                         for line in llm_text.strip().split("\n"):
@@ -1133,7 +1128,7 @@ async def draft_outreach(body: OutreachRequest, user_id: str = Depends(get_user_
 
 JSON:"""
 
-    resp = chat_model.invoke(prompt)
+    resp = trace_invoke(prompt)
     raw = resp.content if hasattr(resp, "content") else str(resp)
     if "```" in raw:
         raw = raw.split("```")[1]
@@ -1247,7 +1242,7 @@ async def fetch_and_extract(body: DocFetchRequest, user_id: str = Depends(get_us
 
 JSON:"""
 
-    resp = chat_model.invoke(extract_prompt)
+    resp = trace_invoke(extract_prompt)
     raw = resp.content if hasattr(resp, "content") else str(resp)
     # Strip markdown fences
     if "```" in raw:
@@ -1319,7 +1314,7 @@ def _enrich_skeletons(cards: list[dict]):
             prompt = f"""以下は日本大学院のWeb検索結果です。入試情報を抽出しJSONで返してください。
 {web[:1500]}
 形式: {{"jlpt_min":"N1など","english_req":{{"type":"TOEFL/TOEIC/IELTS","min_score":数値,"required":true/false}},"exam":"筆記+面接","deadlines":[{{"name":"出願","date":"YYYY-MM-DD"}}],"pdf_url":"PDF_URLがあれば","notes":"備考"}} 不明項目はnull。"""
-            resp = chat_model.invoke(prompt)
+            resp = trace_invoke(prompt)
             text = resp.content if hasattr(resp, "content") else str(resp)
             m = _re.search(r'\{.*\}', text, re.DOTALL)
             if not m: continue
@@ -1795,7 +1790,7 @@ JSON形式: {{"subject":"件名","body":"本文"}}
 件名は簡潔に。本文は400-800字程度。"""
 
     try:
-        resp = chat_model.invoke(prompt)
+        resp = trace_invoke(prompt)
         text = resp.content if hasattr(resp, "content") else str(resp)
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
@@ -1925,7 +1920,7 @@ async def generate_checklist(user_id: str = Depends(get_user_id)):
 各項目を「・項目名: 説明」形式で。不明な項目は含めないでください。8行以内。
 
 {web_text[:1500]}"""
-                resp = chat_model.invoke(extract_prompt)
+                resp = trace_invoke(extract_prompt)
                 llm_text = resp.content if hasattr(resp, "content") else str(resp)
                 for line in llm_text.strip().split("\n"):
                     line = line.strip().lstrip("・- ").strip()
