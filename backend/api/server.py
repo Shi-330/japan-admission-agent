@@ -34,6 +34,8 @@ def trace_invoke(prompt: str, **kwargs) -> str:
     return _llm_trace(_orig_invoke, prompt, intent="", query="", user_id="")
 
 def trace_stream(prompt: str, **kwargs):
+    # Log stream start (don't wait for end — stream is incremental)
+    _llm_trace(lambda p: p, prompt, intent="stream", query="")
     return _orig_stream(prompt, **kwargs)
 
 # ── Constants ──
