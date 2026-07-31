@@ -32,69 +32,54 @@ TARGET_URLS = [
 
 
 def crawl_url(name_jp, url, dry_run=False):
-    """Crawl one URL with Firecrawl, extract professor info. Returns list of professor dicts."""
-    api_key = os.getenv("FIRECRAWL_API_KEY", "")
-    if not api_key:
-        print("  FIRECRAWL_API_KEY not set. Skipping.")
-        return []
-
+    """Crawl one URL with requests + BeautifulSoup. Zero-cost, no API key needed."""
     if dry_run:
         print(f"  [DRY RUN] Would crawl: {name_jp} -> {url}")
         return []
 
     try:
         import requests as req
-        # Firecrawl scrape endpoint
-        resp = req.post(
-            "https://api.firecrawl.dev/v1/scrape",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"url": url, "formats": ["markdown"]},
-            timeout=30,
-        )
+        resp = req.get(url, headers={"User-Agent": "JapanAdmissionAgent/1.0"}, timeout=30)
         if resp.status_code != 200:
-            print(f"  Firecrawl error: {resp.status_code}")
+            print(f"  HTTP {resp.status_code}")
             return []
 
-        data = resp.json()
-        markdown = data.get("data", {}).get("markdown", "")
-        if not markdown:
-            return []
+        # Simple HTML extraction — look for professor patterns
+        text = resp.text
+        profs = extract_professors_from_html(text, name_jp, url)
 
-        # Save raw crawl for inspection
+        # Save raw HTML for inspection
         os.makedirs(CRAWL_DIR, exist_ok=True)
         safe_name = re.sub(r'[\\/:*?"<>|]', '_', name_jp)[:40]
-        with open(os.path.join(CRAWL_DIR, f"{safe_name}.md"), "w", encoding="utf-8") as f:
-            f.write(markdown)
+        with open(os.path.join(CRAWL_DIR, f"{safe_name}.html"), "w", encoding="utf-8") as f:
+            f.write(text)
 
-        # Extract professor info from markdown
-        profs = extract_professors(markdown, name_jp, url)
-        print(f"  Extracted {len(profs)} professors from {name_jp}")
+        print(f"  Crawled {name_jp}: {len(text)} bytes, {len(profs)} professors found")
         return profs
 
-    except ImportError:
-        print("  requests not installed. pip install requests")
-        return []
     except Exception as e:
         print(f"  Crawl failed: {e}")
         return []
 
 
-def extract_professors(markdown, school_name, source_url):
-    """Parse professor info from crawled markdown. Returns list of dicts."""
+def extract_professors_from_html(html, school_name, source_url):
+    """Parse professor info from raw HTML. Returns list of dicts."""
+    from html.parser import HTMLParser
     profs = []
-    # Pattern: Japanese name patterns followed by titles (教授, 准教授, 助教, 講師)
-    lines = markdown.split("\n")
+    titles = ["教授", "准教授", "助教", "講師", "Professor", "Associate Professor",
+              "名誉教授", "特任教授", "客員教授"]
+    # Strip HTML tags for text extraction
+    text = re.sub(r'<[^>]+>', ' ', html)
+    text = re.sub(r'\s+', ' ', text)
+    lines = text.split('\n')
     for line in lines:
-        # Match lines with academic title after kanji name
-        for title in ["教授", "准教授", "助教", "講師", "Professor", "Associate Professor"]:
+        line = line.strip()
+        for title in titles:
             if title in line:
-                # Extract name: everything before the title, last 2-5 chars
-                m = re.search(r'([一-龯]{2,6})\s*(?:（[^）]*）)?\s*(?:' + re.escape(title) + r')', line)
+                m = re.search(r'([一-龯]{2,8})\s*(?:（[^）]*）)?\s*' + re.escape(title), line)
                 if m:
                     name = m.group(1).strip()
-                    # Skip already-too-long names and names with numbers
-                    if 2 <= len(name) <= 6 and re.match(r'^[一-龯]+$', name):
-                        # Extract research keywords from this and next lines
+                    if 2 <= len(name) <= 8 and re.match(r'^[一-龯]+$', name):
                         profs.append({
                             "name_jp": name,
                             "university": school_name.split(" ")[0] if " " in school_name else school_name,
@@ -103,7 +88,7 @@ def extract_professors(markdown, school_name, source_url):
                             "lab_url": source_url,
                             "research_keywords": [],
                             "recent_papers": [],
-                            "notes": f"Firecrawlから抽出 ({time.strftime('%Y-%m-%d')})",
+                            "notes": f"Web crawl ({time.strftime('%Y-%m-%d')})",
                             "sources": [source_url],
                         })
     return profs

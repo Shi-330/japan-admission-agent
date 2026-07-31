@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM Trace Viewer</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#0f172a;color:#e2e8f0}
+header{background:#1e293b;padding:12px 20px;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:16px;margin:0}
+.metrics{display:flex;gap:16px;font-size:13px}
+.metric{padding:4px 8px;background:#334155;border-radius:4px}
+.trace{border-bottom:1px solid #1e293b;padding:10px 20px;cursor:pointer;transition:background .15s}
+.trace:hover{background:#1e293b}
+.trace-id{font-family:monospace;font-size:12px;color:#64748b}
+.trace-meta{display:flex;gap:12px;font-size:12px;margin:4px 0}
+.tag{padding:1px 6px;border-radius:3px;font-size:11px}
+.ok{background:#065f46;color:#6ee7b7}
+.error{background:#7f1d1d;color:#fca5a5}
+.slow{background:#78350f;color:#fcd34d}
+.detail{display:none;padding:12px 20px;background:#0f172a;border-bottom:1px solid #1e293b;max-height:400px;overflow:auto}
+.detail.open{display:block}
+pre{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:8px 0;line-height:1.5}
+.section{margin:8px 0}
+.section strong{display:block;margin-bottom:4px;font-size:13px;color:#94a3b8}
+#summary{padding:16px 20px;font-size:13px;background:#1e293b;border-bottom:1px solid #334155}
+#summary span{margin-right:16px}
+</style>
+</head>
+<body>
+<header>
+<h1>LLM Trace Viewer</h1>
+<div class="metrics" id="metrics"></div>
+</header>
+<div id="summary"></div>
+<div id="list"></div>
+<script>
+async function load(){
+  const r=await fetch('/v1/debug/llm-traces?n=50');
+  const d=await r.json();
+  const s=d.summary;
+  document.getElementById('metrics').innerHTML=
+    `<span class="metric">Calls: ${s.total}</span>
+     <span class="metric">Avg: ${s.avg_elapsed}s</span>
+     <span class="metric">In: ${(s.tokens_in/1000).toFixed(1)}K</span>
+     <span class="metric">Out: ${(s.tokens_out/1000).toFixed(1)}K</span>`;
+  document.getElementById('summary').innerHTML=
+    `Intents: ${JSON.stringify(s.intents)} | Status: ${JSON.stringify(s.statuses)} | ${s.oldest} ~ ${s.newest}`;
+  const list=document.getElementById('list');
+  for(const e of d.recent.reverse()){
+    const cls=e.status==='ok'?(e.elapsed>10?'slow':'ok'):'error';
+    list.innerHTML+=`<div class="trace" onclick="toggle(this,'${e.id}')">
+      <div class="trace-id">${e.id} | ${e.ts}</div>
+      <div class="trace-meta">
+        <span class="tag ${cls}">${e.status} ${e.elapsed}s</span>
+        <span>intent:${e.intent||'?'}</span>
+        <span>in:${e.prompt_tokens} out:${e.response_tokens||0}</span>
+        <span>q:${e.query||'(none)'}</span>
+      </div>
+    </div>`;
+  }
+}
+async function toggle(el,id){
+  let d=el.nextElementSibling;
+  if(d&&d.className==='detail'){
+    d.classList.toggle('open');
+    if(!d.innerHTML){
+      const r=await fetch('/v1/debug/llm-traces/'+id);
+      const j=await r.json();
+      const e=j.entry;
+      d.innerHTML=`<div class="section"><strong>Prompt (${e.prompt_tokens}t):</strong><pre>${esc(e.prompt||'')}</pre></div>
+        <div class="section"><strong>Response (${e.response_tokens||0}t):</strong><pre>${esc(e.response||'')}</pre></div>`;
+    }
+    return;
+  }
+  d=document.createElement('div');d.className='detail open';
+  el.after(d);
+}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+load();
+</script>
+</body>
+</html>

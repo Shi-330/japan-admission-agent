@@ -24,7 +24,7 @@ from utils.supabase_client import supabase
 from supabase import create_client
 from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
-from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_hash
+from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_id, get_by_hash
 
 # Wrapper: trace all LLM calls without monkey-patching (Pydantic blocks it)
 _orig_invoke = chat_model.invoke
@@ -1987,14 +1987,31 @@ async def search_professors(q: str = "", university: str = "", keyword: str = ""
     return {"ok": True, "professors": enriched, "total": len(enriched)}
 
 
-# ── LLM Debug tracing endpoint ──
+# ── LLM Debug tracing endpoints ──
 @app.get("/v1/debug/llm-traces")
-async def debug_traces(n: int = 10, hash_prefix: str = ""):
-    """View recent LLM calls for debugging. n=10 by default."""
+async def debug_traces(n: int = 20, hash_prefix: str = ""):
+    """View recent LLM calls for debugging."""
     if hash_prefix:
         entry = get_by_hash(hash_prefix)
         return {"ok": True, "entry": entry} if entry else {"ok": False, "error": "not found"}
     return {"ok": True, "summary": get_summary(), "recent": get_recent(n)}
+
+
+@app.get("/v1/debug/llm-traces/{trace_id}")
+async def debug_trace_detail(trace_id: str):
+    """View full trace detail (prompt + response)."""
+    entry = get_by_id(trace_id)
+    if not entry:
+        return {"ok": False, "error": "trace not found"}
+    return {"ok": True, "entry": entry}
+
+
+@app.get("/v1/debug/llm-viewer")
+async def debug_trace_html():
+    """Simple HTML viewer for LLM traces."""
+    return FileResponse(os.path.join(
+        os.path.dirname(__file__), "..", "..", "utils", "trace_viewer.html"
+    ))
 
 
 # ── Serve React frontend (production build) ──
