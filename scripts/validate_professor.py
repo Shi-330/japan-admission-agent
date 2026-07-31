@@ -88,23 +88,56 @@ def search_orcid(name: str) -> dict | None:
         return {"found": False, "error": str(e)}
 
 
+def check_url(url: str) -> bool:
+    """Send HEAD request. Returns True if URL is alive (200 OK)."""
+    if not url: return False
+    try:
+        r = SESSION.head(url, timeout=10, allow_redirects=True)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def get_kaken_link(name_jp: str) -> str | None:
+    """Build a KAKEN researcher page URL from name. Returns URL or None."""
+    # KAKEN search URL for Japanese names
+    return f"https://kaken.nii.ac.jp/ja/search/?q={requests.utils.quote(name_jp)}"
+
+
 def validate_professors_batch():
     """Validate all professors in professors.json against KAKEN."""
     with open(PROFESSOR_DB, "r", encoding="utf-8") as f:
         profs = json.load(f)
 
-    results = []
     for p in profs:
         name = p["name_jp"]
+        # ORCID validation
         result = search_orcid(name)
-        p["kaken_validated"] = result["found"] if result else False
-        if result and result.get("kaken_id"):
-            p["kaken_id"] = result["kaken_id"]
-            p["kaken_url"] = result.get("url", "")
-            if not p.get("sources"): p["sources"] = []
-            p["sources"].append(result["url"])
-        status = "verified" if result and result["found"] else "not_found"
-        print(f"  {name:20s} -> {status} {result.get('kaken_id','') if result else 'ERROR'}")
+        p["orcid_validated"] = result["found"] if result else False
+        p["orcid_id"] = result.get("orcid_id", "") if result else ""
+        p["orcid_url"] = result.get("url", "") if result else ""
+
+        # URL liveness check
+        lab_url = p.get("lab_url", "")
+        url_alive = check_url(lab_url) if lab_url else False
+
+        # Build sources: permanent IDs first, lab_url last
+        sources = []
+        if p.get("orcid_url"): sources.append(p["orcid_url"])
+        sources.append(get_kaken_link(name))
+        if url_alive and lab_url: sources.append(lab_url)
+        p["sources"] = [s for s in sources if s]
+
+        # Confidence
+        if p["orcid_validated"] and url_alive:
+            p["confidence"] = "verified"
+        elif p["orcid_validated"]:
+            p["confidence"] = "orcid_only"
+        else:
+            p["confidence"] = "unverified"
+
+        status = "verified" if p["orcid_validated"] else "not_found"
+        print(f"  {name:20s} -> {status} | URL: {'alive' if url_alive else 'dead'} | confidence: {p['confidence']}")
 
     with open(PROFESSOR_DB, "w", encoding="utf-8") as f:
         json.dump(profs, f, ensure_ascii=False, indent=2)
