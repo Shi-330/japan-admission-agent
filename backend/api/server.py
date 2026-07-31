@@ -24,6 +24,22 @@ from utils.supabase_client import supabase
 from supabase import create_client
 from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
+from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_hash
+
+# Monkey-patch: trace all LLM calls with metadata
+_orig_invoke = chat_model.invoke
+_orig_stream = chat_model.stream
+
+def _traced_invoke(prompt, **kwargs):
+    return _llm_trace(_orig_invoke, prompt, intent="", query="", user_id="")
+
+def _traced_stream(prompt, **kwargs):
+    # Stream doesn't return a single response — log at chunk level
+    # For tracing, capture the assembled prompt at stream start
+    return _orig_stream(prompt, **kwargs)
+
+chat_model.invoke = _traced_invoke
+chat_model.stream = _traced_stream
 
 # ── Constants ──
 OUTREACH_DRAFTS_KEY = "outreach_drafts"
@@ -1972,6 +1988,16 @@ async def search_professors(q: str = "", university: str = "", keyword: str = ""
             "has_source": has_source,
         })
     return {"ok": True, "professors": enriched, "total": len(enriched)}
+
+
+# ── LLM Debug tracing endpoint ──
+@app.get("/v1/debug/llm-traces")
+async def debug_traces(n: int = 10, hash_prefix: str = ""):
+    """View recent LLM calls for debugging. n=10 by default."""
+    if hash_prefix:
+        entry = get_by_hash(hash_prefix)
+        return {"ok": True, "entry": entry} if entry else {"ok": False, "error": "not found"}
+    return {"ok": True, "summary": get_summary(), "recent": get_recent(n)}
 
 
 # ── Serve React frontend (production build) ──
