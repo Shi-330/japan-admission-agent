@@ -673,7 +673,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat
-                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 所有教授全名必须附带官网/KAKEN/ORCID链接，无法提供则标注[未核实] 3. 指定细分方向时推2-3个实验室/教授 4. 涉及出愿信息末尾加「具体条件请以学校官网募集要项为准」"
+                prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}你正在{result['flow']}场景中(depth={result['depth']})。{result['prompt']} 规则：1. 2-3句简洁回复，纯文本 2. 推荐教授时优先从系统已有数据中选取（当前已验证教授：辻健、趙大鵬、纐纈一起、片尾浩、古村孝志、中島淳一、山岡耕春、池田達紀、後藤忠徳、松島信一、三浦哲、蓬田清、橋本学）。所有教授全名必须附带官网/ORCID链接。系统中没有的教授请标注[未录入数据库，推荐自行查询KAKEN]。3. 指定细分方向时推2-3个实验室/教授 4. 涉及出愿信息末尾加「具体条件请以学校官网募集要项为准」"
                 async for event in _stream(prompt):
                     yield event
 

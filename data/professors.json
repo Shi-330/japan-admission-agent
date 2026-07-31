@@ -280,5 +280,86 @@
     "orcid_id": "0000-0003-4700-5303",
     "orcid_url": "https://orcid.org0000-0003-4700-5303",
     "confidence": "verified"
+  },
+  {
+    "name_jp": "趙大鵬",
+    "name_en": "Dapeng Zhao",
+    "university": "東北大学",
+    "department": "理学研究科 地球物理学専攻",
+    "lab_url": "https://www.sci.tohoku.ac.jp/",
+    "research_keywords": [
+      "地震波トモグラフィー",
+      "地球内部構造",
+      "沈み込み帯",
+      "多尺度全波形層析成像"
+    ],
+    "recent_papers": [
+      "Zhao D. (2024) Multiscale seismic tomography of the Japan subduction zone. Nature Reviews Earth & Environment.",
+      "Zhao D. (2023) Tomography of the source zone of the 2011 Tohoku-oki earthquake. EPS."
+    ],
+    "notes": "全球知名地震層析成像學者。東北大教授。高被引学者。英語可。",
+    "sources": [
+      "https://orcid.org0000-0003-0652-940X",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E8%B6%99%E5%A4%A7%E9%B5%AC",
+      "https://www.sci.tohoku.ac.jp/"
+    ],
+    "orcid_validated": true,
+    "orcid_id": "0000-0003-0652-940X",
+    "orcid_url": "https://orcid.org0000-0003-0652-940X",
+    "confidence": "verified"
+  },
+  {
+    "name_jp": "纐纈一起",
+    "name_en": "Kazuki Koketsu",
+    "university": "東京大学",
+    "department": "地震研究所 (ERI)",
+    "lab_url": "https://www.eri.u-tokyo.ac.jp/",
+    "research_keywords": [
+      "地震波伝播",
+      "強震動予測",
+      "散乱理論",
+      "地震学イメージング"
+    ],
+    "recent_papers": [
+      "Koketsu K. et al. (2023) Strong ground motion prediction using 3D subsurface structure models. BSSA.",
+      "Koketsu K. et al. (2022) Seismic wave propagation in complex media. GJI."
+    ],
+    "notes": "東大地震研教授。強震動予測の権威。",
+    "sources": [
+      "https://orcid.org0000-0002-3255-3318",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E7%BA%90%E7%BA%88%E4%B8%80%E8%B5%B7",
+      "https://www.eri.u-tokyo.ac.jp/"
+    ],
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-3255-3318",
+    "orcid_url": "https://orcid.org0000-0002-3255-3318",
+    "confidence": "verified"
+  },
+  {
+    "name_jp": "片尾浩",
+    "name_en": "Hiroshi Katao",
+    "university": "京都大学",
+    "department": "防災研究所 (DPRI)",
+    "lab_url": "https://www.dpri.kyoto-u.ac.jp/",
+    "research_keywords": [
+      "地震波伝播",
+      "地殻構造イメージング",
+      "断層帯探査",
+      "震源-速度構造合同反転"
+    ],
+    "recent_papers": [
+      "Katao H. et al. (2024) High-resolution imaging of fault zone structure using seismic array data. EPS.",
+      "Katao H. et al. (2023) Joint inversion of earthquake source and velocity structure. JGR."
+    ],
+    "notes": "京大防災研准教授。精密震源決定と速度構造推定。",
+    "sources": [
+      "https://orcid.org0000-0002-2070-6284",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E7%89%87%E5%B0%BE%E6%B5%A9",
+      "https://www.dpri.kyoto-u.ac.jp/"
+    ],
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-2070-6284",
+    "orcid_url": "https://orcid.org0000-0002-2070-6284",
+    "confidence": "verified"
   }
 ]
