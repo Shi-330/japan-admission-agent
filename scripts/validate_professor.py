@@ -51,33 +51,39 @@ def search_orcid(name: str) -> dict | None:
         return cache[name]
 
     try:
-        # Build ORCID query from name parts
+        # Build ORCID query — try both name orderings (family-first, given-first)
         parts = name.strip().split()
-        query_parts = []
+        queries = []
         if len(parts) >= 2:
-            query_parts.append(f"family-name:{parts[0]}")
-            query_parts.append(f"given-names:{parts[1]}")
+            # Order 1: family-name:Last given-names:First
+            queries.append(f"family-name:{parts[0]} AND given-names:{parts[1]}")
+            # Order 2: family-name:First given-names:Last (Japanese given-first convention)
+            queries.append(f"family-name:{parts[1]} AND given-names:{parts[0]}")
         else:
-            query_parts.append(f"family-name:{name}")
-        query = " AND ".join(query_parts)
-        url = f"{ORCID_SEARCH}?q={requests.utils.quote(query)}&rows=3"
-        r = SESSION.get(url, headers=ORCID_HEADERS, timeout=15)
-        if r.status_code != 200:
-            return None
+            queries.append(f"family-name:{name}")
 
-        data = r.json()
-        results = data.get("result", [])
-        if results:
-            first = results[0]
-            orcid_id = first.get("orcid-identifier", {}).get("path", "")
-            result = {
-                "found": True,
-                "orcid_id": orcid_id,
-                "name_jp": name,
-                "url": f"https://orcid.org{orcid_id}" if orcid_id else "",
-                "source": "ORCID",
-            }
-        else:
+        result = None
+        for query in queries:
+            url = f"{ORCID_SEARCH}?q={requests.utils.quote(query)}&rows=3"
+            r = SESSION.get(url, headers=ORCID_HEADERS, timeout=15)
+            if r.status_code != 200:
+                continue
+
+            data = r.json()
+            results = data.get("result", [])
+            if results:
+                first = results[0]
+                orcid_id = first.get("orcid-identifier", {}).get("path", "")
+                result = {
+                    "found": True,
+                    "orcid_id": orcid_id,
+                    "name_jp": name,
+                    "url": f"https://orcid.org{orcid_id}" if orcid_id else "",
+                    "source": "ORCID",
+                }
+                break  # Found — stop trying
+
+        if result is None:
             result = {"found": False, "name_jp": name, "source": "ORCID"}
 
         cache[name] = result
@@ -111,8 +117,9 @@ def validate_professors_batch():
 
     for p in profs:
         name = p["name_jp"]
-        # ORCID validation
-        result = search_orcid(name)
+        # ORCID: try English name first (ORCID doesn't handle kanji well)
+        search_name = p.get("name_en", "") or name
+        result = search_orcid(search_name)
         p["orcid_validated"] = result["found"] if result else False
         p["orcid_id"] = result.get("orcid_id", "") if result else ""
         p["orcid_url"] = result.get("url", "") if result else ""

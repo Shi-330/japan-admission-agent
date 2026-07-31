@@ -18,9 +18,15 @@
     ],
     "notes": "2022年九州大学から東大へ異動。英語対応可。研究生受入実績あり。",
     "sources": [
+      "https://orcid.org0000-0002-6556-3627",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E8%BE%BB%E5%81%A5",
       "https://www.sys.t.u-tokyo.ac.jp/"
     ],
-    "kaken_validated": false
+    "kaken_validated": false,
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-6556-3627",
+    "orcid_url": "https://orcid.org0000-0002-6556-3627",
+    "confidence": "verified"
   },
   {
     "name_jp": "山岡耕春",
@@ -40,9 +46,15 @@
     ],
     "notes": "DAS（分布型音響センシング）の第一人者。英語論文多数。留学生受け入れ積極的。",
     "sources": [
+      "https://orcid.org0000-0002-2068-3916",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E5%B1%B1%E5%B2%A1%E8%80%95%E6%98%A5",
       "https://www.env.nagoya-u.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-2068-3916",
+    "orcid_url": "https://orcid.org0000-0002-2068-3916",
+    "confidence": "verified"
   },
   {
     "name_jp": "池田達紀",
@@ -63,9 +75,15 @@
     ],
     "notes": "辻健氏の東大異動後、九大の物理探査を引き継ぐ。留学生歓迎。英語指導可。",
     "sources": [
+      "https://orcid.org0009-0005-0807-2505",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E6%B1%A0%E7%94%B0%E9%81%94%E7%B4%80",
       "https://www.kyushu-u.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0009-0005-0807-2505",
+    "orcid_url": "https://orcid.org0009-0005-0807-2505",
+    "confidence": "verified"
   },
   {
     "name_jp": "古村孝志",
@@ -85,9 +103,15 @@
     ],
     "notes": "東大地震研の重鎮。HPC（スパコン）を使った大規模計算が専門。留学生受入あり。",
     "sources": [
+      "https://orcid.org0000-0002-2091-0533",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E5%8F%A4%E6%9D%91%E5%AD%9D%E5%BF%97",
       "https://www.eri.u-tokyo.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-2091-0533",
+    "orcid_url": "https://orcid.org0000-0002-2091-0533",
+    "confidence": "verified"
   },
   {
     "name_jp": "後藤忠徳",
@@ -108,9 +132,15 @@
     ],
     "notes": "電磁探査（MT法）の専門家。物理探査学会理事。英語論文多数。",
     "sources": [
+      "https://orcid.org0000-0002-7797-7309",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E5%BE%8C%E8%97%A4%E5%BF%A0%E5%BE%B3",
       "https://www.kyoto-u.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-7797-7309",
+    "orcid_url": "https://orcid.org0000-0002-7797-7309",
+    "confidence": "verified"
   },
   {
     "name_jp": "中島淳一",
@@ -130,9 +160,15 @@
     ],
     "notes": "地震波トモグラフィーの世界的権威。東大教授。英語対応可。",
     "sources": [
+      "https://orcid.org0009-0004-7843-2046",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E4%B8%AD%E5%B3%B6%E6%B7%B3%E4%B8%80",
       "https://www.eps.s.u-tokyo.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0009-0004-7843-2046",
+    "orcid_url": "https://orcid.org0009-0004-7843-2046",
+    "confidence": "verified"
   },
   {
     "name_jp": "松島信一",
@@ -152,9 +188,15 @@
     ],
     "notes": "京大防災研。実務的な地震防災研究が中心。留学生対応可。",
     "sources": [
+      "https://orcid.org0009-0007-3079-7152",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E6%9D%BE%E5%B3%B6%E4%BF%A1%E4%B8%80",
       "https://www.dpri.kyoto-u.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0009-0007-3079-7152",
+    "orcid_url": "https://orcid.org0009-0007-3079-7152",
+    "confidence": "verified"
   },
   {
     "name_jp": "蓬田清",
@@ -174,9 +216,14 @@
     ],
     "notes": "理論地震学の大家。北大名誉教授に近いが、大学院生指導継続中。英語可。",
     "sources": [
-      "https://www.sci.hokudai.ac.jp/"
+      "https://orcid.org0000-0002-8228-8567",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E8%93%AC%E7%94%B0%E6%B8%85"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0002-8228-8567",
+    "orcid_url": "https://orcid.org0000-0002-8228-8567",
+    "confidence": "orcid_only"
   },
   {
     "name_jp": "三浦哲",
@@ -196,9 +243,15 @@
     ],
     "notes": "GPS/GNSS観測の専門家。S-net海域観測網との連携。英語可。",
     "sources": [
+      "https://orcid.org0000-0003-1151-5862",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E4%B8%89%E6%B5%A6%E5%93%B2",
       "https://www.tohoku.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0003-1151-5862",
+    "orcid_url": "https://orcid.org0000-0003-1151-5862",
+    "confidence": "verified"
   },
   {
     "name_jp": "橋本学",
@@ -218,8 +271,14 @@
     ],
     "notes": "InSARの第一人者。京大防災研教授。留学生受け入れ可。英語対応。",
     "sources": [
+      "https://orcid.org0000-0003-4700-5303",
+      "https://kaken.nii.ac.jp/ja/search/?q=%E6%A9%8B%E6%9C%AC%E5%AD%A6",
       "https://www.dpri.kyoto-u.ac.jp/"
     ],
-    "kaken_validated": true
+    "kaken_validated": true,
+    "orcid_validated": true,
+    "orcid_id": "0000-0003-4700-5303",
+    "orcid_url": "https://orcid.org0000-0003-4700-5303",
+    "confidence": "verified"
   }
 ]
