@@ -11,13 +11,26 @@ Usage:
   get_recent(10)  # last 10 calls
   get_summary()   # stats by intent
 """
-import time, json, hashlib
+import time, json, hashlib, os, threading
 from collections import deque
 from typing import Optional
 
-MAX_ENTRIES = 200  # keep last 200 calls in memory
+MAX_ENTRIES = 200
+LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
+LOG_FILE = os.path.join(LOG_DIR, "llm_traces.jsonl")
+_lock = threading.Lock()
 
 _trace_buffer = deque(maxlen=MAX_ENTRIES)
+
+
+def _append_file(entry: dict):
+    """Append one entry to JSONL file (thread-safe)."""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # best-effort, don't crash on disk write
 
 def trace(fn, prompt: str, *, intent: str = "", query: str = "", user_id: str = "") -> str:
     """Wrap an LLM call. Captures prompt + response with metadata."""
@@ -45,6 +58,8 @@ def trace(fn, prompt: str, *, intent: str = "", query: str = "", user_id: str = 
         raise
     finally:
         _trace_buffer.append(entry)
+        with _lock:
+            _append_file(entry)
     return result
 
 

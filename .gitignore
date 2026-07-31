@@ -136,3 +136,4 @@ critiques/test_law_search.js
 critiques/test_law_results.json
 .claude/workflows/
 .claude/worktrees/
+logs/
