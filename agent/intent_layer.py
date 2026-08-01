@@ -65,7 +65,7 @@ CLASSIFY_PROMPT = """你是一个日本升学顾问系统的意图分析引擎�
 {school_names}
 
 ## 输出格式（严格JSON，不要```json```代码块）
-{{"intent":"chat|qa|search_schools|match|report","flow":"school_search|professor_contact|application|exam_prep|general","depth":0|1|2,"prompt":"根据flow+depth的简短引导语（≤50字）","actions":[{{"type":"track_school","name":"学校完整名称"}},{{"type":"remind_prof","school":"学校名","professor":"教授名","days_since_contact":天数}},{{"type":"suggest_report"}}]}}
+{{"intent":"chat|qa|search_schools|match|report|explore_field|find_professor","flow":"school_search|professor_contact|application|exam_prep|general","depth":0|1|2,"prompt":"根据flow+depth的简短引导语（≤50字）","actions":[{{"type":"track_school","name":"学校完整名称"}},{{"type":"remind_prof","school":"学校名","professor":"教授名","days_since_contact":天数}},{{"type":"suggest_report"}}]}}
 
 ## 规则
 ### intent
@@ -73,7 +73,7 @@ CLASSIFY_PROMPT = """你是一个日本升学顾问系统的意图分析引擎�
 - match：明确说"匹配""帮我选校""根据背景推荐"
 - qa：问具体申请知识（流程/材料/考试/语言要求等）
 - report：明确要生成规划报告
-- chat：闲聊、陈述、进度更新、话题转换
+- chat：闲聊、陈述、进度更新、话题转换、情感倾诉
 
 ### flow
 - school_search：在找学校、筛选、对比院校
