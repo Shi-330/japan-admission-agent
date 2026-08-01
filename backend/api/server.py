@@ -337,10 +337,12 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     intent = result["intent"]
     actions = result["actions"]
 
-    # ── Pre-filter: force "search_schools" for specific queries only ──
-    if re.search(r'(?:考|想学|有哪些|推荐一下)(?:.{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室))', body.query):
+    # ── Pre-filter: only force search for explicit queries with concrete subjects ──
+    _has_subject = bool(re.search(r'(?:研究|方向|専攻|专攻|专业|学校|大学|研究室|教授|实验室)', body.query))
+    _is_search = bool(re.search(r'(?:考|想学|有哪些|找|搜|推荐一下|推荐几所)', body.query))
+    if _is_search and _has_subject:
         if intent != "search_schools":
-            logger.info(f"Pre-filter overriding intent {intent} -> search_schools for: {body.query[:30]}")
+            logger.info(f"Pre-filter override: {intent} -> search_schools for: {body.query[:30]}")
         intent = "search_schools"
         result["flow"] = "school_search"
         result["depth"] = 1
@@ -474,14 +476,9 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     profile_ctx = f"JLPT {profile.jlpt_level or '未知'}、GPA {profile.gpa}、英语 {profile.english_score or '未知'}"
                     if profile.research_area: profile_ctx += f"、研究方向 {profile.research_area}"
                     if profile.undergraduate_school: profile_ctx += f"、本科 {profile.undergraduate_school}"
-                    prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。
-学生完整背景：{profile_ctx}。
-已筛选出{len(top_names)}所匹配院校（已为学生展示）。{'匹配较少，请用你的领域知识补充该方向在日本的核心院校和方向分类。' if len(top_names) < 5 else ''}
-对话规则：
-1. 严禁提及"卡片"、"数据库"、"系统匹配"、"界面"等元词汇——你是顾问不是系统。
-2. 如果{('学生的研究方向是' + profile.research_area) if profile.research_area else ''}方向很宽泛（如"地震学"涵盖理学/工学/勘探多个分支），先简短回问学生的具体偏好（≤150字），再展开分析。不要一次性灌1500字。
-3. 如果学生有明确的细分方向（如"地震反演"、"FWI"），请向下挖深——拆分子方向（如全波形反演 vs 震源破裂反演 vs 环境噪声成像）、推荐具体实验室/教授名字（如东大地震研川胜团队）、推荐准备技能树（数学工具、编程语言、经典教材）。不要只列研究科名。
-4. 用###标题分段，回复控制在500字以内。回复末尾用【参考院校】列出你提到的实验室（每行：大学名 | 研究科名 | 实验室/教授 | 一句话特点）。把提问权交还学生。"""
+                    prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。背景：{profile_ctx}。
+已筛选出{len(top_names)}所院校。{'匹配较少，请用你的领域知识补充推荐。' if len(top_names) < 5 else ''}
+规则：不说元词汇。方向宽泛就先反问。方向具体就深挖到实验室/教授级。回复末尾用【参考院校】列出推荐。"""
                 else:
                     # No DB matches — use LLM to suggest relevant schools directly
                     prompt = f"数据库暂无{q_major or '该'}方向的学校记录。"
