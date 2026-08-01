@@ -337,8 +337,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     intent = result["intent"]
     actions = result["actions"]
 
-    # ── Pre-filter: force "search_schools" for "考XX" / "推荐XX" patterns ──
-    if re.search(r'(?:考|推荐|推荐一下|推荐几所|有哪些|什么|想学)(?:.{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室))?', body.query):
+    # ── Pre-filter: force "search_schools" for specific queries only ──
+    if re.search(r'(?:考|想学|有哪些|推荐一下)(?:.{0,15}(?:研究|方向|専攻|专攻|专业|学校|大学|研究室))', body.query):
         if intent != "search_schools":
             logger.info(f"Pre-filter overriding intent {intent} -> search_schools for: {body.query[:30]}")
         intent = "search_schools"
@@ -779,7 +779,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
         except Exception as e:
             logger.error(f"Chat error: {e}")
-            yield f"data: {json.dumps({'content': f'Error: {e}', 'is_status': False, 'done': True})}\n\n"
+            yield f"data: {json.dumps({'content': '抱歉，回复生成超时，请稍后重试或换个方式提问。', 'is_status': False, 'done': True})}\n\n"
 
     return StreamingResponse(
         event_generator(),
