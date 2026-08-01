@@ -24,7 +24,7 @@ from utils.supabase_client import supabase
 from supabase import create_client
 from utils.logger_handler import logger
 from utils.cn2jp import normalize as cn2jp_normalize, CN_JP_SYNONYMS
-from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_id, get_by_hash
+from utils.llm_tracer import trace as _llm_trace, get_recent, get_summary, get_by_id, get_by_hash, _trace_buffer, _append_file, _lock
 
 # Wrapper: trace all LLM calls without monkey-patching (Pydantic blocks it)
 _orig_invoke = chat_model.invoke
@@ -34,9 +34,40 @@ def trace_invoke(prompt: str, **kwargs) -> str:
     return _llm_trace(_orig_invoke, prompt, intent="", query="", user_id="")
 
 def trace_stream(prompt: str, **kwargs):
-    # Log stream start (don't wait for end — stream is incremental)
-    _llm_trace(lambda p: p, prompt, intent="stream", query="")
-    return _orig_stream(prompt, **kwargs)
+    """Wrap streaming LLM call — captures full response after stream ends."""
+    t0 = __import__("time").time()
+    pid = __import__("hashlib").md5(f"{t0}{prompt[:50]}".encode()).hexdigest()[:12]
+    full_response = []
+
+    def _gen():
+        for chunk in _orig_stream(prompt, **kwargs):
+            c = chunk.content if hasattr(chunk, "content") else str(chunk)
+            if c: full_response.append(c)
+            yield chunk
+        # After stream ends, log to tracer
+        elapsed = __import__("time").time() - t0
+        from utils.llm_tracer import _append_file, _trace_buffer, LOG_DIR, LOG_FILE
+        import json as _json
+        resp_text = "".join(full_response)
+        entry = {
+            "id": pid,
+            "ts": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "intent": "stream",
+            "query": "",
+            "user_id": "",
+            "prompt_hash": __import__("hashlib").md5(prompt.encode()).hexdigest()[:8],
+            "prompt": prompt,
+            "prompt_tokens": max(1, len(prompt)//3),
+            "response": resp_text,
+            "response_tokens": max(1, len(resp_text)//3),
+            "elapsed": round(elapsed, 2),
+            "status": "ok",
+        }
+        _trace_buffer.append(entry)
+        with _lock:
+            _append_file(entry)
+
+    return _gen()
 
 # ── Constants ──
 OUTREACH_DRAFTS_KEY = "outreach_drafts"
