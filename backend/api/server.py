@@ -33,10 +33,15 @@ _orig_stream = chat_model.stream
 def trace_invoke(prompt: str, **kwargs) -> str:
     return _llm_trace(_orig_invoke, prompt, intent="", query="", user_id="")
 
-def trace_stream(prompt: str, **kwargs):
-    """Wrap streaming LLM call — captures full response after stream ends."""
+def trace_stream(prompt, **kwargs):
+    """Wrap streaming LLM call — captures full response. Accepts str or list[dict]."""
     t0 = __import__("time").time()
-    pid = __import__("hashlib").md5(f"{t0}{prompt[:50]}".encode()).hexdigest()[:12]
+    # Flatten messages to string for logging
+    if isinstance(prompt, list):
+        prompt_str = "\n".join(m.get("content","")[:200] for m in prompt)
+    else:
+        prompt_str = str(prompt)
+    pid = __import__("hashlib").md5(f"{t0}{prompt_str[:50]}".encode()).hexdigest()[:12]
     full_response = []
 
     def _gen():
@@ -44,29 +49,20 @@ def trace_stream(prompt: str, **kwargs):
             c = chunk.content if hasattr(chunk, "content") else str(chunk)
             if c: full_response.append(c)
             yield chunk
-        # After stream ends, log to tracer
         elapsed = __import__("time").time() - t0
         from utils.llm_tracer import _append_file, _trace_buffer, LOG_DIR, LOG_FILE
         import json as _json
         resp_text = "".join(full_response)
         entry = {
-            "id": pid,
-            "ts": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
-            "intent": "stream",
-            "query": "",
-            "user_id": "",
-            "prompt_hash": __import__("hashlib").md5(prompt.encode()).hexdigest()[:8],
-            "prompt": prompt,
-            "prompt_tokens": max(1, len(prompt)//3),
-            "response": resp_text,
-            "response_tokens": max(1, len(resp_text)//3),
-            "elapsed": round(elapsed, 2),
-            "status": "ok",
+            "id": pid,"ts": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "intent":"stream","query":"","user_id":"",
+            "prompt_hash":__import__("hashlib").md5(prompt_str.encode()).hexdigest()[:8],
+            "prompt":prompt_str,"prompt_tokens":max(1,len(prompt_str)//3),
+            "response":resp_text,"response_tokens":max(1,len(resp_text)//3),
+            "elapsed":round(elapsed,2),"status":"ok",
         }
         _trace_buffer.append(entry)
-        with _lock:
-            _append_file(entry)
-
+        with _lock: _append_file(entry)
     return _gen()
 
 # ── Constants ──
@@ -354,9 +350,15 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
         final_event = {'content': '', 'is_status': False, 'done': True}
 
         async def _stream(prompt: str):
-            """Stream LLM response as SSE content chunks."""
+            """Stream LLM response as SSE content chunks. Uses history for context continuity."""
             nonlocal assistant_text
-            for chunk in trace_stream(prompt):
+            # Build messages: system prompt once, then history, then current query
+            msgs = [{"role":"system","content":"你是日本升学顾问。回复简洁精准，2-3段完成。不确定的信息标注[待核实]。"}]
+            for h in (body.history or [])[-8:]:
+                r = h.get("role","user"); c = (h.get("content")or"")[:2000]
+                if c and r in ("user","assistant"): msgs.append({"role":r,"content":c})
+            msgs.append({"role":"user","content":prompt[:3000]})
+            for chunk in trace_stream(msgs):
                 c = chunk.content if hasattr(chunk, "content") else str(chunk)
                 if c:
                     assistant_text += c
