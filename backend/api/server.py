@@ -308,6 +308,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
     profile = profile_mgr.get_profile(user_id)
     profile_str = profile_mgr.format_for_prompt(profile)
     stage_ctx = _build_stage_context(profile)
+    intent = "unknown"  # pre-declare for exception handler
 
     # 1. Response cache lookup
     profile_hash = hashlib.md5(profile_str.encode()).hexdigest()[:8]
@@ -796,7 +797,6 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             yield f"data: {json.dumps(final_event)}\n\n"
 
         except Exception as e:
-            intent = locals().get("intent", "unknown")
             logger.error(f"Chat error (intent={intent}): {e}")
             yield f"data: {json.dumps({'content': '抱歉，回复生成超时，请稍后重试或换个方式提问。', 'is_status': False, 'done': True})}\n\n"
 
