@@ -706,13 +706,24 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 
             else:  # chat / explore_field / find_professor
                 intent = result.get("intent", "chat")
-                # Lightweight prompt: no profile, no rules — just conversation
-                if intent in ("explore_field", "chat", "find_professor"):
-                    hint = {"explore_field":"用户想探索方向，别推学校别提申请条件，先聊聊这个领域有意思的地方。",
-                            "find_professor":"用户想找教授。已录入教授：辻健/東大、趙大鵬/東北、纐纈一起/東大、片尾浩/京大、古村孝志/東大、中島淳一/東大、山岡耕春/名大、池田達紀/九大、後藤忠徳/京大、松島信一/京大、三浦哲/東北、蓬田清/北大、橋本学/京大"}.get(intent, "")
-                    prompt = f"学生说：{body.query}。{hint}像朋友聊天一样回复，2-3句，别说套话。"
+                # Dynamic professor list from JSON (not hardcoded)
+                prof_list = "暂无已验证教授"
+                try:
+                    _profs = _load_professors()
+                    if _profs:
+                        _verified = [f"{p['name_jp']}/{p['university']}" for p in _profs if p.get('orcid_validated')]
+                        if _verified: prof_list = ", ".join(_verified)
+                except Exception: pass
+                hint_map = {
+                    "explore_field": f"[系统指令：用户想探索方向。聊聊这个领域有意思的地方，禁止推学校，禁止提申请条件。]",
+                    "chat": f"[系统指令：像朋友聊天一样回复，2-3句，别说套话。]",
+                    "find_professor": f"[系统指令：用户想找教授。已录入教授：{prof_list}。只推荐这些，未录入的标注[未核实]。]",
+                }
+                hint = hint_map.get(intent, "[系统指令：用户想聊留学，正常回复即可。]")
+                if intent in hint_map:
+                    prompt = f"学生说：{body.query}。{hint}"
                 else:
-                    prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}。{result['prompt']} 规则：简洁回复。教授名须附链接。不确定的标[未核实]。推荐时提及已录入的13位教授。"
+                    prompt = f"学生说：{body.query}。背景：{profile_str}。{stage_ctx}。{result['prompt']} 规则：简洁回复。教授名须附链接。不确定的标[未核实]。"
                 async for event in _stream(prompt):
                     yield event
 
