@@ -796,7 +796,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             yield f"data: {json.dumps(final_event)}\n\n"
 
         except Exception as e:
-            logger.error(f"Chat error: {e}")
+            intent = locals().get("intent", "unknown")
+            logger.error(f"Chat error (intent={intent}): {e}")
             yield f"data: {json.dumps({'content': '抱歉，回复生成超时，请稍后重试或换个方式提问。', 'is_status': False, 'done': True})}\n\n"
 
     return StreamingResponse(
