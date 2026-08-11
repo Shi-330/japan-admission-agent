@@ -352,11 +352,30 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
         assistant_text = ""
         final_event = {'content': '', 'is_status': False, 'done': True}
 
+        # ── Onboarding system prompt augmentation ──
+        _onboarding_extra = ""
+        _fields_check = {
+            "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
+            "english": bool(profile.english_score and profile.english_score.strip()),
+            "gpa": profile.gpa_score > 0,
+            "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
+            "major": profile.target_major and profile.target_major != "未设定",
+            "research": bool(profile.research_area and profile.research_area.strip()),
+        }
+        _filled = sum(1 for v in _fields_check.values() if v)
+        if not profile.applications and _filled <= 3:
+            _phase = _onboarding_phase(profile, _fields_check, _filled)
+            if _phase:
+                _onboarding_extra = _get_onboarding_prompt(_phase, profile)
+
         async def _stream(prompt: str):
             """Stream LLM response as SSE content chunks. Uses history for context continuity."""
             nonlocal assistant_text
             # Build messages: system prompt once, then history, then current query
-            msgs = [{"role":"system","content":"你是日本升学顾问。回复简洁精准，2-3段完成。不确定的信息标注[待核实]。"}]
+            _sys = "你是日本升学顾问。回复简洁精准，2-3段完成。不确定的信息标注[待核实]。"
+            if _onboarding_extra:
+                _sys = _onboarding_extra
+            msgs = [{"role":"system","content": _sys}]
             for h in (body.history or [])[-8:]:
                 r = h.get("role","user"); c = (h.get("content")or"")[:2000]
                 if c and r in ("user","assistant"): msgs.append({"role":r,"content":c})
@@ -902,6 +921,40 @@ async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(ge
     return {"stage": body.target_stage, "school": body.school, "label": STAGES[body.target_stage]["label"]}
 
 
+def _onboarding_phase(profile, fields: dict, filled: int) -> str | None:
+    """Determine onboarding phase for new users. Returns None if onboarding not needed."""
+    if filled >= 4 and bool(profile.research_area and profile.research_area.strip()):
+        return None
+    if profile.applications:
+        return None
+    if not profile.research_area:
+        has_school = fields["school"] or fields["major"]
+        return "interests" if has_school else "start"
+    # research_area set, but missing hard stats
+    hard_missing = sum(1 for k in ("jlpt", "english", "gpa") if not fields[k])
+    return "calibrate" if hard_missing >= 2 else "converge"
+
+
+def _get_onboarding_prompt(phase: str, profile) -> str:
+    """Build onboarding system prompt for the given phase."""
+    base = """你是日本升学顾问，正在与一位刚开始规划日本留学的学生对话。学生目前方向还不明确，你需要通过自然对话帮他逐步理清。
+
+引导原则：
+- 每次只问1-2个问题，不要像问卷调查一样连串提问
+- 先了解背景和兴趣，再问硬条件（成绩/语言）
+- 学生表示不确定时，给他2-3个选项让他选，不要继续追问
+- 学生明确表达具体需求（如"帮我找XX学校"）时，立刻响应，不要强行拉回引导
+- 用"我们"代替"你"——"我们来看看"而不是"你应该"
+- 回复简洁，2-3段足够"""
+    phase_guides = {
+        "start": f"\n当前阶段：了解背景。学生背景信息：{profile.undergraduate_school or '未知'}，专业{profile.target_major or '未知'}。引导学生聊聊为什么想去日本、对什么感兴趣。",
+        "interests": f"\n当前阶段：挖掘兴趣。学生背景信息：{profile.undergraduate_school or '未知'}，专业{profile.target_major or '未知'}。帮助学生找到感兴趣的研究方向，可以给几个方向参考。",
+        "calibrate": f"\n当前阶段：对标校准。学生已确定研究方向为「{profile.research_area}」。接下来自然了解他的语言成绩和GPA，帮他理解自己的档位。",
+        "converge": f"\n当前阶段：方向收敛。学生研究方向「{profile.research_area}」，帮他总结现状并建议2-3个具体方向，引导去广场浏览学校。",
+    }
+    return base + phase_guides.get(phase, "")
+
+
 @app.get("/v1/greeting")
 async def get_greeting(user_id: str = Depends(get_user_id)):
     """Proactive greeting with structured dashboard data."""
@@ -1125,6 +1178,9 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
     except Exception:
         pass
 
+    # ── Onboarding detection ──
+    onboarding_phase = _onboarding_phase(profile, fields, filled)
+
     return {
         "message": "\n\n".join(parts) if parts else ("有几项待办需要关注，见下方卡片。" if (has_prof_reminders or has_dl_warnings) else "欢迎回来！当前一切顺利。"),
         "has_reminders": has_prof_reminders or has_dl_warnings,
@@ -1134,6 +1190,8 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         "when": when_list,
         "structural_risk": structural_risk,
         "gates": gates,
+        "onboarding": onboarding_phase is not None,
+        "onboarding_phase": onboarding_phase or "",
     }
 
 
