@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Ping Supabase REST API
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
+          curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
             "${{ secrets.SUPABASE_URL }}/rest/v1/" \
             -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
