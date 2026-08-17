@@ -912,7 +912,7 @@ def _profile_fields(profile) -> dict:
     """Return which onboarding-relevant profile fields are filled."""
     return {
         "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
-        "english": bool(profile.english_score and profile.english_score.strip()),
+        "english": bool(profile.english_score and profile.english_score.strip() and profile.english_score != "未参加"),
         "gpa": profile.gpa_score > 0,
         "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
         "major": profile.target_major and profile.target_major != "未设定",
@@ -1664,14 +1664,7 @@ def _collect_all_reminders(profile: UserProfile) -> list[dict]:
                 pass
 
     # Profile completeness check (< 50% triggers one reminder)
-    fields = {
-        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
-        "english": bool(profile.english_score and profile.english_score.strip()),
-        "gpa": profile.gpa_score > 0,
-        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
-        "major": profile.target_major and profile.target_major != "未设定",
-        "research": bool(profile.research_area and profile.research_area.strip()),
-    }
+    fields = _profile_fields(profile)
     filled = sum(1 for v in fields.values() if v)
     total = len(fields)
     completeness_pct = round(filled / total * 100) if total > 0 else 0
