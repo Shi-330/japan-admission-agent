@@ -150,13 +150,88 @@ def run_eval(k: int = 5) -> Dict:
     return summary
 
 
+# 关键词 → 知识来源名(单一来源,compare_methods 复用)
+SOURCE_HEURISTICS = [
+    ("套磁", "套磁邮件指南"), ("研究计划", "研究计划书写作"),
+    ("面试", "入试笔试面试"), ("笔试", "入试笔试面试"), ("入试", "入试笔试面试"),
+    ("语言", "语言要求详解"), ("JLPT", "语言要求详解"), ("TOEFL", "语言要求详解"),
+    ("前辈", "前辈经验案例"), ("案例", "前辈经验案例"),
+    ("研究生", "研究生制度"), ("制度", "研究生制度"),
+    ("出愿", "出愿流程指南"), ("申请流程", "出愿流程指南"),
+]
+
+
+def compare_methods(k: int = 5) -> Dict:
+    """三路对比:hybrid(混合) vs vector(纯向量) vs bm25(纯关键词)。"""
+    from rag.rag_service import RagSummarizeService
+    rag = RagSummarizeService()
+    vs = rag.vector_store
+    vs._ensure_bm25()
+
+    def _srcs(src: str, text: str) -> list:
+        out = []
+        if src:
+            out.append(os.path.basename(src).rsplit(".", 1)[0])
+        for kw, name in SOURCE_HEURISTICS:
+            if kw in text:
+                out.append(name)
+        return out
+
+    stats = {m: {"recall": 0.0, "mrr": 0.0, "hits": 0} for m in ("hybrid", "vector", "bm25")}
+
+    for case in GOLDEN_SET:
+        query, expected = case["query"], set(case.get("sources", []))
+        h_docs = rag.retriever_docs(query)[:k]
+        v_docs = vs.similarity_search(query, k=k)
+        b_texts = []
+        if vs._bm25_index and vs._bm25_index.is_ready:
+            b_texts = [vs._bm25_index._docs[i] for i, _ in vs._bm25_index.search(query, k=k)]
+
+        for mname, docs in (("hybrid", h_docs), ("vector", v_docs)):
+            srcs = []
+            for d in docs:
+                srcs.extend(_srcs(d.metadata.get("source", ""), d.page_content))
+            _score(stats[mname], srcs, expected)
+        _score(stats["bm25"], [x for t in b_texts for x in _srcs("", t)], expected)
+
+    n = len(GOLDEN_SET)
+    print(f"\n{'='*60}\n三路对比 (k={k}, {n} queries)\n{'='*60}")
+    print(f"{'方法':<10} {'Recall@{k}':<12} {'MRR':<8} {'HitRate':<10}")
+    out = {"k": k, "methods": {}}
+    for m in ("hybrid", "vector", "bm25"):
+        s = stats[m]
+        print(f"{m:<10} {s['recall']/n:<12.3f} {s['mrr']/n:<8.3f} {s['hits']/n:<10.3f}")
+        out["methods"][m] = {kk: round(vv / n, 3) for kk, vv in s.items()}
+    return out
+
+
+def _score(bucket: dict, srcs: list, expected: set):
+    rset = set(srcs)
+    matched = expected & rset if expected else set()
+    bucket["recall"] += len(matched) / len(expected) if expected else 1.0
+    mrr = 0.0
+    for rank, s in enumerate(srcs, 1):
+        if s in expected:
+            mrr = 1.0 / rank
+            break
+    if not expected:
+        mrr = 1.0
+    bucket["mrr"] += mrr
+    bucket["hits"] += 1 if matched else 0
+
+
 if __name__ == "__main__":
     k = 5
     output_json = False
+    compare = False
     for arg in sys.argv[1:]:
         if arg.startswith("--k="): k = int(arg.split("=")[1])
         if arg == "--json": output_json = True
+        if arg == "--compare": compare = True
 
-    result = run_eval(k=k)
-    if output_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+    if compare:
+        compare_methods(k=k)
+    else:
+        result = run_eval(k=k)
+        if output_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -301,12 +301,7 @@ export default function App() {
   const [plazaFilter, setPlazaFilter] = useState('');
   const [draftTarget, setDraftTarget] = useState(null); // {school, professor} for OutreachDraft
   const [normalizedTerms, setNormalizedTerms] = useState([]);
-  // Auto-set plaza filter from profile research_area on first visit
-  useEffect(() => {
-    if (activeTab === 'plaza' && !plazaFilter && profile?.research_area) {
-      setPlazaFilter(profile.research_area);
-    }
-  }, [activeTab, profile]);
+  // 不再按画像研究方向自动过滤广场——研究方向若与目录不匹配会导致空屏,让用户手动筛选
   // Use pre-normalised terms from profile (computed once on profile save)
   useEffect(() => {
     const stored = profile?.facts?.normalized_research_terms;
