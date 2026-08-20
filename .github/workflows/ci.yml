@@ -16,7 +16,18 @@ jobs:
         with: { python-version: '3.11' }
 
       - run: pip install -r requirements.txt
-      - run: PYTHONPATH=. python tests/rag_eval.py --json
+
+      - name: RAG eval (skip if secrets missing)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ] || [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "Supabase/DeepSeek secrets not configured — skipping rag-eval."
+            exit 0
+          fi
+          PYTHONPATH=. python tests/rag_eval.py --json
 
   # Playwright E2E — needs a running server. Skipped until self-hosted runner is set up.
   # e2e:
