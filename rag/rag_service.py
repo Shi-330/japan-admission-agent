@@ -41,72 +41,52 @@ class RagSummarizeService(object):
     
     def _web_search(self, query: str, max_results: int = 3) -> str:
         """Dual-engine web search: DuckDuckGo → Bing fallback. Returns formatted context or empty string."""
-        import concurrent.futures
+        from agent.tools.web_tools import web_search
 
-        def _ddg():
-            try:
-                from langchain_community.tools import DuckDuckGoSearchResults
-                from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
-                wrapper = DuckDuckGoSearchAPIWrapper(max_results=max_results)
-                search = DuckDuckGoSearchResults(api_wrapper=wrapper)
-                results = search.invoke(query)
-                if results:
-                    return f"【网络搜索】{results}"
-            except Exception as e:
-                logger.warning(f"DDG search failed: {e}")
-            return ""
-
-        def _bing():
-            """Simple Bing search fallback (no API key, works in China)."""
-            try:
-                import requests
-                from urllib.parse import quote
-                url = f"https://www.bing.com/search?q={quote(query)}&count={max_results}"
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-                resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code != 200:
-                    return ""
-                # Crude snippet extraction
-                from html.parser import HTMLParser
-                class SnippetParser(HTMLParser):
-                    def __init__(self):
-                        super().__init__()
-                        self.snippets = []
-                        self._in_p = False
-                        self._buf = ""
-                    def handle_starttag(self, tag, attrs):
-                        if tag in ('p', 'li'): self._in_p = True
-                    def handle_endtag(self, tag):
-                        if tag in ('p', 'li'):
-                            t = self._buf.strip()
-                            if len(t) > 30: self.snippets.append(t[:300])
-                            self._buf = ""; self._in_p = False
-                    def handle_data(self, data):
-                        if self._in_p: self._buf += data
-                parser = SnippetParser()
-                parser.feed(resp.text)
-                if parser.snippets:
-                    return "【Bing搜索】" + "\n".join(parser.snippets[:max_results])
-            except Exception as e:
-                logger.warning(f"Bing scrape failed: {e}")
-            return ""
-
-        # Race DDG first (8s timeout), fall back to Bing
+        # Try DuckDuckGo first via standalone structured function
         try:
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(_ddg).result(timeout=8)
-                if result: return result
-        except Exception:
-            pass
-        # DDG failed or timed out — try Bing with a short deadline
+            results = web_search(query, max_results=max_results)
+            if results:
+                lines = [f"{r['title']}: {r['snippet'][:200]} (来源: {r['url']})" for r in results]
+                return "【网络搜索】\n" + "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"DDG search failed: {e}")
+
+        # DDG failed — try Bing HTML scraping (no API key, works in China)
         try:
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(_bing)
-                return future.result(timeout=12)
-        except Exception:
-            return ""
+            import requests
+            from urllib.parse import quote
+            url = f"https://www.bing.com/search?q={quote(query)}&count={max_results}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return ""
+            # Crude snippet extraction
+            from html.parser import HTMLParser
+            class SnippetParser(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.snippets = []
+                    self._in_p = False
+                    self._buf = ""
+                def handle_starttag(self, tag, attrs):
+                    if tag in ('p', 'li'): self._in_p = True
+                def handle_endtag(self, tag):
+                    if tag in ('p', 'li'):
+                        t = self._buf.strip()
+                        if len(t) > 30: self.snippets.append(t[:300])
+                        self._buf = ""; self._in_p = False
+                def handle_data(self, data):
+                    if self._in_p: self._buf += data
+            parser = SnippetParser()
+            parser.feed(resp.text)
+            if parser.snippets:
+                return "【Bing搜索】" + "\n".join(parser.snippets[:max_results])
+        except Exception as e:
+            logger.warning(f"Bing scrape failed: {e}")
+        return ""
 
     def search_with_fallback(self, query: str) -> str:
         """RAG first, web search fallback. Returns formatted context for LLM prompt."""

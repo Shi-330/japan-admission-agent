@@ -5,6 +5,15 @@ CN->JP 搜索归一化模块。
 被 server.py 和 matching_engine.py 共同使用，单一实现。
 """
 from typing import Optional
+from cachetools import TTLCache
+
+# ── LLM fallback 结果缓存(中文方向 → 日文词表)。方向名高度稳定,长 TTL + 上限。──
+_llm_cache = TTLCache(maxsize=200, ttl=7 * 24 * 3600)  # 7 天
+
+
+def _cache_key(term: str) -> str:
+    return term.strip().lower()
+
 
 # ── Static CN→JP synonym map (instant, no LLM needed) ──
 CN_JP_SYNONYMS = {
@@ -81,21 +90,27 @@ def normalize(term: str, chat_model=None) -> list[str]:
 
     # 2. LLM fallback: only if no static match AND chat_model is available
     if len(terms) == 1 and chat_model is not None:
-        try:
-            prompt = (
-                f"将以下中文专业方向转换为日本大学院（研究生院）中对应的学科/专攻名称。"
-                f"请返回3-5个最相关的日本学科名（用日语汉字或片假名），以逗号分隔。"
-                f"注意：不是字面直译，而是日本大学里实际存在的学科领域。"
-                f"例如：'计算机'→'情報工学,コンピュータ科学,情報理工'；'地震勘探'→'地震学,地球物理学,地球惑星科学'。"
-                f"只返回转换结果，不要解释。\n\n中文：{term}"
-            )
-            resp = chat_model.invoke(prompt)
-            jp_text = resp.content if hasattr(resp, "content") else str(resp)
-            jp_text = jp_text.strip()
-            extra = [t.strip() for t in jp_text.split(",") if t.strip()]
-            terms.extend(extra)
-        except Exception:
-            pass
+        key = _cache_key(term)
+        cached = _llm_cache.get(key)
+        if cached is not None:
+            terms.extend(cached)
+        else:
+            try:
+                prompt = (
+                    f"将以下中文专业方向转换为日本大学院（研究生院）中对应的学科/专攻名称。"
+                    f"请返回3-5个最相关的日本学科名（用日语汉字或片假名），以逗号分隔。"
+                    f"注意：不是字面直译，而是日本大学里实际存在的学科领域。"
+                    f"例如：'计算机'→'情報工学,コンピュータ科学,情報理工'；'地震勘探'→'地震学,地球物理学,地球惑星科学'。"
+                    f"只返回转换结果，不要解释。\n\n中文：{term}"
+                )
+                resp = chat_model.invoke(prompt)
+                jp_text = resp.content if hasattr(resp, "content") else str(resp)
+                jp_text = jp_text.strip()
+                extra = [t.strip() for t in jp_text.split(",") if t.strip()]
+                _llm_cache[key] = extra
+                terms.extend(extra)
+            except Exception:
+                pass
 
     # Remove duplicates preserving order
     seen = set()

@@ -216,11 +216,13 @@ def invalidate_school_cache():
     _university_cache = None
 
 
-def get_all_schools(enriched_only: bool = False) -> list[School]:
+def get_all_schools(enriched_only: bool = False, include_unverified: bool = False) -> list[School]:
     """读取全部学校（缓存），自动拼接大学名 → 研究科名。
 
     Args:
         enriched_only: 只返回有实质数据的研究科（过滤空壳目录）。
+        include_unverified: 是否包含未验证(verified=False)的学校。
+            默认 False——正式目录只返回已验证学校，LLM/web 自动入库的未验证学校一律隔离。
     """
     global _school_cache, _university_cache
     if _school_cache is not None:
@@ -258,11 +260,14 @@ def get_all_schools(enriched_only: bool = False) -> list[School]:
             logger.warning(f"读取学校数据失败 (可能表不存在): {e}")
             return []
 
+    schools = _school_cache or []
+    if not include_unverified:
+        schools = [s for s in schools if s.verified]
     if enriched_only:
-        return [s for s in (_school_cache or []) if (
+        schools = [s for s in schools if (
             (s.majors and len(s.majors) > 0) or s.exam or s.notes or s.jlpt_min
         )]
-    return _school_cache or []
+    return schools
 
 
 def get_schools_by_major(major: str) -> list[School]:
@@ -313,3 +318,29 @@ def upsert_school(s: School):
     except Exception as e:
         logger.error(f"保存失败 {s.name}: {e}")
         raise
+
+
+def set_school_verified(name: str, verified: bool) -> bool:
+    """审批学校:verified=True 进入正式目录,False 隔离。匹配 name_jp,回退 name。"""
+    try:
+        res = supabase.table(TABLE).update({"verified": verified}).eq("name_jp", name).execute()
+        if not res.data:
+            res = supabase.table(TABLE).update({"verified": verified}).eq("name", name).execute()
+        invalidate_school_cache()
+        return bool(res.data)
+    except Exception as e:
+        logger.error(f"审批失败 {name}: {e}")
+        return False
+
+
+def delete_school(name: str) -> bool:
+    """删除学校行(拒绝时用)。匹配 name_jp,回退 name。"""
+    try:
+        res = supabase.table(TABLE).delete().eq("name_jp", name).execute()
+        if not res.data:
+            res = supabase.table(TABLE).delete().eq("name", name).execute()
+        invalidate_school_cache()
+        return True
+    except Exception as e:
+        logger.error(f"删除失败 {name}: {e}")
+        return False

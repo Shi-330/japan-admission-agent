@@ -108,6 +108,7 @@ md5.txt
 !README.md
 !TODO.md
 !docs/*.md
+!specs/*.md
 *.sql
 !migrations/*.sql
 prompts/
