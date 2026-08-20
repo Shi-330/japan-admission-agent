@@ -56,14 +56,17 @@ class VectorStoreService:
                 self.vector_store.query_name,
                 {
                     "query_embedding": query_embedding,
-                    "match_threshold": 0.5,
+                    "match_threshold": 0.3,
                     "match_count": fetch_k,
                 }
             ).execute()
 
             documents = []
             for item in res.data:
-                meta = item.get("metadata", {})
+                meta = item.get("metadata") or {}
+                # Inject RPC similarity score into metadata (fix "恒为 0" 展示 bug)
+                if item.get("similarity") is not None:
+                    meta["similarity"] = item["similarity"]
                 # Apply metadata filter
                 if filter_metadata:
                     if not all(meta.get(k) == v for k, v in filter_metadata.items()):

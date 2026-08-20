@@ -6,6 +6,33 @@ from user.profile_manager import ProfileManager, UserProfile
 from utils.logger_handler import logger
 
 
+# ── 事实信号检测(纯规则,零 LLM) ──
+# 只在学生暴露了个人信息(成绩/背景/方向/经历)时才值得跑一次事实抽取。
+_SCORE_TOKENS = frozenset([
+    "N1", "N2", "N3", "N4", "N5", "JLPT", "TOEFL", "TOEIC", "IELTS",
+    "托福", "托业", "雅思", "GPA", "绩点", "均分", "EJU",
+])
+
+_FIRST_PERSON = frozenset([
+    "我是", "我在", "我读", "我学", "我本科", "我毕业", "我的", "我研究",
+    "我做过", "我实习", "我工作", "我打算", "我计划", "我来自", "我准备",
+])
+
+
+def has_fact_signal(message: str) -> bool:
+    """判断消息是否可能包含学生个人信息(成绩/学校/方向/经历)。
+
+    纯关键词规则,不调 LLM。无信号的消息(如「谢谢」「好的」)跳过事实抽取。
+    """
+    if not message:
+        return False
+    m = message.strip()
+    up = m.upper()
+    if any(t in up for t in _SCORE_TOKENS):
+        return True
+    return any(p in m for p in _FIRST_PERSON)
+
+
 class ChatOrchestrator:
     """Lightweight chat pipeline shared across frontends."""
 
@@ -26,6 +53,8 @@ class ChatOrchestrator:
         Includes conversation history (last 3 turns) for multi-turn context.
         Returns updated profile. Best-effort — never raises.
         """
+        if not has_fact_signal(user_message):
+            return profile  # 无事实信号,跳过 LLM 抽取(省一次调用)
         try:
             # Build conversation with history for multi-turn context
             from agent.intent_layer import IntentLayerEngine

@@ -265,7 +265,13 @@ class IntentLayerEngine:
 
     def _clean_nav_plaza(self, action: dict) -> Optional[dict]:
         """Drop hallucinated filter tokens; keep only tokens from valid_tags."""
-        tokens = action.get("filter", "").split()
+        raw = action.get("filter", "")
+        if isinstance(raw, list):
+            tokens = [str(t) for t in raw]
+        elif isinstance(raw, str):
+            tokens = raw.split()
+        else:
+            return None
         valid_tokens = [t for t in tokens if t in self.valid_tags]
         if not valid_tokens:
             return None

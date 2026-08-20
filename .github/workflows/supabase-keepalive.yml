@@ -1,0 +1,19 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    # Every 5 days at 8:00 UTC (free tier pauses after 7 days inactivity)
+    - cron: "0 8 */5 * *"
+  workflow_dispatch:  # manual trigger for testing
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
+          echo " — Supabase keep-alive ping done"

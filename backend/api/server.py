@@ -182,16 +182,10 @@ async def update_profile(body: ProfileUpdate, user_id: str = Depends(get_user_id
 # ── Match endpoint ──
 @app.post("/v1/match")
 async def match_schools_endpoint(body: MatchRequest, user_id: str = Depends(get_user_id)):
-    from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS, STATUS_LABELS
+    from demo.matching_engine import match_schools, STATUS_LABELS
     profile = profile_mgr.get_profile(user_id)
     target = body.target_major or profile.target_major
-    sp = StudentProfile(
-        jlpt_level=profile.jlpt_level,
-        gpa=float(profile.gpa),
-        target_major=target,
-        english_score=profile.english_score,
-        undergraduate_school=profile.undergraduate_school,
-    )
+    sp = _build_student_profile(profile, target)
     matches = match_schools(sp, chat_model=chat_model)
     if not matches:
         raise HTTPException(status_code=503, detail="学校数据加载失败，无法执行匹配")
@@ -285,6 +279,34 @@ def _build_stage_context(profile: UserProfile) -> str:
     return "\n".join(lines)
 
 
+# ── Shared matching helpers (dedupe match / search_schools / qa) ──
+def _resolve_q_major(query: str, prefer_jp: bool = True) -> str:
+    """cn2jp 归一化 query → 目标专业。prefer_jp=True 优先取日文词,否则取原词。"""
+    terms = cn2jp_normalize(query, chat_model=chat_model)
+    return terms[1] if prefer_jp and len(terms) > 1 else terms[0]
+
+
+def _build_student_profile(profile, target_major: str):
+    """从画像 + 目标专业构造 StudentProfile(匹配引擎输入)。"""
+    from demo.matching_engine import StudentProfile
+    return StudentProfile(
+        jlpt_level=profile.jlpt_level,
+        gpa=float(profile.gpa),
+        target_major=target_major,
+        english_score=profile.english_score,
+        undergraduate_school=profile.undergraduate_school,
+    )
+
+
+def _match_for_query(query: str, profile, prefer_jp: bool = True, fallback_major: str = ""):
+    """cn2jp + StudentProfile + match_schools 统一封装。返回 (q_major, matches)。"""
+    from demo.matching_engine import match_schools
+    q_major = _resolve_q_major(query, prefer_jp=prefer_jp) or fallback_major
+    sp = _build_student_profile(profile, q_major)
+    matches = match_schools(sp, chat_model=chat_model)
+    return q_major, matches
+
+
 # ── Chat endpoint (SSE streaming) ──
 @app.post("/v1/chat")
 async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
@@ -352,11 +374,17 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
         assistant_text = ""
         final_event = {'content': '', 'is_status': False, 'done': True}
 
+        # ── Onboarding system prompt augmentation ──
+        _onboarding_extra = ""
+        _phase = _onboarding_phase(profile)
+        if _phase:
+            _onboarding_extra = _get_onboarding_prompt(_phase, profile)
+
         async def _stream(prompt: str):
             """Stream LLM response as SSE content chunks. Uses history for context continuity."""
             nonlocal assistant_text
             # Build messages: system prompt once, then history, then current query
-            msgs = [{"role":"system","content":"你是日本升学顾问。回复简洁精准，2-3段完成。不确定的信息标注[待核实]。"}]
+            msgs = [{"role":"system","content": _onboarding_extra or "你是日本升学顾问。回复简洁精准，2-3段完成。不确定的信息标注[待核实]。"}]
             for h in (body.history or [])[-8:]:
                 r = h.get("role","user"); c = (h.get("content")or"")[:2000]
                 if c and r in ("user","assistant"): msgs.append({"role":r,"content":c})
@@ -372,23 +400,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
             # 3. Route by intent
             logger.info(f"Intent: {intent}, flow: {result.get('flow','')}, query: {body.query[:40]}")
             if intent == "match":
-                from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS, STATUS_LABELS
-                from utils.cn2jp import normalize as cn2jp_norm
-                q_terms = cn2jp_norm(body.query, chat_model=chat_model)
-                # q_terms[0] is the original query, prefer the first normalized JP term
-                if len(q_terms) > 1:
-                    q_major = q_terms[1]
-                elif q_terms:
-                    q_major = q_terms[0]
-                else:
-                    q_major = profile.target_major or ""
-                sp = StudentProfile(
-                    jlpt_level=profile.jlpt_level,
-                    gpa=float(profile.gpa), target_major=q_major,
-                    english_score=profile.english_score,
-                    undergraduate_school=profile.undergraduate_school,
-                )
-                matches = match_schools(sp, chat_model=chat_model)
+                from demo.matching_engine import STATUS_LABELS
+                q_major, matches = _match_for_query(body.query, profile)
                 if not matches:
                     yield f"data: {json.dumps({'content': '学校数据加载失败，无法执行匹配。去广场手动筛选吧。', 'is_status': False, 'done': False})}\n\n"
                 else:
@@ -402,24 +415,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 sk = _cache_key(user_id, body.query, profile_hash)
                 cached = _search_cache.get(sk)
                 # Always re-match and re-stream LLM (cache was causing stale one-liners)
-                from demo.matching_engine import StudentProfile, match_schools, STATUS_LABELS
-                # Extract intended major from query — not from profile (user may ask about a different field)
-                from utils.cn2jp import normalize as cn2jp_norm
-                q_terms = cn2jp_norm(body.query, chat_model=chat_model)
-                # q_terms[0] is the original query, prefer the first normalized JP term
-                if len(q_terms) > 1:
-                    q_major = q_terms[1]
-                elif q_terms:
-                    q_major = q_terms[0]
-                else:
-                    q_major = profile.target_major or ""
-                sp = StudentProfile(
-                    jlpt_level=profile.jlpt_level,
-                    gpa=float(profile.gpa), target_major=q_major,
-                    english_score=profile.english_score,
-                    undergraduate_school=profile.undergraduate_school,
-                )
-                matches = match_schools(sp, chat_model=chat_model)
+                from demo.matching_engine import STATUS_LABELS
+                q_major, matches = _match_for_query(body.query, profile)
                 cards = []
                 if matches:
                     top_count = min(len(matches), 8)
@@ -475,9 +472,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         except Exception as e2:
                             logger.warning(f"Web search failed in search_schools: {e2}")
                     profile_ctx = f"JLPT {profile.jlpt_level or '未知'}、GPA {profile.gpa}、英语 {profile.english_score or '未知'}"
-                    if profile.research_area: profile_ctx += f"、研究方向 {profile.research_area}"
                     if profile.undergraduate_school: profile_ctx += f"、本科 {profile.undergraduate_school}"
-                    prompt = f"""学生想找{q_major or '合适'}方向的日本大学院。背景：{profile_ctx}。
+                    prompt = f"""学生想找「{q_major or '合适'}」方向的日本大学院，只围绕这个方向推荐。背景：{profile_ctx}。
 已筛选出{len(top_names)}所院校。{'匹配较少，请用你的领域知识补充推荐。' if len(top_names) < 5 else ''}
 规则：不说元词汇。方向宽泛就先反问。方向具体就深挖到实验室/教授级。回复末尾用【参考院校】列出推荐。"""
                 else:
@@ -597,18 +593,15 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                 school_cards_data = []
                 schools_context = ""
                 try:
-                    from demo.matching_engine import StudentProfile as SP, match_schools, STATUS_LABELS
+                    from demo.matching_engine import STATUS_LABELS
                     from utils.cn2jp import normalize as cn2jp_norm
                     terms = cn2jp_norm(body.query, chat_model=chat_model)
-                    q_major = terms[0] if terms else (profile.target_major or profile.research_area or "")
-                    sp = SP(
-                        jlpt_level=profile.jlpt_level, gpa=float(profile.gpa),
-                        target_major=q_major,
-                        english_score=profile.english_score,
-                        undergraduate_school=profile.undergraduate_school,
+                    q_major, matches = _match_for_query(
+                        body.query, profile,
+                        prefer_jp=False,
+                        fallback_major=(profile.target_major or profile.research_area or ""),
                     )
-                    matches = match_schools(sp, chat_model=chat_model)
-                    logger.info(f"QA matching: q_major={q_major}, terms={terms}, matches={len(matches or [])}")
+                    logger.info(f"QA matching: q_major={q_major}, matches={len(matches or [])}")
 
                     # Broaden search: also match schools where ANY research_area overlaps with query terms
                     matched_names = {m.school_name for m in (matches or [])}
@@ -617,7 +610,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                         for s in SCHOOL_CATALOG:
                             if s.get("name") in matched_names: continue
                             text = " ".join([s.get("name","")] + (s.get("majors") or []) + (s.get("tags") or []))
-                            if any(t.lower() in text.lower() for t in q_terms):
+                            if any(t.lower() in text.lower() for t in terms):
                                 extra_schools.append(s)
                                 if len(extra_schools) + len(matched_names) >= 10:
                                     break
@@ -693,7 +686,7 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
 5. 如果学生方向宽泛则先简短回问偏好（≤100字）再展开。如果学生方向具体（如"FWI反演"），向下挖深——拆分子方向、推荐具体实验室/教授名、推荐技能树（数学/编程/经典教材），回复500字以内。
 6. 每次回复末尾用[!]标记附上：「以上信息基于大学官网网页检索，具体出愿要求请务必点击官网链接确认。」
 6. 严禁虚构教授姓名——所有提及的教授全名必须附带可验证的官网URL或KAKEN/ORCID链接。无法提供来源的，必须明确标注[未核实]并建议学生自行查询。这是防幻觉铁律。
-7. 【强制动作闭环】当学生明确指定细分研究方向后，必须推荐2-3所该方向的对口院校和实验室。不管当前对话处在什么阶段，都不能只聊学术不推学校。
+7. 【强制动作闭环】学生问研究方向/选校/教授时，推荐2-3所该方向对口院校和实验室；但学生问通用流程（出愿材料/考试/语言要求/签证）时，只回答流程本身，不强行推荐研究室，也不要用学生画像里的研究方向带偏回答。
 
 【匹配院校】
 {schools_context if schools_context else ""}
@@ -706,7 +699,8 @@ async def chat_endpoint(body: ChatRequest, user_id: str = Depends(get_user_id)):
                     yield event
 
             else:  # chat / explore_field / find_professor
-                intent = result.get("intent", "chat")
+                # 不再给 intent 赋值——否则它变成 event_generator 的局部变量,遮蔽外层 intent="unknown",
+                # 导致异常处理时 UnboundLocalError。外层 intent 已是 result["intent"]。
                 # Dynamic professor list from JSON (not hardcoded)
                 prof_list = "暂无已验证教授"
                 try:
@@ -902,6 +896,55 @@ async def advance_stage_endpoint(body: AdvanceRequest, user_id: str = Depends(ge
     return {"stage": body.target_stage, "school": body.school, "label": STAGES[body.target_stage]["label"]}
 
 
+def _profile_fields(profile) -> dict:
+    """Return which onboarding-relevant profile fields are filled."""
+    return {
+        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
+        "english": bool(profile.english_score and profile.english_score.strip() and profile.english_score != "未参加"),
+        "gpa": profile.gpa_score > 0,
+        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
+        "major": profile.target_major and profile.target_major != "未设定",
+        "research": bool(profile.research_area and profile.research_area.strip()),
+    }
+
+
+def _onboarding_phase(profile) -> str | None:
+    """Determine onboarding phase for new users. Returns None if onboarding not needed."""
+    fields = _profile_fields(profile)
+    filled = sum(1 for v in fields.values() if v)
+    if profile.applications or (filled >= 4 and fields["research"]):
+        return None
+    if not fields["research"]:
+        return "interests" if (fields["school"] or fields["major"]) else "start"
+    # research_area set, but missing hard stats
+    hard_missing = sum(1 for k in ("jlpt", "english", "gpa") if not fields[k])
+    return "calibrate" if hard_missing >= 2 else "converge"
+
+
+_ONBOARDING_BASE = """你是日本升学顾问，正在与一位刚开始规划日本留学的学生对话。学生目前方向还不明确，你需要通过自然对话帮他逐步理清。
+
+引导原则：
+- 每次只问1-2个问题，不要像问卷调查一样连串提问
+- 先了解背景和兴趣，再问硬条件（成绩/语言）
+- 学生表示不确定时，给他2-3个选项让他选，不要继续追问
+- 学生明确表达具体需求（如"帮我找XX学校"）时，立刻响应，不要强行拉回引导
+- 用"我们"代替"你"——"我们来看看"而不是"你应该"
+- 回复简洁，2-3段足够"""
+
+
+def _get_onboarding_prompt(phase: str, profile) -> str:
+    """Build onboarding system prompt for the given phase."""
+    school = profile.undergraduate_school or "未知"
+    major = profile.target_major or "未知"
+    phase_guides = {
+        "start": f"\n当前阶段：了解背景。学生背景信息：{school}，专业{major}。引导学生聊聊为什么想去日本、对什么感兴趣。",
+        "interests": f"\n当前阶段：挖掘兴趣。学生背景信息：{school}，专业{major}。帮助学生找到感兴趣的研究方向，可以给几个方向参考。",
+        "calibrate": f"\n当前阶段：对标校准。学生已确定研究方向为「{profile.research_area}」。接下来自然了解他的语言成绩和GPA，帮他理解自己的档位。",
+        "converge": f"\n当前阶段：方向收敛。学生研究方向「{profile.research_area}」，帮他总结现状并建议2-3个具体方向，引导去广场浏览学校。",
+    }
+    return _ONBOARDING_BASE + phase_guides[phase]
+
+
 @app.get("/v1/greeting")
 async def get_greeting(user_id: str = Depends(get_user_id)):
     """Proactive greeting with structured dashboard data."""
@@ -960,14 +1003,7 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         parts.insert(0, "欢迎！我是你的日本升学顾问。告诉我你的研究方向，帮你匹配学校。")
 
     # 4. Profile completeness
-    fields = {
-        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
-        "english": bool(profile.english_score and profile.english_score.strip()),
-        "gpa": profile.gpa_score > 0,
-        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
-        "major": profile.target_major and profile.target_major != "未设定",
-        "research": bool(profile.research_area and profile.research_area.strip()),
-    }
+    fields = _profile_fields(profile)
     filled = sum(1 for v in fields.values() if v)
     total = len(fields)
 
@@ -1125,6 +1161,9 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
     except Exception:
         pass
 
+    # ── Onboarding detection ──
+    onboarding_phase = _onboarding_phase(profile)
+
     return {
         "message": "\n\n".join(parts) if parts else ("有几项待办需要关注，见下方卡片。" if (has_prof_reminders or has_dl_warnings) else "欢迎回来！当前一切顺利。"),
         "has_reminders": has_prof_reminders or has_dl_warnings,
@@ -1134,6 +1173,8 @@ async def get_greeting(user_id: str = Depends(get_user_id)):
         "when": when_list,
         "structural_risk": structural_risk,
         "gates": gates,
+        "onboarding": onboarding_phase is not None,
+        "onboarding_phase": onboarding_phase or "",
     }
 
 
@@ -1373,7 +1414,7 @@ def _enrich_skeletons(cards: list[dict]):
             m = _re.search(r'\{.*\}', text, re.DOTALL)
             if not m: continue
             data = _json.loads(m.group(0))
-            update = {"enrichment_status": "completed", "verified": True}
+            update = {"enrichment_status": "completed"}  # verified 保持 False,待人工审核
             if data.get("jlpt_min"): update["jlpt_min"] = data["jlpt_min"]
             if data.get("english_req"): update["english_req"] = _json.dumps(data["english_req"], ensure_ascii=False)
             if data.get("exam"): update["exam_type"] = data["exam"]
@@ -1611,14 +1652,7 @@ def _collect_all_reminders(profile: UserProfile) -> list[dict]:
                 pass
 
     # Profile completeness check (< 50% triggers one reminder)
-    fields = {
-        "jlpt": profile.jlpt_level and profile.jlpt_level != "无",
-        "english": bool(profile.english_score and profile.english_score.strip()),
-        "gpa": profile.gpa_score > 0,
-        "school": profile.undergraduate_school and profile.undergraduate_school != "未设定",
-        "major": profile.target_major and profile.target_major != "未设定",
-        "research": bool(profile.research_area and profile.research_area.strip()),
-    }
+    fields = _profile_fields(profile)
     filled = sum(1 for v in fields.values() if v)
     total = len(fields)
     completeness_pct = round(filled / total * 100) if total > 0 else 0
