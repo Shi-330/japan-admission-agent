@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Loader2, FileText, Trash2, Copy, RefreshCw, ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Loader2, FileText, Trash2, Copy, RefreshCw, ChevronDown, ChevronRight, Plus, X, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { apiCall } from '@/lib/api';
+import { apiCall, apiUpload } from '@/lib/api';
 import { copyText } from '@/lib/utils';
 
 // ── Sub-components ──
@@ -50,6 +50,98 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
   const [form, setForm] = useState(INITIAL_FORM);
 
   const resetForm = () => setForm(INITIAL_FORM);
+
+  // ── 材料清单(todo)──
+  const [checklists, setChecklists] = useState([]);
+  const [checklistLoading, setChecklistLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSchool, setUploadSchool] = useState('');
+  const fileInputRef = useRef(null);
+  const [newItemNames, setNewItemNames] = useState({}); // { checklistId: 输入中的新条目名 }
+
+  const fetchChecklists = useCallback(async () => {
+    if (!token) return;
+    setChecklistLoading(true);
+    try {
+      const data = await apiCall('/v1/checklists', token);
+      setChecklists(data.checklists || []);
+    } catch (err) {
+      /* ignore */
+    } finally {
+      setChecklistLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchChecklists();
+  }, [fetchChecklists]);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await apiUpload('/v1/documents/extract', token, file, { school: uploadSchool });
+      toast.success('已生成材料清单');
+      setUploadSchool('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      fetchChecklists();
+    } catch (err) {
+      toast.error(err.message || '上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleToggle = async (checklistId, itemIndex) => {
+    try {
+      await apiCall('/v1/checklists/toggle', token, { method: 'POST', body: { checklist_id: checklistId, item_index: itemIndex } });
+      fetchChecklists();
+    } catch (err) {
+      toast.error('操作失败');
+    }
+  };
+
+  const handleCreateChecklist = async () => {
+    try {
+      await apiCall('/v1/checklists', token, { method: 'POST', body: { school: uploadSchool } });
+      toast.success('已新建清单');
+      setUploadSchool('');
+      fetchChecklists();
+    } catch (err) {
+      toast.error(err.message || '新建失败');
+    }
+  };
+
+  const handleDeleteChecklist = async (checklistId) => {
+    try {
+      await apiCall('/v1/checklists', token, { method: 'DELETE', body: { checklist_id: checklistId } });
+      fetchChecklists();
+    } catch (err) {
+      toast.error('删除失败');
+    }
+  };
+
+  const handleAddItem = async (checklistId) => {
+    const name = (newItemNames[checklistId] || '').trim();
+    if (!name) return;
+    try {
+      await apiCall('/v1/checklists/items', token, { method: 'POST', body: { checklist_id: checklistId, name } });
+      setNewItemNames(prev => ({ ...prev, [checklistId]: '' }));
+      fetchChecklists();
+    } catch (err) {
+      toast.error('添加失败');
+    }
+  };
+
+  const handleDeleteItem = async (checklistId, itemIndex) => {
+    try {
+      await apiCall('/v1/checklists/items', token, { method: 'DELETE', body: { checklist_id: checklistId, item_index: itemIndex } });
+      fetchChecklists();
+    } catch (err) {
+      toast.error('删除失败');
+    }
+  };
 
   const fetchDrafts = useCallback(async () => {
     if (!token) return;
@@ -290,6 +382,108 @@ export default function DocumentsView({ token, onRegenerate, applications }) {
             })}
           </div>
         )}
+
+        {/* ── 材料清单 ── */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">材料清单</h3>
+              <p className="text-xs text-gray-400">上传募集要项(PDF/Excel),自动提炼需提交的材料</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={uploadSchool}
+                onChange={e => setUploadSchool(e.target.value)}
+                placeholder="学校名(可选)"
+                className="w-44 text-xs p-1.5 border rounded"
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.xlsx,.xls"
+                className="hidden"
+                onChange={handleUpload}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700 disabled:opacity-40"
+              >
+                {uploading ? <Loader2 size={12} className="animate-spin mr-1" /> : <Upload size={12} className="mr-1" />}
+                上传募集要项
+              </Button>
+              <Button
+                onClick={handleCreateChecklist}
+                variant="outline"
+                className="text-xs px-3 py-1.5 rounded"
+              >
+                <Plus size={12} className="mr-1" />
+                新建空清单
+              </Button>
+            </div>
+          </div>
+
+          {checklistLoading ? (
+            <div className="text-center text-muted-foreground text-sm py-6"><Loader2 size={16} className="animate-spin inline" /></div>
+          ) : checklists.length === 0 ? (
+            <div className="text-center text-muted-foreground text-sm py-6">暂无材料清单,上传募集要项或新建空清单</div>
+          ) : (
+            <div className="space-y-3">
+              {checklists.map((cl) => {
+                const items = cl.items || [];
+                const doneCount = items.filter(i => i.done).length;
+                return (
+                  <div key={cl.id} className="border border-border rounded-lg bg-card overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b border-border">
+                      <span className="text-sm font-medium text-foreground">{cl.school || '通用材料'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{doneCount}/{items.length}</span>
+                        <button onClick={() => handleDeleteChecklist(cl.id)} className="text-muted-foreground hover:text-red-500" title="删除清单">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-3 space-y-1.5">
+                      {items.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm group">
+                          <input
+                            type="checkbox"
+                            checked={!!item.done}
+                            onChange={() => handleToggle(cl.id, idx)}
+                            className="w-4 h-4 accent-indigo-600 shrink-0"
+                          />
+                          <span className={item.done ? 'line-through text-muted-foreground flex-1' : 'text-foreground flex-1'}>{item.name}</span>
+                          <button
+                            onClick={() => handleDeleteItem(cl.id, idx)}
+                            className="text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="删除"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border">
+                        <Input
+                          value={newItemNames[cl.id] || ''}
+                          onChange={e => setNewItemNames(prev => ({ ...prev, [cl.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddItem(cl.id); }}
+                          placeholder="添加材料…"
+                          className="flex-1 text-xs p-1.5 border rounded"
+                        />
+                        <Button
+                          onClick={() => handleAddItem(cl.id)}
+                          className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-indigo-700"
+                        >
+                          添加
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
