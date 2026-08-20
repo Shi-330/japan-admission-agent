@@ -4,7 +4,7 @@ FastAPI server — shared backend for Streamlit / React / whatever frontend.
 Run: uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
 """
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -1284,6 +1284,160 @@ async def delete_draft(body: DeleteDraftRequest, user_id: str = Depends(get_user
     profile.facts[OUTREACH_DRAFTS_KEY] = drafts
     profile_mgr.save_profile(user_id, profile)
     return {"ok": True}
+
+
+# ── 募集要項 → 材料清单(todo)─
+@app.post("/v1/documents/extract")
+async def extract_document(
+    file: UploadFile = File(...),
+    school: str = Form(""),
+    user_id: str = Depends(get_user_id),
+):
+    """上传募集要项(PDF/Excel)→ 提炼出願必要書類 → 存为可勾选 todo。"""
+    from utils.doc_extract import extract_pdf_text, extract_excel_text, extract_materials
+    import uuid as _uuid
+
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".pdf"):
+        text = extract_pdf_text(content)
+    elif filename.endswith((".xlsx", ".xls")):
+        text = extract_excel_text(content)
+    else:
+        raise HTTPException(400, "仅支持 PDF 或 Excel 文件")
+
+    if not text or len(text.strip()) < 20:
+        raise HTTPException(400, "未能提取到文字内容——可能是扫描件 PDF,暂不支持")
+
+    materials = extract_materials(text, chat_model)
+    if not materials:
+        raise HTTPException(422, "未能识别出材料清单,请换一份更清晰的募集要项")
+
+    profile = profile_mgr.get_profile(user_id)
+    checklist = {
+        "id": str(_uuid.uuid4()),
+        "school": school.strip(),
+        "items": [{"name": m["name"], "done": False} for m in materials],
+        "created_at": datetime.now().isoformat(),
+        "source": filename,
+    }
+    checklists = profile.facts.get("material_checklists", [])
+    profile.facts["material_checklists"] = [checklist] + checklists[:19]  # 上限 20
+    profile_mgr.save_profile(user_id, profile)
+
+    return {
+        "checklist_id": checklist["id"],
+        "school": checklist["school"],
+        "items": checklist["items"],
+        "preview": text[:200],
+    }
+
+
+@app.get("/v1/checklists")
+async def list_checklists(user_id: str = Depends(get_user_id)):
+    """列出所有材料清单 todo。"""
+    profile = profile_mgr.get_profile(user_id)
+    return {"checklists": profile.facts.get("material_checklists", [])}
+
+
+class ToggleItemRequest(BaseModel):
+    checklist_id: str
+    item_index: int
+
+
+@app.post("/v1/checklists/toggle")
+async def toggle_checklist_item(body: ToggleItemRequest, user_id: str = Depends(get_user_id)):
+    """勾选/取消某材料项,状态回写画像。"""
+    profile = profile_mgr.get_profile(user_id)
+    for cl in profile.facts.get("material_checklists", []):
+        if cl.get("id") == body.checklist_id:
+            items = cl.get("items", [])
+            if 0 <= body.item_index < len(items):
+                items[body.item_index]["done"] = not items[body.item_index].get("done", False)
+                profile_mgr.save_profile(user_id, profile)
+                return {"ok": True, "done": items[body.item_index]["done"]}
+            raise HTTPException(404, "材料项不存在")
+    raise HTTPException(404, "清单不存在")
+
+
+class CreateChecklistRequest(BaseModel):
+    school: str = ""
+
+
+@app.post("/v1/checklists")
+async def create_checklist(body: CreateChecklistRequest, user_id: str = Depends(get_user_id)):
+    """手动新建空清单(学校可选)——无需上传募集要项。"""
+    import uuid as _uuid
+    profile = profile_mgr.get_profile(user_id)
+    checklist = {
+        "id": str(_uuid.uuid4()),
+        "school": body.school.strip(),
+        "items": [],
+        "created_at": datetime.now().isoformat(),
+        "source": "manual",
+    }
+    checklists = profile.facts.get("material_checklists", [])
+    profile.facts["material_checklists"] = [checklist] + checklists[:19]  # 上限 20
+    profile_mgr.save_profile(user_id, profile)
+    return {"checklist": checklist}
+
+
+class DeleteChecklistRequest(BaseModel):
+    checklist_id: str
+
+
+@app.delete("/v1/checklists")
+async def delete_checklist(body: DeleteChecklistRequest, user_id: str = Depends(get_user_id)):
+    """删除整个清单。"""
+    profile = profile_mgr.get_profile(user_id)
+    checklists = profile.facts.get("material_checklists", [])
+    remaining = [cl for cl in checklists if cl.get("id") != body.checklist_id]
+    if len(remaining) == len(checklists):
+        raise HTTPException(404, "清单不存在")
+    profile.facts["material_checklists"] = remaining
+    profile_mgr.save_profile(user_id, profile)
+    return {"ok": True}
+
+
+class AddItemRequest(BaseModel):
+    checklist_id: str
+    name: str
+
+
+@app.post("/v1/checklists/items")
+async def add_checklist_item(body: AddItemRequest, user_id: str = Depends(get_user_id)):
+    """向清单手动追加一条材料。"""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "材料名不能为空")
+    profile = profile_mgr.get_profile(user_id)
+    for cl in profile.facts.get("material_checklists", []):
+        if cl.get("id") == body.checklist_id:
+            cl.setdefault("items", []).append({"name": name, "done": False})
+            profile_mgr.save_profile(user_id, profile)
+            return {"ok": True, "items": cl["items"]}
+    raise HTTPException(404, "清单不存在")
+
+
+class DeleteItemRequest(BaseModel):
+    checklist_id: str
+    item_index: int
+
+
+@app.delete("/v1/checklists/items")
+async def delete_checklist_item(body: DeleteItemRequest, user_id: str = Depends(get_user_id)):
+    """删除清单中的一条材料。"""
+    profile = profile_mgr.get_profile(user_id)
+    for cl in profile.facts.get("material_checklists", []):
+        if cl.get("id") == body.checklist_id:
+            items = cl.get("items", [])
+            if 0 <= body.item_index < len(items):
+                items.pop(body.item_index)
+                profile_mgr.save_profile(user_id, profile)
+                return {"ok": True, "items": items}
+            raise HTTPException(404, "材料项不存在")
+    raise HTTPException(404, "清单不存在")
 
 
 # ── Doc fetch + LLM extraction ──
